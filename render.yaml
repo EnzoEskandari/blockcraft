@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: blockcraft
+    runtime: static
+    buildCommand: ""
+    staticPublishPath: .
+    headers:
+      - path: /js/*
+        name: Cache-Control
+        value: no-cache
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
