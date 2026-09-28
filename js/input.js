@@ -22,11 +22,13 @@ let mouseX = 0, mouseY = 0, mouseInside = false;
 
 const touch = {
   joyId: null, joyX: 0, joyY: 0, joyDX: 0, joyDY: 0,
-  lookId: null, lastX: 0, lastY: 0, startT: 0, moved: 0, holding: false, holdTimer: 0, tapX: 0, tapY: 0,
+  lookId: null, lastX: 0, lastY: 0, startX: 0, startY: 0, startT: 0, dragging: false, holding: false, holdTimer: 0, tapX: 0, tapY: 0,
   jump: false, sneakLatch: false, sneakHold: false, sprintLatch: false,
 };
 
 const $ = (id) => document.getElementById(id);
+const SLOP = 12;        // px a finger can wobble before it counts as turning the camera
+const HOLD_MS = 280;    // how long a still finger waits before it starts mining
 
 function playing() { return G.state === 'playing' && !G.screen; }
 
@@ -168,12 +170,14 @@ function initTouch() {
         knob.style.transform = 'translate(-50%, -50%)';
       } else if (touch.lookId === null) {
         touch.lookId = t.identifier;
-        touch.lastX = t.clientX; touch.lastY = t.clientY;
+        touch.lastX = touch.startX = t.clientX;
+        touch.lastY = touch.startY = t.clientY;
         touch.startT = performance.now();
-        touch.moved = 0;
+        touch.dragging = false;
         touch.holding = false;
         clearTimeout(touch.holdTimer);
-        touch.holdTimer = setTimeout(() => { if (touch.lookId !== null && touch.moved < 14) touch.holding = true; }, 300);
+        // A finger that stays put starts mining whatever is under it
+        touch.holdTimer = setTimeout(() => { if (touch.lookId !== null && !touch.dragging) touch.holding = true; }, HOLD_MS);
       }
     }
   }, { passive: false });
@@ -189,10 +193,19 @@ function initTouch() {
         touch.joyDX = dx / R; touch.joyDY = dy / R;
         knob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
       } else if (t.identifier === touch.lookId) {
+        // While mining with finger aim, sliding moves the aim to the next block instead of the camera
+        if (touch.holding && G.settings.touchAim === 'finger') { touch.lastX = t.clientX; touch.lastY = t.clientY; continue; }
+        if (!touch.dragging) {
+          // small wobbles don't turn the view, so taps land exactly where the finger went down
+          if (Math.hypot(t.clientX - touch.startX, t.clientY - touch.startY) < SLOP) continue;
+          touch.dragging = true;
+          clearTimeout(touch.holdTimer);
+          touch.lastX = t.clientX; touch.lastY = t.clientY;
+          continue;
+        }
         const dx = t.clientX - touch.lastX, dy = t.clientY - touch.lastY;
         touch.lastX = t.clientX; touch.lastY = t.clientY;
-        touch.moved += Math.abs(dx) + Math.abs(dy);
-        const k = 0.0058 * G.settings.touchSens;
+        const k = 0.0052 * G.settings.touchSens;
         input.lookX += dx * k;
         input.lookY += dy * k;
       }
@@ -203,11 +216,6 @@ function initTouch() {
     e.preventDefault();
     for (const t of e.changedTouches) {
       if (t.identifier === touch.joyId) {
-        // A quick touch that never moved the stick counts as a tap on the world
-        if (touch.joyMoved < 10 && performance.now() - touch.joyT < 300 && playing()) {
-          input.tap = true;
-          touch.tapX = t.clientX; touch.tapY = t.clientY;
-        }
         touch.joyId = null;
         touch.joyDX = touch.joyDY = 0;
         stick.classList.remove('active');
@@ -218,12 +226,13 @@ function initTouch() {
       } else if (t.identifier === touch.lookId) {
         clearTimeout(touch.holdTimer);
         const dur = performance.now() - touch.startT;
-        if (!touch.holding && dur < 350 && touch.moved < 18 && playing()) {
+        if (!touch.holding && !touch.dragging && dur < 450 && playing()) {
           input.tap = true;
-          touch.tapX = t.clientX; touch.tapY = t.clientY;
+          touch.tapX = touch.startX; touch.tapY = touch.startY;
         }
         touch.lookId = null;
         touch.holding = false;
+        touch.dragging = false;
       }
     }
   };
@@ -271,7 +280,8 @@ export function pollInput(dt) {
   input.moveZ = mz;
   input.jump = k('Space') || touch.jump;
   input.sneak = k('ShiftLeft') || k('ShiftRight') || touch.sneakLatch || touch.sneakHold;
-  input.sprint = k('ControlLeft') || k('ControlRight') || touch.sprintLatch;
+  input.sprint = k('ControlLeft') || k('ControlRight') || touch.sprintLatch
+    || (touch.joyId !== null && touch.joyDY < -0.92 && Math.abs(touch.joyDX) < 0.45);
   input.mine = mouseL || touch.holding;
   input.useHeld = mouseR;
 
@@ -287,8 +297,8 @@ export function pollInput(dt) {
   input.aim = null;
   if (G.touchMode && G.settings.touchAim === 'finger') {
     const ndc = (x, y) => ({ x: (x / window.innerWidth) * 2 - 1, y: -((y / window.innerHeight) * 2 - 1) });
-    if (touch.lookId !== null) input.aim = ndc(touch.lastX, touch.lastY);
-    else if (input.tap) input.aim = ndc(touch.tapX, touch.tapY);
+    if (input.tap) input.aim = ndc(touch.tapX, touch.tapY);
+    else if (touch.lookId !== null) input.aim = ndc(touch.lastX, touch.lastY);
   }
   if (!playing()) { input.moveX = input.moveZ = 0; input.jump = input.mine = input.useHeld = false; }
 }

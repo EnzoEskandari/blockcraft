@@ -330,8 +330,10 @@ export class Player {
       tmpV.set(input.aim.x, input.aim.y, 0.5).unproject(cam).sub(cam.position).normalize();
       return { ox: cam.position.x, oy: cam.position.y, oz: cam.position.z, dx: tmpV.x, dy: tmpV.y, dz: tmpV.z };
     }
-    const d = this.lookDir();
-    return { ox: this.pos.x, oy: this.eyeY, oz: this.pos.z, dx: d.x, dy: d.y, dz: d.z };
+    // from the camera itself, so the crosshair picks exactly the block it is drawn over (view bobbing moves the camera)
+    const d = this.lookDir(), c = R.camera.position;
+    const near = Math.hypot(c.x - this.pos.x, c.y - this.eyeY, c.z - this.pos.z) < 0.3;
+    return near ? { ox: c.x, oy: c.y, oz: c.z, dx: d.x, dy: d.y, dz: d.z } : { ox: this.pos.x, oy: this.eyeY, oz: this.pos.z, dx: d.x, dy: d.y, dz: d.z };
   }
 
   interact(dt, input) {
