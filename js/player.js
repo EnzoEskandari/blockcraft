@@ -15,6 +15,8 @@ const WALK = 4.317, SPRINT = 5.612, SNEAK = 1.31, FLY = 10.9, FLY_SPRINT = 21.6;
 const EAT_TIME = 1.6;      // seconds of holding to finish eating (32 ticks)
 const HURT_TIME = 0.5;
 const tmpV = new THREE.Vector3();
+// Block defs also name the tool that mines them (.tool), so only non-block items count as tools
+const toolOf = (it) => (it && !it.isBlock ? it.tool : null);
 
 export class Player {
   constructor() {
@@ -44,6 +46,7 @@ export class Player {
     this.invul = 0;
     this.regenTimer = 0;
     this.dead = false;
+    this.isPlayer = true;
     this.mode = 'survival';
     this.inv = new Inventory();
     this.spawn = { x: 0.5, y: 80, z: 0.5 };
@@ -95,6 +98,7 @@ export class Player {
 
   addEffect(name, secs) {
     if (this.creative || this.dead) return;
+    if (name === 'hunger') { this.hungerEffect = Math.max(this.hungerEffect, secs); return; }
     this.effects[name] = Math.max(this.effects[name] || 0, secs);
     G.ui.invChanged();
   }
@@ -125,7 +129,7 @@ export class Player {
   attackStrength() {
     const held = this.inv.held;
     const it = held ? ITEMS[held.id] : null;
-    const speed = it && it.tool ? it.attackSpeed : 4;
+    const speed = toolOf(it) ? it.attackSpeed : 4;
     return Math.min(1, (G.clock - this.lastSwing) * speed);
   }
 
@@ -471,8 +475,8 @@ export class Player {
     const held = this.inv.held;
     const it = held ? ITEMS[held.id] : null;
     let speed = 1;
-    if (it && it.tool && it.tool === def.tool) speed = it.speed;
-    if (it && it.tool === 'sword' && def.cutout && def.atten) speed = 1.5;
+    if (toolOf(it) && toolOf(it) === def.tool) speed = it.speed;
+    if (toolOf(it) === 'sword' && def.cutout && def.atten) speed = 1.5;
     if (this.headInWater) speed /= 5;
     if (!this.onGround && !this.flying && !this.inWater) speed /= 5;
     return def.hardness * 1.5 / speed;
@@ -489,8 +493,8 @@ export class Player {
       this.exhaustion += 0.005;
       const held = this.inv.held;
       const it = held ? ITEMS[held.id] : null;
-      if (it && it.durability && it.tool && def.hardness > 0) {
-        if (this.inv.damageHeld(it.tool === 'sword' ? 2 : 1)) sfx('break_tool');
+      if (toolOf(it) && it.durability && def.hardness > 0) {
+        if (this.inv.damageHeld(toolOf(it) === 'sword' ? 2 : 1)) sfx('break_tool');
         G.ui.invChanged();
       }
     }
@@ -500,7 +504,7 @@ export class Player {
     const strength = this.attackStrength();
     const held = this.inv.held;
     const it = held ? ITEMS[held.id] : null;
-    const base = it && it.tool ? it.damage : 1.5;
+    const base = toolOf(it) ? it.damage : 1.5;
     let dmg = base * (0.55 + strength * strength * 0.45);
     const crit = strength > 0.9 && !this.onGround && this.vel.y < 0 && !this.flying && !this.inWater;
     if (crit) dmg *= 1.5;
@@ -514,7 +518,7 @@ export class Player {
       }
       if (!this.creative) {
         this.exhaustion += 0.1;
-        if (it && it.durability) { if (this.inv.damageHeld(it.tool === 'sword' ? 1 : 2)) sfx('break_tool'); G.ui.invChanged(); }
+        if (it && it.durability) { if (this.inv.damageHeld(toolOf(it) === 'sword' ? 1 : 2)) sfx('break_tool'); G.ui.invChanged(); }
       }
     }
   }
@@ -550,11 +554,11 @@ export class Player {
     if (held.id === ID.flint_and_steel) return this.ignite(t);
     if (it.armor) return this.equipHeld();
     // Hoes till grass and dirt into farmland; shovels flatten grass into paths
-    if (t && (it.tool === 'hoe' || it.tool === 'shovel') && (t.id === B.grass || t.id === B.dirt || t.id === B.snowy_grass) && t.ny === 1) {
+    if (t && (toolOf(it) === 'hoe' || toolOf(it) === 'shovel') && (t.id === B.grass || t.id === B.dirt || t.id === B.snowy_grass) && t.ny === 1) {
       const w = G.world;
       if (w.getBlock(t.x, t.y + 1, t.z) !== 0 && !BLOCKS[w.getBlock(t.x, t.y + 1, t.z)].replaceable) return false;
       if (w.getBlock(t.x, t.y + 1, t.z)) G.game.removeBlock(t.x, t.y + 1, t.z, false);
-      if (it.tool === 'hoe') w.setBlock(t.x, t.y, t.z, B.farmland);
+      if (toolOf(it) === 'hoe') w.setBlock(t.x, t.y, t.z, B.farmland);
       else if (t.id !== B.dirt) w.setBlock(t.x, t.y, t.z, B.dirt_path);
       else return false;
       blockSound('gravel', 'place', { x: t.x + 0.5, y: t.y + 1, z: t.z + 0.5 });
@@ -654,7 +658,7 @@ export class Player {
     if (!s) return;
     const n = all ? s.count : 1;
     const d = this.lookDir();
-    G.entities.dropItem(s.id, n, this.pos.x + d.x * 0.3, this.eyeY - 0.3, this.pos.z + d.z * 0.3, d.x * 6, d.y * 6 + 2, d.z * 6, s.dmg).pickupDelay = 1.5;
+    G.entities.dropShared(s.id, n, this.pos.x + d.x * 0.3, this.eyeY - 0.3, this.pos.z + d.z * 0.3, d.x * 6, d.y * 6 + 2, d.z * 6, s.dmg).pickupDelay = 1.5;
     this.inv.consumeHeld(n);
     swingHand();
     G.ui.invChanged();
@@ -765,13 +769,17 @@ export class Player {
     if (!this.creative) {
       const all = [...this.inv.slots, ...this.armor];
       for (const s of all) {
-        if (s) G.entities.dropItem(s.id, s.count, this.pos.x, this.pos.y + 1, this.pos.z, (Math.random() - 0.5) * 6, 3 + Math.random() * 3, (Math.random() - 0.5) * 6, s.dmg);
+        if (s) G.entities.dropShared(s.id, s.count, this.pos.x, this.pos.y + 1, this.pos.z, (Math.random() - 0.5) * 6, 3 + Math.random() * 3, (Math.random() - 0.5) * 6, s.dmg);
       }
       this.inv.clear();
       this.armor = [null, null, null, null];
     }
     const msgs = { fall: 'You hit the ground too hard', drown: 'You drowned', starve: 'You starved to death', void: 'You fell out of the world', explosion: 'You blew up', fire: 'You burned to death', magic: 'You were killed by magic', arrow: 'You were shot', pearl: 'You hit the ground too hard' };
     G.ui.showDeath(msgs[kind] || 'You were slain');
+    if (G.net) {
+      const told = { fall: 'hit the ground too hard', drown: 'drowned', starve: 'starved to death', void: 'fell out of the world', explosion: 'blew up', fire: 'burned to death', magic: 'was killed by magic', arrow: 'was shot', pearl: 'hit the ground too hard' };
+      G.net.announce(`${G.net.name} ${told[kind] || 'was slain'}`);
+    }
   }
 
   respawn() {

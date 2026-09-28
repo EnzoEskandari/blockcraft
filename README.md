@@ -8,22 +8,39 @@ A block-building survival game that runs in the browser, on laptop or iPad. Feat
 - Villages with traders
 - Structures
 - Night mobs
+- Online multiplayer
 
-It's pure static HTML and JavaScript, so there's no build step. Three.js loads from a CDN.
+The game is plain HTML and JavaScript; Three.js loads from a CDN. A small Node server (`server.js`) serves the files and relays multiplayer messages.
 
 ## Play locally
 
 ```bash
-python3 -m http.server 8000
+npm install
+npm start
 ```
 
-Then open http://localhost:8000.
+Then open http://localhost:8080.
+
+## Multiplayer
+
+1. **Host:** open one of your worlds, pause, and choose **Open to Friends**. You'll get a 4-letter code.
+2. **Friends:** on the title screen, choose **Multiplayer** and enter that code.
+
+How it works:
+
+- The host's browser runs the world: mobs, water, fire, furnaces and the time of day. Guests send what they do and draw what the host sends back.
+- Chests, furnaces and villager trades are shared.
+- Items you throw or drop are shared too, but block and mob drops go only to whoever broke the block or made the kill.
+- The night is skipped only when everyone is in bed.
+- Press **T** (or the **T** button on iPad) to chat.
+- The host's save keeps each guest's inventory, so they can come back later.
 
 ## Deploy on Render
 
-1. On Render, choose **New → Blueprint** (or **New → Static Site**) and connect this repo.
-2. Settings:
-   - Build command: *(empty)*
-   - Publish directory: `.`
+1. On Render, choose **New → Blueprint** and connect this repo.
+2. `render.yaml` sets it up as a free Node web service.
 
-`render.yaml` already holds this config.
+To set it up by hand instead, choose **New → Web Service** with:
+
+- Build command: `npm install`
+- Start command: `npm start`

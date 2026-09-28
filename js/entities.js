@@ -299,7 +299,7 @@ function modelTemplate(type, variant) {
   return t;
 }
 
-function buildModel(type, variant) {
+export function buildModel(type, variant) {
   const t = modelTemplate(type, variant);
   const mat = new THREE.MeshBasicMaterial({ map: t.tex });
   const root = new THREE.Group();
@@ -408,6 +408,22 @@ Object.assign(MODELS, {
     { name: 'wing1b', parent: 'wing1', size: [6, 1, 7], pos: [6, 0, 0], off: [3, 0, -1], color: [42, 50, 88] },
     { name: 'tail', size: [3, 2, 6], pos: [0, 4, -4.5], off: [0, 0, -3], color: [52, 62, 102] },
   ],
+  // Other players in multiplayer; the variant picks the shirt colour
+  player: (v) => {
+    const shirts = [[38, 138, 150], [178, 60, 52], [70, 150, 60], [206, 160, 40], [120, 70, 160], [220, 110, 40], [60, 90, 180], [200, 90, 150]];
+    const hair = [70, 46, 30];
+    return humanoid([4, 12, 4], [198, 146, 112], shirts[(v || 0) % shirts.length], [52, 58, 132], {
+      front: (g, x, y) => {
+        rect(g, x, y, 8, 2, hair); px(g, x, y + 2, hair); px(g, x + 7, y + 2, hair);
+        px(g, x + 1, y + 4, [240, 240, 240]); px(g, x + 2, y + 4, [60, 80, 160]); px(g, x + 5, y + 4, [60, 80, 160]); px(g, x + 6, y + 4, [240, 240, 240]);
+        rect(g, x + 3, y + 6, 2, 1, [150, 90, 70]);
+      },
+      top: (g, x, y, w, h) => rect(g, x, y, w, h, hair),
+      back: (g, x, y, w, h) => rect(g, x, y, w, h - 2, hair),
+      px: (g, x, y, w) => rect(g, x, y, w, 3, hair),
+      nx: (g, x, y, w) => rect(g, x, y, w, 3, hair),
+    });
+  },
   iron_golem: () => [
     { name: 'head', size: [8, 10, 8], pos: [0, 33, -2], off: [0, 5, 0], color: [204, 198, 188], paint: { front: (g, x, y) => {
       rect(g, x + 1, y + 3, 6, 1, [120, 112, 100]); px(g, x + 2, y + 4, [140, 30, 20]); px(g, x + 5, y + 4, [140, 30, 20]);
@@ -458,6 +474,10 @@ function sheepVariant() {
   if (r < 0.99) return 4;
   return 15;
 }
+
+// Everyone mobs can notice: the local player plus, in multiplayer, the other players the host simulates
+const players = () => (G.net ? G.net.targets() : G.player ? [G.player] : []);
+const isClient = () => !!(G.net && G.net.role === 'client');
 
 const dist3 = (a, b) => Math.hypot(a.pos.x - b.pos.x, a.pos.y - b.pos.y, a.pos.z - b.pos.z);
 
@@ -534,6 +554,15 @@ class Mob {
 
   hurt(amount, fromX, fromZ, byPlayer, kb = 1, attacker = null) {
     if (this.dead || this.invul > 0) return false;
+    if (this.proxy) {
+      this.invul = 0.5;
+      this.hurtTime = 0.35;
+      this.hp = Math.max(0, this.hp - amount);
+      sfx('mobhurt', this.pos, { pitch: this.def.pitch });
+      if (byPlayer) { G.lastHitMob = this; G.lastHitTime = G.clock; }
+      G.net.send({ k: 'hit', id: this.netId, d: amount, x: fromX, z: fromZ, kb, p: byPlayer ? 1 : 0 });
+      return true;
+    }
     this.hp -= amount;
     this.invul = 0.5;
     this.hurtTime = 0.35;
@@ -545,8 +574,7 @@ class Mob {
     if (!this.def.flies) this.vel.y = (4 + 1.5 * Math.min(1, kb)) * resist;
     sfx('mobhurt', this.pos, { pitch: this.def.pitch });
     if (byPlayer) {
-      G.lastHitMob = this;
-      G.lastHitTime = G.clock;
+      if (byPlayer !== 'remote') { G.lastHitMob = this; G.lastHitTime = G.clock; }
       this.provoked = true;
       if (this.def.neutral) { this.angry = true; this.angryTime = 0; }
       if (this.def.villager) for (const g of G.entities.mobs) if (g.def.golem && dist3(g, this) < 16) g.provoked = true;
@@ -563,16 +591,19 @@ class Mob {
     this.dead = true;
     this.deathTime = 0;
     if (this.key && G.world) G.world.deadMobs.add(this.key);
+    // A kill by another player drops the loot in their world instead
+    const to = this.lootTo && G.clock - this.lootToT < 6 && !this.lootTo.gone ? this.lootTo : null;
+    const dropItem = (id, n, x, y, z) => (to ? to.giveDrop(id, n, x, y, z) : G.entities.dropItem(id, n, x, y, z));
     for (const d of this.def.drops) {
       const n = d.min + Math.floor(rand() * (d.max - d.min + 1));
-      if (n > 0) G.entities.dropItem(ID[d.key], n, this.pos.x, this.pos.y + 0.5, this.pos.z);
+      if (n > 0) dropItem(ID[d.key], n, this.pos.x, this.pos.y + 0.5, this.pos.z);
     }
-    if (this.type === 'sheep') G.entities.dropItem(55 + this.variant, 1, this.pos.x, this.pos.y + 0.5, this.pos.z);
+    if (this.type === 'sheep') dropItem(55 + this.variant, 1, this.pos.x, this.pos.y + 0.5, this.pos.z);
     if (this.type === 'slime') {
       if (this.size > 1) {
         const n = 2 + Math.floor(rand() * 3);
         for (let i = 0; i < n; i++) G.entities.spawnMob('slime', this.pos.x + (rand() - 0.5) * this.hw, this.pos.y + 0.2, this.pos.z + (rand() - 0.5) * this.hw, { size: this.size / 2 });
-      } else if (rand() < 0.7) G.entities.dropItem(ID.slime_ball, 1 + Math.floor(rand() * 2), this.pos.x, this.pos.y + 0.3, this.pos.z);
+      } else if (rand() < 0.7) dropItem(ID.slime_ball, 1 + Math.floor(rand() * 2), this.pos.x, this.pos.y + 0.3, this.pos.z);
     }
     if (this.def.villager && killer && killer.def && killer.def.zombieLike && rand() < 0.5) {
       G.entities.spawnMob('zombie_villager', this.pos.x, this.pos.y, this.pos.z);
@@ -583,32 +614,110 @@ class Mob {
 
   // Who this mob wants to chase or fight right now
   pickTarget() {
-    const def = this.def, p = G.player, mobs = G.entities.mobs;
-    const playerOk = p && !p.dead && p.mode === 'survival';
+    const def = this.def, mobs = G.entities.mobs;
+    const ps = players().filter((p) => !p.dead && p.mode === 'survival');
     let best = null, bd = Infinity;
     const consider = (e, range) => { const d = dist3(this, e); if (d < range && d < bd) { bd = d; best = e; } };
     if (def.golem) {
-      if (this.provoked && playerOk) consider(p, 24);
+      if (this.provoked) for (const p of ps) consider(p, 24);
       for (const m of mobs) if (!m.dead && m.def.hostile && m.type !== 'boomer' && !(m.def.neutral && !m.angry)) consider(m, 16);
       return best;
     }
     if (!def.hostile) return null;
     if (def.neutral && !this.angry) return null;
     if (this.type === 'spider' && G.daylight >= 0.55 && !this.provoked) return null;
-    if (playerOk) consider(p, def.flies ? 64 : def.always ? 24 : 20);
+    for (const p of ps) consider(p, def.flies ? 64 : def.always ? 24 : 20);
     if (def.zombieLike || def.huntsVillagers) for (const m of mobs) if (!m.dead && m.def.villager) consider(m, 16);
-    if (this.attacker && !this.attacker.dead && !this.attacker.removed && this.attacker.def) consider(this.attacker, 24);
+    const a = this.attacker;
+    if (a && !a.dead && !a.removed && !a.gone && (a.def || (a.isPlayer && a.mode === 'survival'))) consider(a, 24);
     return best;
   }
 
   hit(t, dmg) {
-    if (t === G.player) {
+    if (t.isPlayer) {
       t.hurt(dmg, this.pos.x, this.pos.z, 'mob');
-      if (this.def.hungerHit) t.hungerEffect = Math.max(t.hungerEffect, 7);
+      if (this.def.hungerHit) t.addEffect('hunger', 7);
     } else t.hurt(dmg, this.pos.x, this.pos.z, false, 1, this);
   }
 
+  // ------------------------------------------------------------ multiplayer
+  // The host sends each guest [id, x, y, z, yaw, flags, hp, fuse, target player id]
+  netState() {
+    const r = (v) => Math.round(v * 100) / 100;
+    const t = this.target;
+    const flags = (this.dead ? 1 : 0) | (this.onGround ? 2 : 0) | (this.angry ? 4 : 0) | (this.drinking > 0 ? 8 : 0)
+      | (this.fire > 0 ? 16 : 0) | (this.mount ? 32 : 0) | (t ? 64 : 0);
+    return [this.netId, r(this.pos.x), r(this.pos.y), r(this.pos.z), r(this.yaw), flags, Math.ceil(this.hp), Math.round(this.fuse * 10) / 10,
+      t && t.isPlayer ? t.netId ?? -1 : -1];
+  }
+
+  netSpawn() {
+    const o = { t: this.type };
+    if (this.type === 'sheep') o.v = this.variant;
+    if (this.prof) o.p = this.prof;
+    if (this.type === 'slime') o.s = this.size;
+    if (this.baby) o.b = 1;
+    if (this.trades) o.u = this.trades.map((tr) => tr.uses);
+    o.m = this.maxHp;
+    return o;
+  }
+
+  applyNet(a) {
+    const n = this.net || (this.net = {});
+    n.x = a[1]; n.y = a[2]; n.z = a[3];
+    this.yaw = a[4];
+    const f = a[5];
+    if (f & 1 && !this.dead) { this.dead = true; this.deathTime = 0; }
+    this.onGround = !!(f & 2);
+    this.angry = !!(f & 4);
+    this.drinking = f & 8 ? 1 : 0;
+    this.fire = f & 16 ? 1 : 0;
+    this.mount = f & 32 ? true : null;
+    if (a[6] < this.hp - 0.01 && !this.dead) this.hurtTime = 0.35;
+    this.hp = a[6];
+    this.fuse = a[7];
+    const tid = a[8];
+    this.target = !(f & 64) ? null : tid === G.net.id ? G.player : (G.net.players.get(tid) || G.player);
+  }
+
+  proxyUpdate(dt) {
+    this.age += dt;
+    this.hurtTime -= dt;
+    this.invul -= dt;
+    if (this.dead) {
+      this.deathTime += dt;
+      this.model.root.rotation.z = Math.min(1, this.deathTime * 3) * Math.PI / 2;
+      tintModel(this.model.root, lightAt(this.pos.x, this.pos.y + 0.5, this.pos.z), 0.6);
+      if (this.deathTime > 0.8) { smoke(this.pos.x, this.pos.y + this.h / 2, this.pos.z, 10, 0.6); this.removed = true; }
+      return;
+    }
+    const n = this.net;
+    const ox = this.pos.x, oy = this.pos.y, oz = this.pos.z;
+    if (n) {
+      if (Math.hypot(n.x - ox, n.y - oy, n.z - oz) > 6) { this.pos.x = n.x; this.pos.y = n.y; this.pos.z = n.z; }
+      else {
+        const k = Math.min(1, dt * 12);
+        this.pos.x += (n.x - ox) * k; this.pos.y += (n.y - oy) * k; this.pos.z += (n.z - oz) * k;
+      }
+    }
+    if (dt > 0) { this.vel.x = (this.pos.x - ox) / dt; this.vel.y = (this.pos.y - oy) / dt; this.vel.z = (this.pos.z - oz) / dt; }
+    if (this.fire > 0 && rand() < dt * 12) flame(this.pos.x + (rand() - 0.5) * 0.6, this.pos.y + rand() * this.h, this.pos.z + (rand() - 0.5) * 0.6);
+    const p = G.player;
+    const pdist = p ? Math.hypot(p.pos.x - this.pos.x, p.pos.z - this.pos.z) : Infinity;
+    this.soundCd -= dt;
+    if (this.soundCd <= 0) { this.soundCd = 6 + rand() * 12; if (pdist < 16) sfx(this.def.sound, this.pos, { vol: 0.8 }); }
+    // Shades still notice when this player stares at them
+    this.stareCd = (this.stareCd || 0) - dt;
+    if (this.def.teleports && !this.angry && p && !p.dead && p.mode === 'survival' && pdist < 40 && this.stareCd <= 0) {
+      const hx = this.pos.x - p.pos.x, hy = this.pos.y + this.h - 0.35 - p.eyeY, hz = this.pos.z - p.pos.z;
+      const d = Math.hypot(hx, hy, hz) || 1, look = p.lookDir();
+      if ((hx * look.x + hy * look.y + hz * look.z) / d > 0.985 && this.canSee(p)) { this.stareCd = 2; G.net.send({ k: 'stare', id: this.netId }); }
+    }
+    this.animate(dt, Math.min(8, Math.hypot(this.vel.x, this.vel.z)), pdist);
+  }
+
   update(dt) {
+    if (this.proxy) { this.proxyUpdate(dt); return; }
     const def = this.def, w = G.world, p = G.player;
     this.age += dt;
     this.hurtTime -= dt;
@@ -672,7 +781,7 @@ class Mob {
         this.shootCd -= dt;
         if (this.shootCd <= 0 && this.drinking <= 0 && dist < 11 && this.canSee(t)) {
           this.shootCd = 2.5 + rand();
-          const pe = G.player.effects || {};
+          const pe = t.effects || {};
           const kind = dist >= 8 && !(pe.slow > 0) ? 'slow' : !(pe.poison > 0) && t.hp == null && rand() < 0.5 ? 'poison' : 'harm';
           this.throwPotion(t, kind);
         }
@@ -705,7 +814,7 @@ class Mob {
           this.attackCd = def.golem ? 1.2 : 1;
           const dmg = def.golem ? 7 + Math.floor(rand() * 14) : def.damage;
           this.hit(t, dmg);
-          if (def.golem) { if (t === p) t.vel.y = 9; else t.vel.y = 10; sfx('golem', this.pos); }
+          if (def.golem) { if (t.isPlayer) t.vel.y = 9; else t.vel.y = 10; sfx('golem', this.pos); }
           if (def.zombieLike && this.model.parts.arm0) this.model.parts.arm0.rotation.x = this.model.parts.arm1.rotation.x = -2.1;
           if (this.type === 'vindicator') this.model.parts.arm1.rotation.x = -2.6;
         }
@@ -843,7 +952,7 @@ class Mob {
     if (this.angry) {
       this.angryTime += dt;
       if (this.angryTime > 40 || (p && p.dead)) this.angry = false;
-      if (this.target && pdist > 12 && rand() < dt * 0.6) this.teleportNear(this.target.pos, 4);
+      if (this.target && dist3(this, this.target) > 12 && rand() < dt * 0.6) this.teleportNear(this.target.pos, 4);
     }
     if (this.inWater) {
       this.waterTick = (this.waterTick || 0) + dt;
@@ -1058,6 +1167,7 @@ class ItemEntity {
           sfx('pop', null, { vol: 0.5 });
           G.ui && G.ui.invChanged();
         }
+        if (this.netId && G.net && left !== this.count) G.net.itemTaken(this.netId, left);
         this.count = left;
         if (!left) this.removed = true;
       }
@@ -1127,6 +1237,7 @@ class Arrow {
     const speed = Math.hypot(this.vel.x, this.vel.y, this.vel.z);
     const dmg = this.damage || Math.round(speed * 0.2) + 1;
     for (const m of G.entities.mobs) {
+      if (this.owner === 'fx') break;
       if (m.dead || m === this.shooter || m === (this.shooter && this.shooter.mount)) continue;
       const t = rayBox(this.pos.x, this.pos.y, this.pos.z, dx, dy, dz, m.pos.x - m.hw, m.pos.y, m.pos.z - m.hw, m.pos.x + m.hw, m.pos.y + m.h, m.pos.z + m.hw);
       if (t >= 0 && t <= len) {
@@ -1136,13 +1247,18 @@ class Arrow {
         return;
       }
     }
-    if (this.owner !== 'player' && !p.dead) {
-      const t = rayBox(this.pos.x, this.pos.y, this.pos.z, dx, dy, dz, p.pos.x - p.hw, p.pos.y, p.pos.z - p.hw, p.pos.x + p.hw, p.pos.y + p.h, p.pos.z + p.hw);
-      if (t >= 0 && t <= len) {
-        p.hurt(this.damage || Math.min(dmg, 5), this.pos.x, this.pos.z, 'arrow');
-        if (this.effect === 'slow') p.addEffect('slow', 10);
-        this.removed = true;
-        return;
+    if (this.owner !== 'player') {
+      for (const q of this.owner === 'fx' ? [p] : players()) {
+        if (q.dead) continue;
+        const t = rayBox(this.pos.x, this.pos.y, this.pos.z, dx, dy, dz, q.pos.x - q.hw, q.pos.y, q.pos.z - q.hw, q.pos.x + q.hw, q.pos.y + q.h, q.pos.z + q.hw);
+        if (t >= 0 && t <= len) {
+          if (this.owner !== 'fx') {
+            q.hurt(this.damage || Math.min(dmg, 5), this.pos.x, this.pos.z, 'arrow');
+            if (this.effect === 'slow') q.addEffect('slow', 10);
+          }
+          this.removed = true;
+          return;
+        }
       }
     }
     const hit = raycast(G.world, this.pos.x, this.pos.y, this.pos.z, dx, dy, dz, len, (id) => BLOCKS[id].solid);
@@ -1162,10 +1278,11 @@ class Arrow {
 // ---------------------------------------------------------------- thrown potions and pearls
 const POTION_COLORS = { harm: [0.45, 0.05, 0.1], poison: [0.3, 0.6, 0.15], slow: [0.35, 0.45, 0.6] };
 class Thrown {
-  constructor(x, y, z, vx, vy, vz, kind, itemId) {
+  constructor(x, y, z, vx, vy, vz, kind, itemId, fx = false) {
     this.pos = { x, y, z };
     this.vel = { x: vx, y: vy, z: vz };
     this.kind = kind;
+    this.fx = fx;
     this.age = 0;
     this.removed = false;
     this.mesh = itemModel(itemId);
@@ -1216,12 +1333,15 @@ class Thrown {
     const c = POTION_COLORS[this.kind];
     for (let i = 0; i < 30; i++) P.spawn(this.pos.x, this.pos.y + 0.2, this.pos.z, (rand() - 0.5) * 5, rand() * 3, (rand() - 0.5) * 5, c[0], c[1], c[2], 0.1, 0.7, 0.4);
     sfx('splash_potion', this.pos);
-    if (p.dead) return;
-    const d = Math.hypot(p.pos.x - this.pos.x, p.pos.y + 0.9 - this.pos.y, p.pos.z - this.pos.z);
-    if (d > 3.5) return;
-    if (this.kind === 'harm') p.hurt(6, null, null, 'magic');
-    else if (this.kind === 'poison') p.addEffect('poison', 6);
-    else p.addEffect('slow', 8);
+    if (this.fx) return;
+    for (const q of players()) {
+      if (q.dead) continue;
+      const d = Math.hypot(q.pos.x - this.pos.x, q.pos.y + 0.9 - this.pos.y, q.pos.z - this.pos.z);
+      if (d > 3.5) continue;
+      if (this.kind === 'harm') q.hurt(6, null, null, 'magic');
+      else if (this.kind === 'poison') q.addEffect('poison', 6);
+      else q.addEffect('slow', 8);
+    }
   }
   dispose() {
     R.scene.remove(this.mesh);
@@ -1265,13 +1385,40 @@ class PrimedTNT {
 }
 
 // ---------------------------------------------------------------- explosions
-export function explode(x, y, z, power) {
-  const w = G.world, E = G.entities;
+export function explosionFx(x, y, z, power) {
+  const E = G.entities;
   sfx('explode', { x, y, z }, { vol: 1.3 });
   for (let i = 0; i < 40; i++) smoke(x, y, z, 1, power * 0.6);
   for (let i = 0; i < 16; i++) {
     E.particles.spawn(x + (rand() - 0.5) * power, y + (rand() - 0.5) * power, z + (rand() - 0.5) * power, 0, 0.5, 0, 1, 1, 1, 0.9 + rand() * 0.8, 0.25 + rand() * 0.2, 0);
   }
+  const pd = Math.hypot(G.player.pos.x - x, G.player.pos.y - y, G.player.pos.z - z);
+  G.shake = Math.max(G.shake || 0, Math.max(0, 1 - pd / 24) * 0.8);
+}
+
+// Hurts and throws back mobs and players caught in a blast (skipping one remote player, if given)
+export function explosionDamage(x, y, z, r, skip = null, mobs = true) {
+  const hurtOne = (e, isPlayer) => {
+    const ex = e.pos.x - x, ey = e.pos.y + e.h / 2 - y, ez = e.pos.z - z;
+    const d = Math.hypot(ex, ey, ez);
+    if (d > r * 2) return;
+    const impact = 1 - d / (r * 2);
+    const dmg = Math.floor(((impact * impact + impact) / 2) * 7 * r + 1);
+    const n = d || 1;
+    if (isPlayer) e.hurt(dmg, x, z, 'explosion');
+    else { e.invul = 0; e.hurt(dmg, x, z, false); }
+    e.vel.x += (ex / n) * impact * 14;
+    e.vel.y += 4 + impact * 6;
+    e.vel.z += (ez / n) * impact * 14;
+  };
+  if (mobs) for (const m of G.entities.mobs) if (!m.dead && !m.removed) hurtOne(m, false);
+  for (const q of players()) if (!q.dead && q !== skip) hurtOne(q, true);
+}
+
+export function explode(x, y, z, power) {
+  const w = G.world, E = G.entities;
+  explosionFx(x, y, z, power);
+  if (G.net) G.net.explosion(x, y, z, power);
   const r = power;
   const bx = Math.floor(x), by = Math.floor(y), bz = Math.floor(z);
   const R2 = Math.ceil(r);
@@ -1289,23 +1436,7 @@ export function explode(x, y, z, power) {
     if (id === B.tnt) { G.game.removeBlock(X, Y, Z, false); E.tnts.push(new PrimedTNT(X + 0.5, Y, Z + 0.5, 0.4 + rand() * 1.0)); continue; }
     G.game.removeBlock(X, Y, Z, rand() < 0.3);
   }
-  const hurtOne = (e, isPlayer) => {
-    const ex = e.pos.x - x, ey = e.pos.y + e.h / 2 - y, ez = e.pos.z - z;
-    const d = Math.hypot(ex, ey, ez);
-    if (d > r * 2) return;
-    const impact = 1 - d / (r * 2);
-    const dmg = Math.floor(((impact * impact + impact) / 2) * 7 * r + 1);
-    const n = d || 1;
-    if (isPlayer) e.hurt(dmg, x, z, 'explosion');
-    else { e.invul = 0; e.hurt(dmg, x, z, false); }
-    e.vel.x += (ex / n) * impact * 14;
-    e.vel.y += 4 + impact * 6;
-    e.vel.z += (ez / n) * impact * 14;
-  };
-  for (const m of E.mobs) if (!m.dead && !m.removed) hurtOne(m, false);
-  if (!G.player.dead) hurtOne(G.player, true);
-  const pd = Math.hypot(G.player.pos.x - x, G.player.pos.y - y, G.player.pos.z - z);
-  G.shake = Math.max(G.shake || 0, Math.max(0, 1 - pd / 24) * 0.8);
+  explosionDamage(x, y, z, r);
 }
 
 // ---------------------------------------------------------------- manager
@@ -1338,8 +1469,36 @@ export class Entities {
     return it;
   }
 
-  spawnArrow(x, y, z, vx, vy, vz, owner, opts) { this.arrows.push(new Arrow(x, y, z, vx, vy, vz, owner, opts)); }
-  spawnPotion(x, y, z, vx, vy, vz, kind) { this.thrown.push(new Thrown(x, y, z, vx, vy, vz, kind, ID.potion)); }
+  // Items a player throws or drops on death: in multiplayer everyone sees them and anyone can pick them up
+  dropShared(id, count, x, y, z, vx, vy, vz, dmg) {
+    const it = this.dropItem(id, count, x, y, z, vx, vy, vz, dmg);
+    if (it && G.net) G.net.itemTossed(it);
+    return it;
+  }
+
+  spawnArrow(x, y, z, vx, vy, vz, owner, opts) {
+    this.arrows.push(new Arrow(x, y, z, vx, vy, vz, owner, opts));
+    if (owner === 'mob' && G.net) G.net.projectile('ar', [x, y, z, vx, vy, vz, opts && opts.effect === 'slow' ? 1 : 0]);
+  }
+  spawnPotion(x, y, z, vx, vy, vz, kind, fx = false) {
+    this.thrown.push(new Thrown(x, y, z, vx, vy, vz, kind, ID.potion, fx));
+    if (!fx && G.net) G.net.projectile('th', [x, y, z, vx, vy, vz, kind]);
+  }
+
+  // A guest's copy of one of the host's mobs
+  spawnProxy(a) {
+    const o = a[9];
+    const m = new Mob(o.t, a[1], a[2], a[3], { variant: o.v, prof: o.p, size: o.s, baby: !!o.b });
+    m.proxy = true;
+    m.netId = a[0];
+    if (o.m) m.maxHp = o.m;
+    if (o.u && m.trades) o.u.forEach((u, i) => { if (m.trades[i]) m.trades[i].uses = u; });
+    m.applyNet(a);
+    m.pos.x = a[1]; m.pos.y = a[2]; m.pos.z = a[3];
+    m.model.root.rotation.y = m.yaw;
+    this.mobs.push(m);
+    return m;
+  }
   throwPearl(x, y, z, vx, vy, vz) { this.thrown.push(new Thrown(x, y, z, vx, vy, vz, 'pearl', ID.shade_pearl)); }
   primeTNT(x, y, z) { this.tnts.push(new PrimedTNT(x + 0.5, y, z + 0.5, 4)); sfx('fuse', { x, y, z }); }
 
@@ -1374,13 +1533,19 @@ export class Entities {
     sweep(this.thrown);
     this.particles.update(dt);
     this.spawnTimer -= dt;
-    if (this.spawnTimer <= 0) { this.spawnTimer = 1; this.spawnHostiles(); this.despawn(); }
+    if (this.spawnTimer <= 0) {
+      this.spawnTimer = 1;
+      if (!isClient()) { this.spawnHostiles(); this.despawn(); }
+      const w = G.world;
+      for (const it of this.items) if (!w.getChunk(Math.floor(it.pos.x) >> 4, Math.floor(it.pos.z) >> 4)) it.removed = true;
+    }
   }
 
   // Structure inhabitants and passive animals appear when a chunk first loads
   onChunkReady(chunk) {
     if (!chunk.fresh) return;
     chunk.fresh = false;
+    if (isClient()) return;   // guests get their mobs from the host
     const w = G.world;
     const k = (chunk.cx + 32768) * 65536 + (chunk.cz + 32768);
     const pending = w.pendingSpawns.get(k);
@@ -1410,10 +1575,12 @@ export class Entities {
 
   // Night mobs: picked by biome, spawned in the dark 24-44 blocks from the player
   spawnHostiles() {
-    const p = G.player, w = G.world;
-    if (!p || p.dead) return;
+    const w = G.world;
+    const alive = players().filter((q) => !q.dead);
+    if (!alive.length) return;
+    const p = alive[(rand() * alive.length) | 0];
     const hostiles = this.mobs.reduce((n, m) => n + (m.def.hostile && !m.persistent ? 1 : 0), 0);
-    if (hostiles >= 16) return;
+    if (hostiles >= 16 + 8 * (alive.length - 1)) return;
     const night = G.time > 0.52 && G.time < 0.98;
     // Gloomwings hunt players who have not slept for three nights
     if (night && (G.nightsNoSleep || 0) >= 3 && rand() < 0.08 && this.mobs.filter((m) => m.type === 'gloomwing').length < 3) {
@@ -1476,15 +1643,15 @@ export class Entities {
   }
 
   despawn() {
-    const p = G.player, w = G.world;
+    const w = G.world, ps = players();
     for (const m of this.mobs) {
-      const d = Math.hypot(m.pos.x - p.pos.x, m.pos.z - p.pos.z);
+      let d = Infinity;
+      for (const q of ps) d = Math.min(d, Math.hypot(m.pos.x - q.pos.x, m.pos.z - q.pos.z));
       if (!w.getChunk(Math.floor(m.pos.x) >> 4, Math.floor(m.pos.z) >> 4)) { m.removed = true; continue; }
       if (m.persistent) continue;
       if (m.def.hostile && (d > 80 || (d > 40 && rand() < 0.02))) m.removed = true;
       if (m.type === 'gloomwing' && G.daylight > 0.8 && rand() < 0.05) m.removed = true;
     }
-    for (const it of this.items) if (!w.getChunk(Math.floor(it.pos.x) >> 4, Math.floor(it.pos.z) >> 4)) it.removed = true;
   }
 
   // Remember villager trade usage so it survives unloading and saving
@@ -1499,4 +1666,4 @@ export class Entities {
   }
 }
 
-export { blockParticles as spawnBlockParticles, smoke, flame };
+export { blockParticles as spawnBlockParticles, smoke, flame, ItemEntity };

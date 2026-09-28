@@ -1,0 +1,706 @@
+// Multiplayer. One player hosts: their browser runs the world (mobs, water, fire, furnaces, time of day)
+// and the others join as guests. Guests send what they do to the host and draw what the host tells them.
+// Messages travel through the Blockcraft server (server.js), which only relays them within a room code.
+import * as THREE from 'three';
+import { G } from './game.js';
+import { R, itemModel, tintModel } from './render.js';
+import { buildModel, lightAt, explosionFx, explosionDamage, spawnBlockParticles } from './entities.js';
+import { BLOCKS, B } from './blocks.js';
+import { packSlots, unpackSlots } from './inventory.js';
+import { sfx, blockSound } from './audio.js';
+
+const r2 = (v) => Math.round(v * 100) / 100;
+const MOB_RANGE = 72;          // guests see the host's mobs this far away
+const FX_RANGE = 64;           // and arrows, potions and explosions this far
+const CONTAINER_BLOCKS = new Set([B.chest, B.furnace, B.furnace_lit]);
+
+export function serverURL() {
+  const q = new URLSearchParams(location.search).get('server');
+  if (q) return q;
+  if (!/^https?:$/.test(location.protocol)) return null;
+  return (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
+}
+
+function containerSig(c) {
+  return JSON.stringify([packSlots(c.slots), Math.round((c.burn || 0) * 10), Math.round(c.burnMax || 0), Math.round((c.cook || 0) * 10)]);
+}
+
+// ---------------------------------------------------------------- other players
+function nameTag(text) {
+  const c = document.createElement('canvas');
+  const g = c.getContext('2d');
+  const font = '600 30px system-ui, sans-serif';
+  g.font = font;
+  c.width = Math.ceil(g.measureText(text).width) + 20;
+  c.height = 42;
+  g.font = font;
+  g.fillStyle = 'rgba(0,0,0,0.4)';
+  g.fillRect(0, 0, c.width, c.height);
+  g.fillStyle = '#fff';
+  g.textBaseline = 'middle';
+  g.fillText(text, 10, 22);
+  const tex = new THREE.CanvasTexture(c);
+  const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true, fog: false });
+  const s = new THREE.Sprite(mat);
+  s.scale.set((c.width / c.height) * 0.28, 0.28, 1);
+  s.renderOrder = 20;
+  return s;
+}
+
+// Another player as seen by this browser. On the host it is also what mobs chase and hurt.
+export class Avatar {
+  constructor(id, name, slot) {
+    this.id = id;
+    this.netId = id;
+    this.name = name;
+    this.slot = slot;
+    this.isPlayer = true;
+    this.remote = true;
+    this.ready = false;
+    this.gone = false;
+    this.pos = { x: 0, y: -200, z: 0 };
+    this.vel = { x: 0, y: 0, z: 0 };
+    this.hw = 0.3;
+    this.h = 1.8;
+    this.yaw = 0; this.pitch = 0;
+    this.held = 0;
+    this.dead = false;
+    this.mode = 'survival';
+    this.sleeping = false;
+    this.sneaking = false;
+    this.burning = false;
+    this.hp = 20;
+    this.effects = {};
+    this.state = null;
+    this.swings = 0;
+    this.swingT = 1;
+    this.phase = 0;
+    this.hurtTime = 0;
+    this.deathTime = 0;
+    this.model = buildModel('player', slot);
+    R.scene.add(this.model.root);
+    this.tag = nameTag(name);
+    R.scene.add(this.tag);
+    this.heldShown = -1;
+    this.heldMesh = null;
+    this.model.root.visible = this.tag.visible = false;
+  }
+
+  get eyeY() { return this.pos.y + 1.62 - (this.sneaking ? 0.12 : 0); }
+  lookDir() {
+    const cp = Math.cos(this.pitch);
+    return { x: -Math.sin(this.yaw) * cp, y: Math.sin(this.pitch), z: -Math.cos(this.yaw) * cp };
+  }
+
+  // On the host, whatever happens to this player is sent to their browser
+  hurt(dmg, fromX, fromZ, kind) {
+    if (this.dead || this.mode !== 'survival') return;
+    G.net.sendTo(this.id, { k: 'hurt', d: dmg, x: fromX, z: fromZ, c: kind });
+    this.hurtTime = 0.35;
+  }
+  addEffect(n, t) { G.net.sendTo(this.id, { k: 'fx', n, t }); }
+  giveDrop(id, n, x, y, z) { G.net.sendTo(this.id, { k: 'drops', l: [[id, n, r2(x), r2(y), r2(z), 0]] }); }
+
+  // [x, y, z, yaw, pitch, held, flags, swings, hp, creative]
+  applyState(s) {
+    const first = !this.state;
+    this.state = s;
+    this.yaw = s[3]; this.pitch = s[4];
+    this.held = s[5];
+    const f = s[6];
+    const dead = !!(f & 1);
+    if (dead && !this.dead) this.deathTime = 0;
+    this.dead = dead;
+    this.sneaking = !!(f & 2);
+    this.sleeping = !!(f & 4);
+    this.burning = !!(f & 16);
+    if (s[7] !== this.swings) { if (!first) this.swingT = 0; this.swings = s[7]; }
+    if (s[8] < this.hp) this.hurtTime = 0.35;
+    this.hp = s[8];
+    this.mode = s[9] ? 'creative' : 'survival';
+    if (first || Math.hypot(s[0] - this.pos.x, s[1] - this.pos.y, s[2] - this.pos.z) > 8) { this.pos.x = s[0]; this.pos.y = s[1]; this.pos.z = s[2]; }
+    this.ready = true;
+  }
+
+  update(dt) {
+    const m = this.model, root = m.root, P = m.parts, s = this.state;
+    if (!s) return;
+    const ox = this.pos.x, oz = this.pos.z;
+    const k = Math.min(1, dt * 14);
+    this.pos.x += (s[0] - this.pos.x) * k;
+    this.pos.y += (s[1] - this.pos.y) * k;
+    this.pos.z += (s[2] - this.pos.z) * k;
+    const hs = dt > 0 ? Math.min(8, Math.hypot(this.pos.x - ox, this.pos.z - oz) / dt) : 0;
+    this.hurtTime -= dt;
+    if (this.dead) this.deathTime += dt;
+    const show = !this.dead || this.deathTime < 1.2;
+    root.visible = show;
+    this.tag.visible = show && !this.sneaking && !this.dead;
+
+    this.phase += hs * dt * 4;
+    const sw = Math.sin(this.phase) * Math.min(1, hs / 2) * 0.9;
+    root.position.set(this.pos.x, this.pos.y + (this.sleeping ? 0.3 : 0), this.pos.z);
+    let d = this.yaw + Math.PI - root.rotation.y;
+    d = Math.atan2(Math.sin(d), Math.cos(d));
+    root.rotation.y += d * Math.min(1, dt * 12);
+    root.rotation.x = this.sleeping ? -Math.PI / 2 : 0;
+    root.rotation.z = this.dead ? Math.min(1, this.deathTime * 3) * Math.PI / 2 : 0;
+    P.leg0.rotation.x = sw; P.leg1.rotation.x = -sw;
+    P.arm0.rotation.x = -sw * 0.8;
+    if (this.swingT < 1) {
+      this.swingT = Math.min(1, this.swingT + dt / 0.3);
+      P.arm1.rotation.x = -Math.sin(this.swingT * Math.PI) * 1.7 - 0.3;
+    } else P.arm1.rotation.x = sw * 0.8 - (this.held ? 0.3 : 0);
+    P.body.rotation.x = this.sneaking ? 0.45 : 0;
+    m.inner.position.y = this.sneaking ? -0.15 : 0;
+    P.head.rotation.x = Math.max(-1.4, Math.min(1.4, -this.pitch));
+    if (this.held !== this.heldShown) this.showHeld();
+    if (this.burning && Math.random() < dt * 12) {
+      G.entities.particles.spawn(this.pos.x + (Math.random() - 0.5) * 0.6, this.pos.y + Math.random() * 1.8, this.pos.z + (Math.random() - 0.5) * 0.6, 0, 1, 0, 1, 0.6, 0.1, 0.1, 0.4, -0.05);
+    }
+    tintModel(root, lightAt(this.pos.x, this.pos.y + 1.2, this.pos.z), this.hurtTime > 0 ? 0.6 : 0);
+    this.tag.position.set(this.pos.x, this.pos.y + (this.sleeping ? 0.9 : 2.15), this.pos.z);
+  }
+
+  showHeld() {
+    this.heldShown = this.held;
+    if (this.heldMesh) { this.heldMesh.parent.remove(this.heldMesh); this.heldMesh = null; }
+    if (!this.held) return;
+    let it;
+    try { it = itemModel(this.held); } catch { return; }
+    it.scale.setScalar(it.userData.cube ? 6 : 10);
+    it.position.set(0, -10, 2);
+    it.rotation.set(0, Math.PI / 2, Math.PI / 4);
+    this.model.parts.arm1.add(it);
+    this.heldMesh = it;
+  }
+
+  dispose() {
+    this.gone = true;
+    R.scene.remove(this.model.root);
+    R.scene.remove(this.tag);
+    this.model.mat.dispose();
+    this.tag.material.map.dispose();
+    this.tag.material.dispose();
+  }
+}
+
+// ---------------------------------------------------------------- session
+export class Net {
+  constructor(role, name) {
+    this.role = role;
+    this.name = name;
+    this.id = role === 'host' ? 0 : -1;
+    this.code = null;
+    this.ws = null;
+    this.players = new Map();     // id -> Avatar (everyone but this browser's player)
+    this.out = [];                // block changes waiting to be sent
+    this.stateT = 0; this.mobT = 0; this.timeT = 0; this.contT = 0; this.saveT = 0;
+    this.lastSwing = 0; this.swings = 0;
+    this.mobSeq = 0;
+    this.mobIndex = new Map();
+    this.proxies = new Map();     // guest: host mob id -> Mob copy
+    this.watch = new Map();       // host: container key -> Set of guest ids looking at it
+    this.openKey = null;          // guest: container this player has open
+    this.tradeSig = '';
+    this.itemSeq = 0;
+    this.applying = false;
+    this.breaking = false;
+    this.closed = false;
+    this.hostName = role === 'host' ? name : '';
+  }
+
+  // ------------------------------------------------------------ connecting
+  static start(role, name, code, onStatus = () => {}) {
+    const url = serverURL();
+    if (!url) return Promise.reject(new Error('Multiplayer needs the Blockcraft website.'));
+    const net = new Net(role, name);
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const fail = (msg) => { if (!settled) { settled = true; reject(new Error(msg)); } net.shutdown(); };
+      let ws;
+      try { ws = new WebSocket(url); } catch { fail('Could not reach the multiplayer server.'); return; }
+      net.ws = ws;
+      const timer = setTimeout(() => fail('The multiplayer server did not answer. Check your connection and try again.'), 20000);
+      ws.onopen = () => {
+        onStatus(role === 'host' ? 'Opening your world…' : 'Joining…');
+        ws.send(JSON.stringify(role === 'host' ? { t: 'host', name } : { t: 'join', code, name }));
+      };
+      ws.onerror = () => {};
+      ws.onclose = () => {
+        clearTimeout(timer);
+        if (!settled) fail('Could not reach the multiplayer server. It only runs on the Blockcraft website.');
+        else net.lost();
+      };
+      ws.onmessage = (ev) => {
+        let m;
+        try { m = JSON.parse(ev.data); } catch { return; }
+        if (m.t === 'error') { clearTimeout(timer); fail(m.msg); return; }
+        if (m.t === 'hosted') { clearTimeout(timer); net.code = m.code; settled = true; resolve(net); return; }
+        if (m.t === 'joined') {
+          net.id = m.id; net.code = m.code;
+          onStatus('Downloading the world…');
+          net.send({ k: 'hello', name });
+          net.onWorld = (snap) => { clearTimeout(timer); settled = true; resolve({ net, snap }); };
+          return;
+        }
+        net.onRaw(m);
+      };
+    });
+  }
+
+  raw(m) { if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(m)); }
+  // Guests talk to the host; the host talks to everyone
+  send(d) { this.raw({ t: 'to', to: this.role === 'client' ? 0 : '*', d }); }
+  sendTo(id, d) { this.raw({ t: 'to', to: id, d }); }
+  sendExcept(id, d) {
+    const ids = [...this.players.keys()].filter((x) => x !== id);
+    if (ids.length) this.raw({ t: 'to', to: ids, d });
+  }
+  sendNear(x, z, range, d, except = null) {
+    const ids = [];
+    for (const a of this.players.values()) if (a.id !== except && a.ready && Math.hypot(a.pos.x - x, a.pos.z - z) < range) ids.push(a.id);
+    if (ids.length) this.raw({ t: 'to', to: ids, d });
+  }
+
+  shutdown() {
+    this.closed = true;
+    if (this.ws) { this.ws.onclose = null; try { this.ws.close(); } catch { /* already closed */ } }
+    for (const a of this.players.values()) a.dispose();
+    this.players.clear();
+  }
+
+  // Leaving on purpose (quit to title)
+  close() {
+    if (this.role === 'client') this.saveGuest();
+    this.shutdown();
+    if (G.net === this) G.net = null;
+  }
+
+  // The connection dropped by itself
+  lost() {
+    if (this.closed) return;
+    this.shutdown();
+    if (G.net === this) G.net = null;
+    if (this.role === 'client') G.game.leaveRemote('Lost connection to the game.');
+    else G.ui.toast('Lost connection to the multiplayer server. Your friends were disconnected.');
+  }
+
+  onRaw(m) {
+    if (m.t === 'msg') { this.onMsg(m.from, m.d); return; }
+    if (m.t === 'peer') return;   // they say hello once their page is ready
+    if (m.t === 'left') { this.removePlayer(m.id); return; }
+    if (m.t === 'closed') { this.shutdown(); if (G.net === this) G.net = null; G.game.leaveRemote('The host closed the game.'); }
+  }
+
+  // ------------------------------------------------------------ players
+  // Who mobs can see: on the host that is everyone, on a guest only this player
+  targets() {
+    const out = [G.player];
+    if (this.role === 'host') for (const a of this.players.values()) if (a.ready && !a.gone) out.push(a);
+    return out;
+  }
+
+  addPlayer(id, name, slot) {
+    let a = this.players.get(id);
+    if (a && a.name === name) return a;
+    if (a) a.dispose();
+    a = new Avatar(id, name, slot);
+    this.players.set(id, a);
+    return a;
+  }
+
+  removePlayer(id) {
+    const a = this.players.get(id);
+    if (!a) return;
+    a.dispose();
+    this.players.delete(id);
+    for (const s of this.watch.values()) s.delete(id);
+    if (this.role === 'host') {
+      this.chat(null, `${a.name} left the game`);
+      this.send({ k: 'chat', t: `${a.name} left the game`, sys: 1 });
+      this.sendRoster();
+    }
+  }
+
+  sendRoster() {
+    const l = [[0, this.name, 0]];
+    for (const a of this.players.values()) l.push([a.id, a.name, a.slot]);
+    this.send({ k: 'roster', l });
+  }
+
+  allAsleep() {
+    if (this.role !== 'host') return false;
+    for (const a of this.players.values()) if (a.ready && !a.sleeping && !a.dead) return false;
+    return true;
+  }
+
+  localState() {
+    const p = G.player;
+    const held = p.inv.held;
+    const flags = (p.dead ? 1 : 0) | (p.sneaking && !p.flying ? 2 : 0) | (G.sleeping ? 4 : 0) | (p.flying ? 8 : 0) | (p.burning > 0 ? 16 : 0);
+    return [r2(p.pos.x), r2(p.pos.y), r2(p.pos.z), r2(p.yaw), r2(p.pitch), held ? held.id : 0, flags, this.swings, Math.ceil(p.health), p.creative ? 1 : 0];
+  }
+
+  chat(from, text) { G.ui.chatLine(from ? `<${from}> ${text}` : text, !from); }
+
+  say(text) {
+    text = String(text).trim().slice(0, 120);
+    if (!text) return;
+    this.chat(this.name, text);
+    if (this.role === 'host') this.send({ k: 'chat', n: this.name, t: text });
+    else this.send({ k: 'chat', t: text });
+  }
+
+  announce(text) {
+    this.chat(null, text);
+    this.send({ k: 'chat', t: text, sys: 1 });
+  }
+
+  saveGuest() {
+    if (this.role !== 'client' || !G.player || !G.world) return;
+    this.send({ k: 'save', d: G.game.playerData(G.player) });
+  }
+
+  // ------------------------------------------------------------ hooks called by the game
+  blockChanged(x, y, z, id) {
+    if (this.applying) return;
+    this.out.push([x, y, z, id, G.world.getMeta(x, y, z), this.breaking ? 1 : 0]);
+  }
+
+  explosion(x, y, z, power) {
+    const d = { k: 'boom', x: r2(x), y: r2(y), z: r2(z), pw: power };
+    if (this.role === 'client') this.send(d);
+    else this.sendNear(x, z, FX_RANGE, d);
+  }
+
+  projectile(kind, a) {
+    if (this.role !== 'host') return;
+    this.sendNear(a[0], a[2], FX_RANGE, { k: kind, a: a.map((v) => (typeof v === 'number' ? r2(v) : v)) });
+  }
+
+  itemTossed(it) {
+    it.netId = `${this.id}.${++this.itemSeq}`;
+    this.send({ k: 'toss', n: it.netId, a: [it.id, it.count, it.dmg || 0, r2(it.pos.x), r2(it.pos.y), r2(it.pos.z), r2(it.vel.x), r2(it.vel.y), r2(it.vel.z)] });
+  }
+
+  itemTaken(n, left) { this.send({ k: 'take', n, c: left }); }
+
+  // A guest opening a chest or furnace gets the host's copy
+  openContainer(x, y, z, type) {
+    const w = G.world;
+    const key = `${x},${y},${z}`;
+    let c = w.containers.get(key);
+    if (!c) {
+      c = type === 'chest' ? { type, slots: new Array(27).fill(null) } : { type, slots: [null, null, null], burn: 0, burnMax: 0, cook: 0 };
+      c.x = x; c.y = y; c.z = z;
+      w.containers.set(key, c);
+    }
+    c.pending = true;
+    c.sig = containerSig(c);
+    this.openKey = key;
+    this.send({ k: 'co', x, y, z, t: type });
+    return c;
+  }
+
+  // ------------------------------------------------------------ incoming
+  applyBlocks(l, from) {
+    const w = G.world;
+    if (!w) return;
+    const p = G.player;
+    this.applying = true;
+    try {
+      for (const [x, y, z, id, meta, brk] of l) {
+        const key = `${x},${y},${z}`;
+        const old = w.getBlock(x, y, z);
+        w.setBlockAnywhere(x, y, z, id, meta);
+        if (brk && old && p && Math.abs(x - p.pos.x) < 40 && Math.abs(z - p.pos.z) < 40) {
+          spawnBlockParticles(x, y, z, old);
+          blockSound(BLOCKS[old].sound, 'break', { x: x + 0.5, y: y + 0.5, z: z + 0.5 });
+        }
+        if (id === B.fire) w.fires.set(key, { t: 0, age: 0 });
+        if (this.role !== 'host') continue;
+        // what Game.placeBlock and Game.ignite would have set up
+        G.game.trackBlock(x, y, z, id);
+        const c = w.containers.get(key);
+        if (c && !CONTAINER_BLOCKS.has(id)) {
+          // a guest broke a chest or furnace: its contents drop in their world
+          const drops = c.slots.filter(Boolean).map((s) => [s.id, s.count, x + 0.5, y + 0.5, z + 0.5, s.dmg || 0]);
+          if (drops.length && from != null) this.sendTo(from, { k: 'drops', l: drops });
+          w.containers.delete(key);
+          if (G.ui.container && G.ui.container.data === c) G.ui.back();
+        }
+      }
+    } finally { this.applying = false; }
+  }
+
+  onMsg(from, d) {
+    if (!d || typeof d !== 'object') return;
+    if (this.role === 'host') this.onHostMsg(from, d);
+    else this.onGuestMsg(d);
+  }
+
+  onHostMsg(from, d) {
+    const a = this.players.get(from);
+    const w = G.world;
+    switch (d.k) {
+      case 'hello': {
+        if (!w || G.state === 'title') return;
+        const used = new Set([...this.players.values()].map((x) => x.slot));
+        let slot = 1;
+        while (used.has(slot)) slot++;
+        const name = String(d.name || 'Player').slice(0, 16);
+        this.addPlayer(from, name, slot);
+        this.sendTo(from, G.game.worldSnapshot(name));
+        this.sendRoster();
+        this.announce(`${name} joined the game`);
+        break;
+      }
+      case 'p': if (a) a.applyState(d.s); break;
+      case 'bs':
+        if (!Array.isArray(d.l)) return;
+        this.applyBlocks(d.l, from);
+        this.sendExcept(from, { k: 'bs', l: d.l });
+        break;
+      case 'hit': {
+        const m = this.mobIndex.get(d.id);
+        if (!m || m.dead || m.removed) return;
+        m.lootTo = a; m.lootToT = G.clock;
+        if (m.invul < 0.15) m.invul = 0;   // the guest already waited out the cooldown; allow for network jitter
+        m.hurt(+d.d || 0, d.x, d.z, d.p ? 'remote' : false, d.kb ?? 1, a || null);
+        break;
+      }
+      case 'stare': {
+        const m = this.mobIndex.get(d.id);
+        if (!m || m.dead || m.angry) return;
+        m.angry = true; m.angryTime = 0; m.retarget = 0; m.attacker = a;
+        sfx('shade', m.pos, { vol: 1.2 });
+        break;
+      }
+      case 'co': {
+        const c = G.game.container(d.x | 0, d.y | 0, d.z | 0, d.t === 'furnace' ? 'furnace' : 'chest');
+        const key = `${d.x | 0},${d.y | 0},${d.z | 0}`;
+        for (const s of this.watch.values()) s.delete(from);
+        if (!this.watch.has(key)) this.watch.set(key, new Set());
+        this.watch.get(key).add(from);
+        c.netSig = containerSig(c);
+        this.sendTo(from, { k: 'c', key, ...this.containerMsg(c) });
+        break;
+      }
+      case 'cc': for (const s of this.watch.values()) s.delete(from); break;
+      case 'c': {
+        const c = w && w.containers.get(d.key);
+        if (!c || !Array.isArray(d.s)) return;
+        unpackSlots(d.s, c.slots.length).forEach((s, i) => { c.slots[i] = s; });
+        c.netSig = containerSig(c);
+        const watchers = [...(this.watch.get(d.key) || [])].filter((id) => id !== from);
+        if (watchers.length) this.raw({ t: 'to', to: watchers, d: { k: 'c', key: d.key, ...this.containerMsg(c) } });
+        if (G.ui.container && G.ui.container.data === c) G.ui.refreshContainer();
+        break;
+      }
+      case 'tu': {
+        const m = this.mobIndex.get(d.id);
+        if (m && m.trades && Array.isArray(d.u)) d.u.forEach((u, i) => { if (m.trades[i]) m.trades[i].uses = Math.max(m.trades[i].uses, u | 0); });
+        break;
+      }
+      case 'toss': this.spawnTossed(d); this.sendExcept(from, d); break;
+      case 'take': this.takeItem(d); this.sendExcept(from, d); break;
+      case 'chat': {
+        if (!a) return;
+        const t = String(d.t || '').slice(0, 120);
+        if (d.sys) { this.chat(null, t); this.sendExcept(from, { k: 'chat', t, sys: 1 }); }
+        else { this.chat(a.name, t); this.sendExcept(from, { k: 'chat', n: a.name, t }); }
+        break;
+      }
+      case 'boom':
+        explosionFx(d.x, d.y, d.z, d.pw);
+        explosionDamage(d.x, d.y, d.z, d.pw, a, false);
+        this.sendNear(d.x, d.z, FX_RANGE, d, from);
+        break;
+      case 'save': if (a && d.d && w) { w.guests[a.name] = d.d; } break;
+      default: break;
+    }
+  }
+
+  onGuestMsg(d) {
+    const w = G.world, p = G.player;
+    switch (d.k) {
+      case 'world': this.hostName = d.host || 'the host'; if (this.onWorld) { const f = this.onWorld; this.onWorld = null; f(d); } break;
+      case 'roster': {
+        const keep = new Set();
+        for (const [id, name, slot] of d.l) {
+          if (id === this.id) continue;
+          keep.add(id);
+          this.addPlayer(id, name, slot);
+        }
+        for (const id of [...this.players.keys()]) if (!keep.has(id)) { this.players.get(id).dispose(); this.players.delete(id); }
+        break;
+      }
+      case 'ps': for (const s of d.l) { const a = this.players.get(s[0]); if (a) a.applyState(s.slice(1)); } break;
+      case 'bs': if (w) this.applyBlocks(d.l, 0); break;
+      case 'm': {
+        if (!w) return;
+        for (const a of d.l) {
+          const m = this.proxies.get(a[0]);
+          if (m && !m.removed) m.applyNet(a);
+          else if (a[9]) this.proxies.set(a[0], G.entities.spawnProxy(a));
+        }
+        for (const id of d.g) {
+          const m = this.proxies.get(id);
+          if (m && !m.dead) m.removed = true;
+          this.proxies.delete(id);
+        }
+        break;
+      }
+      case 'hurt': if (p && !p.dead) p.hurt(+d.d || 0, d.x ?? null, d.z ?? null, d.c); break;
+      case 'fx': if (p && !p.dead) p.addEffect(d.n, +d.t || 0); break;
+      case 'drops': for (const [id, n, x, y, z, dmg] of d.l) G.entities.dropItem(id, n, x, y, z, undefined, undefined, undefined, dmg); break;
+      case 't':
+        G.time = d.t; G.day = d.d; G.nightsNoSleep = d.n;
+        break;
+      case 'wake':
+        if (G.sleeping) { G.game.wakeUp(); G.ui.toast('Good morning'); }
+        break;
+      case 'c': {
+        const c = w && w.containers.get(d.key);
+        if (!c) return;
+        unpackSlots(d.s, c.slots.length).forEach((s, i) => { c.slots[i] = s; });
+        c.burn = d.b || 0; c.burnMax = d.bm || 0; c.cook = d.ck || 0;
+        c.pending = false;
+        c.sig = containerSig(c);
+        if (G.ui.container && G.ui.container.data === c) G.ui.refreshContainer();
+        break;
+      }
+      case 'cx': {
+        const c = w && w.containers.get(d.key);
+        if (c && G.ui.container && G.ui.container.data === c) G.ui.back();
+        if (w) w.containers.delete(d.key);
+        break;
+      }
+      case 'toss': this.spawnTossed(d); break;
+      case 'take': this.takeItem(d); break;
+      case 'chat': this.chat(d.sys ? null : d.n, String(d.t || '')); break;
+      case 'boom': explosionFx(d.x, d.y, d.z, d.pw); break;
+      case 'ar': { const a = d.a; G.entities.spawnArrow(a[0], a[1], a[2], a[3], a[4], a[5], 'fx', { effect: a[6] ? 'slow' : null }); break; }
+      case 'th': { const a = d.a; G.entities.spawnPotion(a[0], a[1], a[2], a[3], a[4], a[5], a[6], true); break; }
+      default: break;
+    }
+  }
+
+  containerMsg(c) {
+    return { s: packSlots(c.slots), b: Math.round((c.burn || 0) * 10) / 10, bm: c.burnMax || 0, ck: Math.round((c.cook || 0) * 10) / 10 };
+  }
+
+  spawnTossed(d) {
+    const a = d.a;
+    if (!Array.isArray(a) || !G.world) return;
+    const it = G.entities.dropItem(a[0], a[1], a[3], a[4], a[5], a[6], a[7], a[8], a[2]);
+    if (it) it.netId = d.n;
+  }
+
+  takeItem(d) {
+    const it = G.entities.items.find((x) => x.netId === d.n);
+    if (!it) return;
+    if (d.c > 0) it.count = d.c; else it.removed = true;
+  }
+
+  // ------------------------------------------------------------ every frame
+  update(dt) {
+    if (this.closed || !G.world || !G.player) return;
+    for (const a of this.players.values()) a.update(dt);
+    // count this player's arm swings so others see them
+    if (R.swing > this.lastSwing + 0.2) this.swings = (this.swings + 1) % 1000;
+    this.lastSwing = R.swing;
+
+    this.stateT -= dt;
+    if (this.stateT <= 0) {
+      this.stateT = 1 / 15;
+      const me = this.localState();
+      if (this.role === 'client') this.send({ k: 'p', s: me });
+      else if (this.players.size) {
+        const l = [[0, ...me]];
+        for (const a of this.players.values()) if (a.state) l.push([a.id, ...a.state]);
+        this.send({ k: 'ps', l });
+      }
+    }
+    if (this.out.length) {
+      this.send({ k: 'bs', l: this.out });
+      this.out = [];
+    }
+    if (this.role === 'host') this.hostTick(dt);
+    else this.guestTick(dt);
+  }
+
+  hostTick(dt) {
+    this.mobT -= dt;
+    if (this.mobT <= 0) { this.mobT = 0.1; this.syncMobs(); }
+    this.timeT -= dt;
+    if (this.timeT <= 0 && this.players.size) {
+      this.timeT = 1;
+      this.send({ k: 't', t: G.time, d: G.day || 0, n: G.nightsNoSleep || 0 });
+    }
+    this.contT -= dt;
+    if (this.contT <= 0) {
+      this.contT = 0.2;
+      const w = G.world;
+      for (const [key, ids] of this.watch) {
+        if (!ids.size) { this.watch.delete(key); continue; }
+        const c = w.containers.get(key);
+        if (!c) { this.raw({ t: 'to', to: [...ids], d: { k: 'cx', key } }); this.watch.delete(key); continue; }
+        const sig = containerSig(c);
+        if (sig !== c.netSig) { c.netSig = sig; this.raw({ t: 'to', to: [...ids], d: { k: 'c', key, ...this.containerMsg(c) } }); }
+      }
+    }
+  }
+
+  syncMobs() {
+    const mobs = G.entities.mobs;
+    this.mobIndex.clear();
+    for (const m of mobs) {
+      if (!m.netId) m.netId = ++this.mobSeq;
+      this.mobIndex.set(m.netId, m);
+    }
+    for (const a of this.players.values()) {
+      if (!a.ready) continue;
+      const known = a.known || (a.known = new Set());
+      const l = [], seen = new Set();
+      for (const m of mobs) {
+        if (m.removed) continue;
+        const d = Math.hypot(m.pos.x - a.pos.x, m.pos.z - a.pos.z);
+        if (d > (known.has(m.netId) ? MOB_RANGE + 8 : MOB_RANGE)) continue;
+        seen.add(m.netId);
+        const st = m.netState();
+        if (!known.has(m.netId)) { st.push(m.netSpawn()); known.add(m.netId); }
+        l.push(st);
+      }
+      const g = [];
+      for (const id of known) if (!seen.has(id)) { g.push(id); known.delete(id); }
+      if (l.length || g.length) this.sendTo(a.id, { k: 'm', l, g });
+    }
+  }
+
+  guestTick(dt) {
+    this.contT -= dt;
+    if (this.contT <= 0) {
+      this.contT = 0.15;
+      const ui = G.ui.container;
+      const c = ui && (ui.kind === 'chest' || ui.kind === 'furnace') ? ui.data : null;
+      const key = c ? `${c.x},${c.y},${c.z}` : null;
+      if (key !== this.openKey) {
+        if (this.openKey) this.send({ k: 'cc' });
+        this.openKey = key;
+      }
+      if (c && !c.pending) {
+        const sig = containerSig(c);
+        if (sig !== c.sig) { c.sig = sig; this.send({ k: 'c', key, s: packSlots(c.slots) }); }
+      }
+      // trades made with the host's villagers
+      const v = ui && ui.kind === 'trade' && ui.data.proxy ? ui.data : null;
+      const tsig = v ? v.netId + ':' + v.trades.map((t) => t.uses).join(',') : '';
+      if (v && this.tradeSig && tsig !== this.tradeSig && this.tradeSig.startsWith(v.netId + ':')) this.send({ k: 'tu', id: v.netId, u: v.trades.map((t) => t.uses) });
+      this.tradeSig = tsig;
+    }
+    this.saveT -= dt;
+    if (this.saveT <= 0) { this.saveT = 15; this.saveGuest(); }
+  }
+}

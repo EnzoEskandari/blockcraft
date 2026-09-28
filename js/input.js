@@ -77,6 +77,7 @@ export function initInput() {
         lastW = now;
       }
       if (code === 'KeyE') { G.ui.openScreen(G.player.creative ? 'creative' : 'inventory'); return; }
+      if ((code === 'KeyT' || code === 'Enter') && G.net) { e.preventDefault(); G.ui.openScreen('chat'); return; }
       if (code === 'KeyQ') { input.drop = true; input.dropAll = e.ctrlKey || e.metaKey; }
       if (code === 'KeyF') input.toggleFly = true;
       if (code === 'F3') { G.settings.showCoords = !G.settings.showCoords; }

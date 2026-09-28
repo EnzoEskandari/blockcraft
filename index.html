@@ -126,6 +126,25 @@
     opacity: 0; transition: opacity 0.4s;
   }
   #toast.show { opacity: 1; transition: none; }
+  #chat-log {
+    position: absolute; left: calc(10px + env(safe-area-inset-left, 0px)); bottom: calc(var(--slot-size) * 1.9 + 70px + env(safe-area-inset-bottom, 0px));
+    width: min(460px, calc(100vw - 20px)); display: flex; flex-direction: column; gap: 2px; pointer-events: none;
+  }
+  #chat-log p {
+    margin: 0; padding: 1px 6px; font-size: 21px; line-height: 1.1; background: rgba(0, 0, 0, 0.42);
+    text-shadow: 2px 2px 0 var(--shadow); overflow-wrap: anywhere; transition: opacity 1s;
+  }
+  #chat-log p.sys { color: var(--accent); }
+  #chat-log p.old { opacity: 0; }
+  #chat-log.open p.old { opacity: 1; }
+  #chat-form { position: fixed; left: calc(10px + env(safe-area-inset-left, 0px)); right: 10px; bottom: calc(var(--slot-size) * 1.9 + 34px + env(safe-area-inset-bottom, 0px)); z-index: 11; margin: 0; }
+  #chat-input {
+    width: 100%; box-sizing: border-box; font: 22px var(--ui-font); color: #fff; padding: 6px 8px;
+    background: rgba(0, 0, 0, 0.7); border: 2px solid rgba(255, 255, 255, 0.6); outline: none;
+  }
+  .mp-box { display: flex; flex-direction: column; gap: 8px; width: min(400px, 100%); margin-top: 6px; }
+  .mp-code { font: 400 clamp(22px, 6vw, 34px) var(--title-font); letter-spacing: 0.12em; color: var(--accent); text-align: center; text-shadow: 3px 3px 0 var(--shadow); margin: 2px 0; user-select: all; -webkit-user-select: all; }
+  .mp-players { font-size: 20px; color: var(--text-dim); text-align: center; margin: 0; }
   #click-to-play {
     position: fixed; left: 50%; top: 60%; transform: translateX(-50%); z-index: 5; pointer-events: none;
     font-size: 26px; padding: 6px 16px; background: rgba(0, 0, 0, 0.55); text-shadow: 2px 2px 0 var(--shadow);
@@ -153,6 +172,7 @@
   #t-sprint { right: calc(118px + env(safe-area-inset-right, 0px)); bottom: calc(var(--slot-size) + 128px + env(safe-area-inset-bottom, 0px)); font-size: 24px; }
   #t-pause { right: calc(12px + env(safe-area-inset-right, 0px)); top: calc(12px + env(safe-area-inset-top, 0px)); width: 50px; height: 50px; font-size: 22px; }
   #t-drop { right: calc(72px + env(safe-area-inset-right, 0px)); top: calc(12px + env(safe-area-inset-top, 0px)); width: 50px; height: 50px; font-size: 20px; }
+  #t-chat { right: calc(132px + env(safe-area-inset-right, 0px)); top: calc(12px + env(safe-area-inset-top, 0px)); width: 50px; height: 50px; font-size: 20px; }
   #t-inv { display: none; width: var(--slot-size); height: var(--slot-size); position: relative; font-size: 26px; }
   body.touch #t-inv { display: grid; }
 
@@ -346,6 +366,7 @@
   <button class="tbtn" id="t-sprint" type="button" aria-label="Sprint">»</button>
   <button class="tbtn" id="t-pause" type="button" aria-label="Pause">II</button>
   <button class="tbtn" id="t-drop" type="button" aria-label="Drop item">Q</button>
+  <button class="tbtn" id="t-chat" type="button" aria-label="Chat" hidden>T</button>
 </div>
 
 <div id="hud" hidden>
@@ -355,6 +376,7 @@
   <div id="attack-ind" hidden><i id="attack-fill"></i></div>
   <div id="debug" hidden></div>
   <div id="toast"></div>
+  <div id="chat-log"></div>
   <div id="effects" hidden></div>
   <div id="sleep" hidden></div>
   <div id="burning" hidden></div>
@@ -371,6 +393,7 @@
   </div>
 </div>
 <div id="click-to-play" hidden>Click to play</div>
+<form id="chat-form" hidden autocomplete="off"><input id="chat-input" type="text" maxlength="120" enterkeyhint="send" aria-label="Chat message" placeholder="Say something to everyone"></form>
 
 <section class="screen menu-bg" id="s-title" hidden>
   <div class="logo-wrap">
@@ -379,6 +402,7 @@
   </div>
   <div class="col">
     <button class="btn" id="b-single" type="button">Singleplayer</button>
+    <button class="btn" id="b-multi" type="button">Multiplayer</button>
     <div class="row2">
       <button class="btn" id="b-options" type="button">Options…</button>
       <button class="btn" id="b-help" type="button">Controls</button>
@@ -406,6 +430,17 @@
       <button class="btn" id="b-delete-world" type="button">Delete</button>
       <button class="btn" id="b-worlds-back" type="button">Back</button>
     </div>
+  </div>
+</section>
+
+<section class="screen menu-bg" id="s-mp" hidden>
+  <h2>Multiplayer</h2>
+  <div class="col">
+    <label class="field" for="mp-name">Your name<input id="mp-name" type="text" maxlength="16" autocomplete="nickname" spellcheck="false"></label>
+    <label class="field" for="mp-code">Game code<input id="mp-code" type="text" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="4 letters from the host"></label>
+    <button class="btn" id="b-join" type="button">Join Game</button>
+    <p class="note" id="mp-status">To host, open one of your worlds, pause, and choose Open to Friends. Then share the code.</p>
+    <button class="btn" id="b-mp-back" type="button">Back</button>
   </div>
 </section>
 
@@ -480,6 +515,15 @@
     <button class="btn" id="b-resume" type="button">Back to Game</button>
     <button class="btn" id="b-pause-options" type="button">Options…</button>
     <button class="btn" id="b-quit" type="button">Save and Quit to Title</button>
+  </div>
+  <div class="mp-box" id="mp-box">
+    <label class="field" for="host-name" id="host-name-field">Your name<input id="host-name" type="text" maxlength="16" autocomplete="nickname" spellcheck="false"></label>
+    <button class="btn" id="b-invite" type="button">Open to Friends</button>
+    <div id="mp-info" hidden>
+      <p class="note" id="mp-info-head">Friends choose Multiplayer and enter this code:</p>
+      <div class="mp-code" id="mp-code-show"></div>
+      <p class="mp-players" id="mp-players"></p>
+    </div>
   </div>
 </section>
 

@@ -115,6 +115,17 @@ export class World {
     return true;
   }
 
+  // A change from another player: applied now if the chunk is loaded, otherwise kept for when it generates
+  setBlockAnywhere(x, y, z, id, meta = 0) {
+    if (y < 0 || y >= CH - 1) return false;
+    if (this.chunks.get(ckey(x >> 4, z >> 4))) return this.setBlock(x, y, z, id, meta);
+    const k = ckey(x >> 4, z >> 4);
+    let e = this.edits.get(k);
+    if (!e) { e = new Map(); this.edits.set(k, e); }
+    e.set((y << 8) | ((z & 15) << 4) | (x & 15), id | (meta << 8));
+    return false;
+  }
+
   // ------------------------------------------------------------ terrain shape
   column(x, z) {
     const c = fbm2(this.nCont, x * 0.0028, z * 0.0028, 4);

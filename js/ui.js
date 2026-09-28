@@ -107,6 +107,20 @@ export class UI {
     $('splash').textContent = SPLASHES[(Math.random() * SPLASHES.length) | 0];
     const on = (id, fn) => $(id).addEventListener('click', (e) => { e.preventDefault(); initAudio(); sfx('click'); fn(); });
     on('b-single', () => this.openScreen('worlds'));
+    on('b-multi', () => this.openScreen('mp'));
+    on('b-mp-back', () => this.back());
+    on('b-join', () => this.join());
+    on('b-invite', () => this.invite());
+    $('mp-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); this.join(); } });
+    $('chat-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const inp = $('chat-input');
+      if (G.net) G.net.say(inp.value);
+      inp.value = '';
+      this.back();
+    });
+    $('chat-input').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); this.back(); } });
+    $('t-chat').addEventListener('click', (e) => { e.preventDefault(); if (G.net && !G.screen) this.openScreen('chat'); });
     on('b-options', () => this.openScreen('options'));
     on('b-help', () => this.openScreen('help'));
     on('b-help-back', () => this.back());
@@ -152,6 +166,11 @@ export class UI {
     const map = { inventory: 'container', crafting: 'container', furnace: 'container', chest: 'container', creative: 'container', trade: 'container' };
     const id = 's-' + (map[name] || name);
     for (const s of document.querySelectorAll('.screen')) s.hidden = s.id !== id;
+    const chat = name === 'chat';
+    $('chat-form').hidden = !chat;
+    $('chat-log').classList.toggle('open', chat);
+    if (chat) $('chat-input').focus();   // right away, so iPad keyboards open from the tap
+    else if (document.activeElement === $('chat-input')) $('chat-input').blur();
   }
 
   isInventoryScreen() { return CONTAINERS.includes(G.screen); }
@@ -166,6 +185,12 @@ export class UI {
     if (CONTAINERS.includes(name)) this.buildContainer(name, data);
     if (name === 'worlds') this.buildWorldList();
     if (name === 'options') this.syncOptions();
+    if (name === 'pause') this.syncPause();
+    if (name === 'mp') {
+      $('mp-name').value = G.settings.name || '';
+      $('b-join').disabled = false;
+      this.mpStatus('To host, open one of your worlds, pause, and choose Open to Friends. Then share the code.');
+    }
     if (name === 'create') {
       $('world-name').value = 'New World';
       $('world-seed').value = '';
@@ -250,7 +275,74 @@ export class UI {
   updateTouchVisibility() {
     const show = G.touchMode && G.state === 'playing' && !G.screen;
     $('touch-ui').hidden = !show;
+    $('t-chat').hidden = !G.net;
     document.body.classList.toggle('touch', G.touchMode);
+  }
+
+  // ---------------------------------------------------------------- multiplayer
+  mpStatus(text) { $('mp-status').textContent = text; }
+
+  async join() {
+    const name = $('mp-name').value.trim().slice(0, 16);
+    const code = $('mp-code').value.trim().toUpperCase();
+    if (!name) { this.mpStatus('Type your name first.'); $('mp-name').focus(); return; }
+    if (!/^[A-Z0-9]{4}$/.test(code)) { this.mpStatus('The game code is 4 letters or numbers.'); $('mp-code').focus(); return; }
+    G.settings.name = name;
+    saveSettings();
+    $('b-join').disabled = true;
+    this.mpStatus('Connecting…');
+    try {
+      await G.game.joinGame(code, name, (t) => this.mpStatus(t));
+    } catch (err) {
+      this.mpStatus(err && err.message ? err.message : 'Could not join that game.');
+      $('b-join').disabled = false;
+    }
+  }
+
+  async invite() {
+    const name = $('host-name').value.trim().slice(0, 16);
+    if (!name) { $('host-name').focus(); $('mp-info').hidden = false; $('mp-info-head').textContent = 'Type your name first.'; $('mp-code-show').textContent = ''; return; }
+    G.settings.name = name;
+    saveSettings();
+    const b = $('b-invite');
+    b.disabled = true;
+    b.textContent = 'Opening…';
+    try {
+      await G.game.hostGame(name);
+      G.net.chat(null, `Your world is open. Code: ${G.net.code}`);
+    } catch (err) {
+      $('mp-info').hidden = false;
+      $('mp-info-head').textContent = err && err.message ? err.message : 'Could not open the world to friends.';
+      $('mp-code-show').textContent = '';
+    }
+    b.disabled = false;
+    b.textContent = 'Open to Friends';
+    this.syncPause();
+    this.updateTouchVisibility();
+  }
+
+  syncPause() {
+    const net = G.net;
+    $('host-name').value = G.settings.name || '';
+    $('host-name-field').hidden = !!net;
+    $('b-invite').hidden = !!net;
+    $('b-quit').textContent = net && net.role === 'client' ? 'Disconnect' : 'Save and Quit to Title';
+    if (!net) { if ($('mp-code-show').textContent) $('mp-info').hidden = true; return; }
+    $('mp-info').hidden = false;
+    $('mp-info-head').textContent = net.role === 'host' ? 'Friends choose Multiplayer and enter this code:' : `You're in ${net.hostName}'s world. Code:`;
+    $('mp-code-show').textContent = net.code || '';
+    const names = [net.role === 'host' ? `${net.name} (you)` : net.hostName];
+    for (const a of net.players.values()) if (a.id !== 0) names.push(a.name);
+    if (net.role === 'client') names.push(`${net.name} (you)`);
+    $('mp-players').textContent = names.length > 1 || net.role === 'client' ? 'Playing: ' + names.join(', ') : 'Nobody has joined yet.';
+  }
+
+  chatLine(text, sys) {
+    const log = $('chat-log');
+    const line = h('p', sys ? 'sys' : '', text);
+    log.appendChild(line);
+    while (log.children.length > 8) log.firstChild.remove();
+    setTimeout(() => line.classList.add('old'), 10000);
   }
 
   toast(text) {
@@ -410,7 +502,10 @@ export class UI {
     if (!p) return;
     this.frames++;
     this.fpsTime += dt;
-    if (this.fpsTime >= 0.5) { this.fps = Math.round(this.frames / this.fpsTime); this.frames = 0; this.fpsTime = 0; }
+    if (this.fpsTime >= 0.5) {
+      this.fps = Math.round(this.frames / this.fpsTime); this.frames = 0; this.fpsTime = 0;
+      if (G.screen === 'pause' && G.net) this.syncPause();
+    }
     const c = this.hudCache;
     if (this.hudDirty) {
       this.hudDirty = false;

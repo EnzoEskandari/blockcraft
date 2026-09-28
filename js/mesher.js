@@ -181,7 +181,7 @@ function propagate(light, head, tail) {
   }
 }
 
-function computeLight(world, chunk) {
+export function computeLight(world, chunk) {
   const cx = chunk.cx, cz = chunk.cz;
   const near = [];
   let yTop = 0;

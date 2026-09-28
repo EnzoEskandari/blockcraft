@@ -3,7 +3,7 @@ import { G, loadSettings, store, load, remove, isTouchDevice } from './game.js';
 import { buildTextures, buildIcons } from './textures.js';
 import { BLOCKS, B, SMELTING, fuelValue, maxStack } from './blocks.js';
 import { World, ckey, CH } from './world.js';
-import { initMesher, buildChunkMesh } from './mesher.js';
+import { initMesher, buildChunkMesh, computeLight } from './mesher.js';
 import { R, initRenderer, setChunkMeshes, disposeChunkMeshes, updateSky, render } from './render.js';
 import { Player } from './player.js';
 import { Entities, spawnBlockParticles } from './entities.js';
@@ -14,9 +14,13 @@ import { hashString } from './noise.js';
 import { packSlots, unpackSlots, stack } from './inventory.js';
 import { rollLoot } from './structures.js';
 import { hash3 } from './noise.js';
+import { Net } from './net.js';
 
 const dayLength = () => G.settings.dayLength || 1200; // seconds; the original's day is 20 minutes
 const isNight = () => G.time > 0.52 && G.time < 0.98;
+// In multiplayer only the host runs the world; guests just show it
+const isGuest = () => !!(G.net && G.net.role === 'client');
+const SIM_R = 4;   // the host keeps chunks this far around each guest loaded and running
 
 const S = {
   offsets: [],
@@ -55,8 +59,36 @@ function meshChunk(c) {
   const data = buildChunkMesh(G.world, c);
   setChunkMeshes(c, data);
   c.dirty = false;
+  c.simDirty = false;
   c.meshed = true;
   G.entities.onChunkReady(c);
+}
+
+function guestChunks() {
+  const out = [];
+  if (G.net && G.net.role === 'host') for (const a of G.net.players.values()) if (a.ready) out.push([Math.floor(a.pos.x) >> 4, Math.floor(a.pos.z) >> 4]);
+  return out;
+}
+
+// The host generates and lights (but doesn't draw) the chunks around each guest, so mobs,
+// water and fire work there too
+function simulateAroundGuests(budget) {
+  const w = G.world;
+  const t0 = performance.now();
+  let ops = 0;
+  for (const [gx, gz] of guestChunks()) {
+    for (let dz = -SIM_R; dz <= SIM_R; dz++) for (let dx = -SIM_R; dx <= SIM_R; dx++) {
+      if (ops > 0 && performance.now() - t0 > budget) return;
+      const c = w.getChunk(gx + dx, gz + dz);
+      if (!c) { w.generate(gx + dx, gz + dz); ops++; continue; }
+      if (Math.abs(dx) < SIM_R && Math.abs(dz) < SIM_R && (!c.light || c.simDirty) && neighborsReady(c)) {
+        computeLight(w, c);
+        c.simDirty = false;
+        G.entities.onChunkReady(c);
+        ops++;
+      }
+    }
+  }
 }
 
 function updateChunks(budget) {
@@ -71,11 +103,14 @@ function updateChunks(budget) {
   }
   S.urgent.clear();
 
-  if (pcx !== S.lastCX || pcz !== S.lastCZ) {
+  S.unloadT = (S.unloadT || 0) + 1;
+  if (pcx !== S.lastCX || pcz !== S.lastCZ || (G.net && S.unloadT > 120)) {
     S.lastCX = pcx; S.lastCZ = pcz;
+    S.unloadT = 0;
     const lim = rd + 3;
+    const guests = guestChunks();
     for (const [k, c] of w.chunks) {
-      if (Math.hypot(c.cx - pcx, c.cz - pcz) > lim) {
+      if (Math.hypot(c.cx - pcx, c.cz - pcz) > lim && !guests.some(([gx, gz]) => Math.max(Math.abs(c.cx - gx), Math.abs(c.cz - gz)) <= SIM_R + 2)) {
         disposeChunkMeshes(c);
         w.chunks.delete(k);
       }
@@ -115,10 +150,11 @@ function onBlockChange(x, y, z, oldId, newId) {
   const cx = x >> 4, cz = z >> 4;
   S.urgent.add(ckey(cx, cz));
   for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
-    if (!dx && !dz) continue;
     const c = w.getChunk(cx + dx, cz + dz);
-    if (c) c.dirty = true;
+    if (c) { c.simDirty = true; if (dx || dz) c.dirty = true; }
   }
+  if (G.net) G.net.blockChanged(x, y, z, newId);
+  if (isGuest()) return;   // falling sand, water and the rest happen on the host
   S.updates.push(x, y, z);
   if (newId === 0 || newId === B.water) {
     const t = G.clock + 0.25;
@@ -224,10 +260,10 @@ function flammableNear(w, x, y, z) {
 }
 
 // Fire burns neighbouring wood, leaves, wool and plants, spreads a little, and dies out on bare ground
-function tickFires() {
+function tickFires(host) {
   const w = G.world;
   const many = w.fires.size > 300;
-  for (const [key, f] of w.fires) {
+  if (host) for (const [key, f] of w.fires) {
     if (f.t === 0) { f.t = G.clock + 0.5 + Math.random(); continue; }
     if (G.clock < f.t) continue;
     f.t = G.clock + 0.6 + Math.random() * 0.8;
@@ -265,10 +301,11 @@ function tickFires() {
     if (shown++ > 60) break;
     const [x, y, z] = key.split(',').map(Number);
     if (Math.abs(x - p.pos.x) > 24 || Math.abs(z - p.pos.z) > 24) continue;
+    if (!host && w.getBlock(x, y, z) !== B.fire) { w.fires.delete(key); continue; }
     if (Math.random() < 0.3) G.entities.particles.spawn(x + Math.random(), y + 0.3 + Math.random() * 0.6, z + Math.random(), 0, 1.2, 0, 1, 0.55 + Math.random() * 0.3, 0.1, 0.1, 0.45, -0.05);
     if (Math.random() < 0.08) G.entities.particles.spawn(x + Math.random(), y + 0.9, z + Math.random(), 0, 1, 0, 0.3, 0.3, 0.3, 0.18, 1.2, -0.08);
   }
-  for (const m of G.entities.mobs) {
+  if (host) for (const m of G.entities.mobs) {
     if (m.dead) continue;
     const id = w.getBlock(Math.floor(m.pos.x), Math.floor(m.pos.y + 0.1), Math.floor(m.pos.z));
     if (id === B.fire) m.fire = Math.max(m.fire, 4);
@@ -317,7 +354,9 @@ export const Game = {
       blockSound(def.sound, 'break', { x: x + 0.5, y: y + 0.5, z: z + 0.5 });
       spawnBlockParticles(x, y, z, id);
     }
+    if (G.net && byPlayer) G.net.breaking = true;
     w.setBlock(x, y, z, 0);
+    if (G.net) G.net.breaking = false;
     // doors and beds are two blocks; break the other half too
     if (def.door) {
       const oy = id === B.oak_door ? y + 1 : y - 1;
@@ -332,7 +371,8 @@ export const Game = {
     const key = `${x},${y},${z}`;
     const c = w.containers.get(key);
     if (c) {
-      for (const s of c.slots) if (s) G.entities.dropItem(s.id, s.count, x + 0.5, y + 0.5, z + 0.5, undefined, undefined, undefined, s.dmg);
+      // a guest's copy may be out of date, so the host sends the real contents
+      if (!isGuest()) for (const s of c.slots) if (s) G.entities.dropItem(s.id, s.count, x + 0.5, y + 0.5, z + 0.5, undefined, undefined, undefined, s.dmg);
       w.containers.delete(key);
       if (G.ui.container && G.ui.container.data === c) G.ui.back();
     }
@@ -341,8 +381,15 @@ export const Game = {
 
   placeBlock(x, y, z, id, meta) {
     G.world.setBlock(x, y, z, id, meta);
-    if (id === B.oak_sapling) S.saplings.set(`${x},${y},${z}`, G.clock + 60 + Math.random() * 120);
-    if (id >= B.wheat_0 && id <= B.wheat_2) G.world.crops.set(`${x},${y},${z}`, 0);
+    this.trackBlock(x, y, z, id);
+  },
+
+  // Saplings, crops and fire the world has to keep ticking
+  trackBlock(x, y, z, id) {
+    const key = `${x},${y},${z}`;
+    if (id === B.oak_sapling) S.saplings.set(key, G.clock + 60 + Math.random() * 120);
+    if (id >= B.wheat_0 && id <= B.wheat_2) G.world.crops.set(key, 0);
+    if (id === B.fire && !G.world.fires.has(key)) G.world.fires.set(key, { t: 0, age: 0 });
   },
 
   // Fire needs something solid under it or something flammable beside it
@@ -392,6 +439,7 @@ export const Game = {
   },
 
   container(x, y, z, type) {
+    if (isGuest()) return G.net.openContainer(x, y, z, type);
     const w = G.world;
     const key = `${x},${y},${z}`;
     let c = w.containers.get(key);
@@ -438,6 +486,7 @@ export const Game = {
 
   quitToTitle() {
     saveWorld();
+    if (G.net) G.net.close();
     teardown();
     G.state = 'title';
     exitLock();
@@ -452,7 +501,120 @@ export const Game = {
   },
 
   renderDistChanged() { buildOffsets(); },
+
+  // ------------------------------------------------------------ multiplayer
+  playerData,
+
+  // Open the current world to friends; resolves with the room code
+  async hostGame(name) {
+    if (G.net) return G.net.code;
+    const net = await Net.start('host', name);
+    if (G.state !== 'playing' && G.state !== 'loading') { net.shutdown(); throw new Error('Open a world first.'); }
+    G.net = net;
+    G.world.guests = G.world.guests || {};
+    return net.code;
+  },
+
+  async joinGame(code, name, onStatus) {
+    const { net, snap } = await Net.start('client', name, code, onStatus);
+    G.net = net;
+    startRemoteWorld(snap);
+  },
+
+  // Sent to a guest when they join: everything they need to build the same world
+  worldSnapshot(name) {
+    const w = G.world, p = G.player;
+    return {
+      k: 'world', host: G.net.name, name: G.worldMeta.name, seed: w.seed, mode: G.worldMeta.mode,
+      time: G.time, day: G.day || 0, nns: G.nightsNoSleep || 0,
+      spawn: p.spawn, edits: packEdits(w), guest: (w.guests && w.guests[name]) || null,
+    };
+  },
+
+  // The host left or the connection dropped
+  leaveRemote(msg) {
+    if (G.net) G.net.close();
+    teardown();
+    G.state = 'title';
+    exitLock();
+    G.ui.showTitle();
+    G.ui.openScreen('mp');
+    G.ui.mpStatus(msg);
+  },
 };
+
+function packEdits(w) {
+  const edits = {};
+  for (const [k, m] of w.edits) {
+    const cx = Math.floor(k / 65536) - 32768, cz = (k % 65536) - 32768;
+    const arr = [];
+    for (const [i, v] of m) arr.push(i, v);
+    edits[cx + ',' + cz] = arr;
+  }
+  return edits;
+}
+
+function unpackEdits(w, edits) {
+  for (const [k, arr] of Object.entries(edits || {})) {
+    const [cx, cz] = k.split(',').map(Number);
+    const m = new Map();
+    for (let i = 0; i < arr.length; i += 2) m.set(arr[i], arr[i + 1]);
+    w.edits.set(ckey(cx, cz), m);
+  }
+}
+
+function playerData(p) {
+  return {
+    pos: { ...p.pos }, yaw: p.yaw, pitch: p.pitch, health: p.health, food: p.food, saturation: p.saturation,
+    inv: packSlots(p.inv.slots), selected: p.inv.selected, spawn: p.spawn, flying: p.flying,
+    armor: packSlots(p.armor), bed: p.bedSpawn,
+  };
+}
+
+function applyPlayerData(p, d) {
+  Object.assign(p.pos, d.pos);
+  p.yaw = d.yaw || 0; p.pitch = d.pitch || 0;
+  p.health = d.health ?? 20; p.food = d.food ?? 20; p.saturation = d.saturation ?? 5;
+  p.inv.slots = unpackSlots(d.inv, 36);
+  p.inv.selected = d.selected || 0;
+  p.spawn = d.spawn || { ...p.pos };
+  p.flying = !!d.flying && p.creative;
+  p.armor = unpackSlots(d.armor, 4);
+  p.bedSpawn = d.bed || null;
+  if (p.health <= 0) { p.health = 20; p.pos = { ...p.spawn }; }
+}
+
+// A guest's copy of the host's world
+function startRemoteWorld(snap) {
+  initAudio();
+  teardown();
+  G.worldMeta = { id: null, remote: true, name: snap.name, seed: snap.seed, mode: snap.mode === 'creative' ? 'creative' : 'survival' };
+  const w = new World(snap.seed);
+  w.onChange = onBlockChange;
+  w.villagerTrades = new Map();
+  w.deadMobs = new Set();
+  w.guests = {};
+  unpackEdits(w, snap.edits);
+  G.world = w;
+  const p = new Player();
+  p.mode = G.worldMeta.mode;
+  G.player = p;
+  if (!G.entities) G.entities = new Entities();
+  G.clock = 0;
+  G.time = snap.time ?? 0.03;
+  G.day = snap.day || 0;
+  G.nightsNoSleep = snap.nns || 0;
+  if (snap.guest) applyPlayerData(p, snap.guest);
+  else {
+    const sp = snap.spawn || { x: 0, y: 80, z: 0 };
+    p.pos = { x: sp.x + (Math.random() - 0.5) * 3, y: sp.y, z: sp.z + (Math.random() - 0.5) * 3 };
+    p.spawn = { ...sp };
+    p.yaw = Math.PI * 0.75;
+  }
+  buildOffsets();
+  G.state = 'loading';
+  G.ui.showLoading(0);
+}
 
 // ---------------------------------------------------------------- worlds
 function teardown() {
@@ -474,6 +636,7 @@ function startWorld(meta, data) {
   w.onChange = onBlockChange;
   w.villagerTrades = new Map(Object.entries((data && data.villagers) || {}));
   w.deadMobs = new Set((data && data.deadMobs) || []);
+  w.guests = (data && data.guests) || {};
   G.world = w;
   const p = new Player();
   p.mode = meta.mode;
@@ -481,31 +644,16 @@ function startWorld(meta, data) {
   if (!G.entities) G.entities = new Entities();
   G.clock = 0;
   if (data && data.player) {
-    for (const [k, arr] of Object.entries(data.edits || {})) {
-      const [cx, cz] = k.split(',').map(Number);
-      const m = new Map();
-      for (let i = 0; i < arr.length; i += 2) m.set(arr[i], arr[i + 1]);
-      w.edits.set(ckey(cx, cz), m);
-    }
+    unpackEdits(w, data.edits);
     for (const c of data.containers || []) {
       const [x, y, z] = c.k.split(',').map(Number);
       const n = c.type === 'chest' ? 27 : 3;
       w.containers.set(c.k, { type: c.type, slots: unpackSlots(c.slots, n), burn: c.burn || 0, burnMax: c.burnMax || 0, cook: c.cook || 0, x, y, z });
     }
     for (const k of data.saplings || []) S.saplings.set(k, 30 + Math.random() * 120);
-    const d = data.player;
-    Object.assign(p.pos, d.pos);
-    p.yaw = d.yaw || 0; p.pitch = d.pitch || 0;
-    p.health = d.health ?? 20; p.food = d.food ?? 20; p.saturation = d.saturation ?? 5;
-    p.inv.slots = unpackSlots(d.inv, 36);
-    p.inv.selected = d.selected || 0;
-    p.spawn = d.spawn || { ...p.pos };
-    p.flying = !!d.flying && p.creative;
-    p.armor = unpackSlots(d.armor, 4);
-    p.bedSpawn = d.bed || null;
+    applyPlayerData(p, data.player);
     G.day = data.day || 0;
     G.nightsNoSleep = data.nightsNoSleep || 0;
-    if (p.health <= 0) { p.health = 20; p.pos = { ...p.spawn }; }
     G.time = data.time ?? 0.03;
   } else {
     const sp = w.findSpawn();
@@ -526,25 +674,18 @@ function startWorld(meta, data) {
 
 function saveWorld() {
   if (!G.worldMeta || !G.world || !G.player) return;
+  // a guest's world belongs to the host, who keeps their inventory too
+  if (G.worldMeta.remote) { if (G.net) G.net.saveGuest(); return; }
   const w = G.world, p = G.player;
   G.entities.saveVillagers();
-  const edits = {};
-  for (const [k, m] of w.edits) {
-    const cx = Math.floor(k / 65536) - 32768, cz = (k % 65536) - 32768;
-    const arr = [];
-    for (const [i, v] of m) arr.push(i, v);
-    edits[cx + ',' + cz] = arr;
-  }
+  const edits = packEdits(w);
   const containers = [];
   for (const [k, c] of w.containers) containers.push({ k, type: c.type, slots: packSlots(c.slots), burn: c.burn, burnMax: c.burnMax, cook: c.cook });
   const data = {
     v: 1,
     time: G.time,
-    player: {
-      pos: { ...p.pos }, yaw: p.yaw, pitch: p.pitch, health: p.health, food: p.food, saturation: p.saturation,
-      inv: packSlots(p.inv.slots), selected: p.inv.selected, spawn: p.spawn, flying: p.flying,
-      armor: packSlots(p.armor), bed: p.bedSpawn,
-    },
+    player: playerData(p),
+    guests: w.guests || {},
     day: G.day || 0, nightsNoSleep: G.nightsNoSleep || 0,
     villagers: Object.fromEntries(w.villagerTrades),
     deadMobs: [...w.deadMobs],
@@ -570,6 +711,7 @@ function loop(now) {
 function frame(dt) {
   if (G.state === 'loading') {
     updateChunks(40);
+    if (G.net) G.net.update(dt);
     const prog = spawnAreaProgress();
     G.ui.showLoading(prog);
     if (prog >= 1) {
@@ -583,7 +725,9 @@ function frame(dt) {
   if (G.state !== 'playing') return;
   G.clock += dt;
   pollInput(dt);
-  const paused = G.screen === 'pause' || G.screen === 'options';
+  // the world keeps going for everyone else while one player has the menu open
+  const paused = (G.screen === 'pause' || G.screen === 'options') && !G.net;
+  const host = !isGuest();
   if (!paused) {
     const before = G.time;
     G.time += dt / dayLength();
@@ -593,28 +737,38 @@ function frame(dt) {
       G.nightsNoSleep = (G.nightsNoSleep || 0) + 1;
     }
     if (G.sleeping) {
-      // Sleep: the screen fades out, then the night is skipped
+      // Sleep: the screen fades out, then the night is skipped. In multiplayer everyone has to be in bed.
       const s = G.sleeping;
       s.t += dt;
-      G.ui.sleepOverlay(Math.min(1, s.t / 2));
+      const everyone = !G.net || G.net.allAsleep();
+      G.ui.sleepOverlay(Math.min(everyone ? 1 : 0.6, s.t / 2));
       G.player.pos.x = s.x; G.player.pos.y = s.y; G.player.pos.z = s.z;
-      if (s.t >= 2.6) {
+      if (G.net && !everyone && s.t > 1.5 && !s.told) { s.told = true; G.ui.toast('Waiting for everyone to sleep · jump to get up'); }
+      if (G.net && input.jumpPressed && s.t > 0.5) Game.wakeUp();
+      else if (everyone && host && s.t >= 2.6) {
         if (before > 0.5) G.day = (G.day || 0) + 1;
         G.time = 0.0;
         G.nightsNoSleep = 0;
         Game.wakeUp();
         G.ui.toast('Good morning');
+        if (G.net) { G.net.send({ k: 't', t: G.time, d: G.day, n: 0 }); G.net.send({ k: 'wake' }); }
       }
       input.moveX = input.moveZ = 0; input.jump = false;
     }
     G.player.update(dt, input);
     G.entities.update(dt);
-    processUpdates();
-    processWater();
-    tickFurnaces(dt);
-    tickSaplings();
-    tickCrops();
-    tickFires();
+    if (host) {
+      processUpdates();
+      processWater();
+      tickFurnaces(dt);
+      tickSaplings();
+      tickCrops();
+    }
+    tickFires(host);
+  }
+  if (G.net) {
+    G.net.update(dt);
+    if (host) simulateAroundGuests(4);
   }
   updateChunks(paused ? 14 : 7);
   G.player.updateCamera(dt);
