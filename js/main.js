@@ -111,6 +111,7 @@ function updateChunks(budget) {
     const guests = guestChunks();
     for (const [k, c] of w.chunks) {
       if (Math.hypot(c.cx - pcx, c.cz - pcz) > lim && !guests.some(([gx, gz]) => Math.max(Math.abs(c.cx - gx), Math.abs(c.cz - gz)) <= SIM_R + 2)) {
+        if (!isGuest()) G.entities.storeChunk(c);
         disposeChunkMeshes(c);
         w.chunks.delete(k);
       }
@@ -508,10 +509,17 @@ export const Game = {
   // Open the current world to friends; resolves with the room code
   async hostGame(name) {
     if (G.net) return G.net.code;
-    const net = await Net.start('host', name);
+    const meta = G.worldMeta;
+    const net = await Net.start('host', name, meta.code);
     if (G.state !== 'playing' && G.state !== 'loading') { net.shutdown(); throw new Error('Open a world first.'); }
     G.net = net;
     G.world.guests = G.world.guests || {};
+    // remember it: this world stays a multiplayer world with the same code
+    meta.mp = true;
+    meta.code = net.code;
+    const list = this.listWorlds();
+    const m = list.find((x) => x.id === meta.id);
+    if (m) { m.mp = true; m.code = net.code; store('worlds', list); }
     return net.code;
   },
 
@@ -637,6 +645,8 @@ function startWorld(meta, data) {
   w.villagerTrades = new Map(Object.entries((data && data.villagers) || {}));
   w.deadMobs = new Set((data && data.deadMobs) || []);
   w.guests = (data && data.guests) || {};
+  w.stored = new Map(Object.entries((data && data.entities) || {}).map(([k, v]) => [Number(k), v]));
+  w.spawned = new Set((data && data.spawned) || []);
   G.world = w;
   const p = new Player();
   p.mode = meta.mode;
@@ -686,6 +696,8 @@ function saveWorld() {
     time: G.time,
     player: playerData(p),
     guests: w.guests || {},
+    entities: G.entities.savedEntities(),
+    spawned: [...w.spawned],
     day: G.day || 0, nightsNoSleep: G.nightsNoSleep || 0,
     villagers: Object.fromEntries(w.villagerTrades),
     deadMobs: [...w.deadMobs],
@@ -719,6 +731,12 @@ function frame(dt) {
       G.ui.startPlaying();
       G.ui.invChanged();
       if (!G.touchMode) requestLock();
+      const meta = G.worldMeta;
+      if (meta && meta.mp && !meta.remote && !G.net) {
+        Game.hostGame(G.settings.name || 'Player')
+          .then((code) => { G.ui.chatLine(`Open to friends · code ${code}`, true); G.ui.updateTouchVisibility(); })
+          .catch(() => G.ui.toast('Could not reopen this world to friends'));
+      }
     }
     return;
   }
@@ -777,7 +795,7 @@ function frame(dt) {
   render();
   endFrame();
   S.saveTimer += dt;
-  if (S.saveTimer > 30) { S.saveTimer = 0; saveWorld(); }
+  if (S.saveTimer > (G.net ? 10 : 30)) { S.saveTimer = 0; saveWorld(); }
 }
 
 // ---------------------------------------------------------------- boot

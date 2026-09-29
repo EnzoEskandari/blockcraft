@@ -5,13 +5,15 @@ import * as THREE from 'three';
 import { G } from './game.js';
 import { R, itemModel, tintModel } from './render.js';
 import { buildModel, lightAt, explosionFx, explosionDamage, spawnBlockParticles } from './entities.js';
-import { BLOCKS, B } from './blocks.js';
+import { BLOCKS, B, ITEMS } from './blocks.js';
 import { packSlots, unpackSlots } from './inventory.js';
+import { rayBox } from './physics.js';
 import { sfx, blockSound } from './audio.js';
 
 const r2 = (v) => Math.round(v * 100) / 100;
 const MOB_RANGE = 72;          // guests see the host's mobs this far away
 const FX_RANGE = 64;           // and arrows, potions and explosions this far
+const ITEM_RANGE = 48;         // and dropped items this far
 const CONTAINER_BLOCKS = new Set([B.chest, B.furnace, B.furnace_lit]);
 
 export function serverURL() {
@@ -56,6 +58,7 @@ export class Avatar {
     this.slot = slot;
     this.isPlayer = true;
     this.remote = true;
+    this.def = { name };
     this.ready = false;
     this.gone = false;
     this.pos = { x: 0, y: -200, z: 0 };
@@ -99,7 +102,6 @@ export class Avatar {
     this.hurtTime = 0.35;
   }
   addEffect(n, t) { G.net.sendTo(this.id, { k: 'fx', n, t }); }
-  giveDrop(id, n, x, y, z) { G.net.sendTo(this.id, { k: 'drops', l: [[id, n, r2(x), r2(y), r2(z), 0]] }); }
 
   // [x, y, z, yaw, pitch, held, flags, swings, hp, creative]
   applyState(s) {
@@ -204,6 +206,9 @@ export class Net {
     this.openKey = null;          // guest: container this player has open
     this.tradeSig = '';
     this.itemSeq = 0;
+    this.itemIndex = new Map();   // host: item id -> item
+    this.itemProxies = new Map(); // guest: host item id -> item copy
+    this.drops = [];              // guest: items waiting to be dropped by the host
     this.applying = false;
     this.breaking = false;
     this.closed = false;
@@ -224,7 +229,7 @@ export class Net {
       const timer = setTimeout(() => fail('The multiplayer server did not answer. Check your connection and try again.'), 20000);
       ws.onopen = () => {
         onStatus(role === 'host' ? 'Opening your world…' : 'Joining…');
-        ws.send(JSON.stringify(role === 'host' ? { t: 'host', name } : { t: 'join', code, name }));
+        ws.send(JSON.stringify(role === 'host' ? { t: 'host', name, code } : { t: 'join', code, name }));
       };
       ws.onerror = () => {};
       ws.onclose = () => {
@@ -379,12 +384,43 @@ export class Net {
     this.sendNear(a[0], a[2], FX_RANGE, { k: kind, a: a.map((v) => (typeof v === 'number' ? r2(v) : v)) });
   }
 
-  itemTossed(it) {
-    it.netId = `${this.id}.${++this.itemSeq}`;
-    this.send({ k: 'toss', n: it.netId, a: [it.id, it.count, it.dmg || 0, r2(it.pos.x), r2(it.pos.y), r2(it.pos.z), r2(it.vel.x), r2(it.vel.y), r2(it.vel.z)] });
+  // Guest: the host drops the item, so everyone sees the same one
+  requestDrop(id, count, x, y, z, vx, vy, vz, dmg) {
+    const stub = { pickupDelay: 0.6, a: [id, count, dmg, r2(x), r2(y), r2(z), r2(vx), r2(vy), r2(vz)] };
+    this.drops.push(stub);
+    return stub;
   }
 
-  itemTaken(n, left) { this.send({ k: 'take', n, c: left }); }
+  // ------------------------------------------------------------ fighting other players
+  pickPlayer(ox, oy, oz, dx, dy, dz, maxDist) {
+    let best = null, bt = maxDist;
+    for (const a of this.players.values()) {
+      if (!a.ready || a.dead) continue;
+      const t = rayBox(ox, oy, oz, dx, dy, dz, a.pos.x - a.hw, a.pos.y, a.pos.z - a.hw, a.pos.x + a.hw, a.pos.y + a.h, a.pos.z + a.hw);
+      if (t >= 0 && t < bt) { bt = t; best = a; }
+    }
+    return best ? { player: best, t: bt } : null;
+  }
+
+  pvp(a, dmg, x, z) {
+    a.hurtTime = 0.35;
+    const d = { d: Math.round(dmg * 100) / 100, x: r2(x), z: r2(z) };
+    if (this.role === 'host') this.sendTo(a.id, { k: 'hurt', ...d, c: 'player', by: this.name });
+    else this.send({ k: 'pvp', to: a.id, ...d });
+  }
+
+  // Hurt by another player: knocked back even in Creative, damaged in Survival
+  hurtByPlayer(d, by) {
+    const p = G.player;
+    if (!p || p.dead) return;
+    if (p.creative) {
+      const dx = p.pos.x - d.x, dz = p.pos.z - d.z, n = Math.hypot(dx, dz) || 1;
+      p.vel.x += (dx / n) * 6; p.vel.z += (dz / n) * 6; p.vel.y = Math.max(p.vel.y, 5.5);
+      return;
+    }
+    p.lastAttacker = by;
+    p.hurt(+d.d || 0, d.x, d.z, 'player');
+  }
 
   // A guest opening a chest or furnace gets the host's copy
   openContainer(x, y, z, type) {
@@ -424,9 +460,8 @@ export class Net {
         G.game.trackBlock(x, y, z, id);
         const c = w.containers.get(key);
         if (c && !CONTAINER_BLOCKS.has(id)) {
-          // a guest broke a chest or furnace: its contents drop in their world
-          const drops = c.slots.filter(Boolean).map((s) => [s.id, s.count, x + 0.5, y + 0.5, z + 0.5, s.dmg || 0]);
-          if (drops.length && from != null) this.sendTo(from, { k: 'drops', l: drops });
+          // a guest broke a chest or furnace: its contents spill out
+          for (const s of c.slots) if (s) G.entities.dropItem(s.id, s.count, x + 0.5, y + 0.5, z + 0.5, undefined, undefined, undefined, s.dmg);
           w.containers.delete(key);
           if (G.ui.container && G.ui.container.data === c) G.ui.back();
         }
@@ -462,10 +497,34 @@ export class Net {
         this.applyBlocks(d.l, from);
         this.sendExcept(from, { k: 'bs', l: d.l });
         break;
+      case 'pvp': {
+        if (!a) return;
+        if (d.to === 0) this.hurtByPlayer(d, a.name);
+        else if (this.players.has(d.to)) this.sendTo(d.to, { k: 'hurt', d: d.d, x: d.x, z: d.z, c: 'player', by: a.name });
+        break;
+      }
+      case 'drop':
+        for (const s of Array.isArray(d.l) ? d.l : []) {
+          const [id, count, dmg, x, y, z, vx, vy, vz, pd] = s;
+          if (!ITEMS[id] || !(count > 0) || count > 64 * 40) continue;
+          const it = G.entities.dropItem(id, count | 0, x, y, z, vx, vy, vz, dmg);
+          if (it) it.pickupDelay = Math.min(3, +pd || 0.6);
+        }
+        break;
+      case 'pick': {
+        const it = this.itemIndex.get(d.n);
+        if (!a || !it || it.removed || it.age < it.pickupDelay - 0.3) return;
+        if (Math.hypot(a.pos.x - it.pos.x, a.pos.z - it.pos.z) > 5) return;
+        const give = Math.min(it.count, Math.max(0, d.r | 0));
+        if (!give) return;
+        it.count -= give;
+        if (!it.count) it.removed = true;
+        this.sendTo(from, { k: 'got', i: it.id, c: give, d: it.dmg || 0 });
+        break;
+      }
       case 'hit': {
         const m = this.mobIndex.get(d.id);
         if (!m || m.dead || m.removed) return;
-        m.lootTo = a; m.lootToT = G.clock;
         if (m.invul < 0.15) m.invul = 0;   // the guest already waited out the cooldown; allow for network jitter
         m.hurt(+d.d || 0, d.x, d.z, d.p ? 'remote' : false, d.kb ?? 1, a || null);
         break;
@@ -503,8 +562,6 @@ export class Net {
         if (m && m.trades && Array.isArray(d.u)) d.u.forEach((u, i) => { if (m.trades[i]) m.trades[i].uses = Math.max(m.trades[i].uses, u | 0); });
         break;
       }
-      case 'toss': this.spawnTossed(d); this.sendExcept(from, d); break;
-      case 'take': this.takeItem(d); this.sendExcept(from, d); break;
       case 'chat': {
         if (!a) return;
         const t = String(d.t || '').slice(0, 120);
@@ -550,11 +607,32 @@ export class Net {
           if (m && !m.dead) m.removed = true;
           this.proxies.delete(id);
         }
+        for (const a of d.it || []) {
+          const it = this.itemProxies.get(a[0]);
+          if (it && !it.removed) { it.net = { x: a[1], y: a[2], z: a[3] }; it.count = a[4]; }
+          else if (a.length > 5) this.itemProxies.set(a[0], G.entities.spawnItemProxy(a));
+        }
+        for (const id of d.ig || []) {
+          const it = this.itemProxies.get(id);
+          if (it) it.removed = true;
+          this.itemProxies.delete(id);
+        }
         break;
       }
-      case 'hurt': if (p && !p.dead) p.hurt(+d.d || 0, d.x ?? null, d.z ?? null, d.c); break;
+      case 'hurt':
+        if (!p || p.dead) return;
+        if (d.c === 'player') this.hurtByPlayer(d, d.by);
+        else p.hurt(+d.d || 0, d.x ?? null, d.z ?? null, d.c);
+        break;
       case 'fx': if (p && !p.dead) p.addEffect(d.n, +d.t || 0); break;
-      case 'drops': for (const [id, n, x, y, z, dmg] of d.l) G.entities.dropItem(id, n, x, y, z, undefined, undefined, undefined, dmg); break;
+      case 'got': {
+        if (!p) return;
+        const left = p.inv.add(d.i, d.c, d.d);
+        sfx('pop', null, { vol: 0.5 });
+        G.ui.invChanged();
+        if (left) G.entities.dropItem(d.i, left, p.pos.x, p.pos.y + 1, p.pos.z, undefined, undefined, undefined, d.d);
+        break;
+      }
       case 't':
         G.time = d.t; G.day = d.d; G.nightsNoSleep = d.n;
         break;
@@ -577,8 +655,6 @@ export class Net {
         if (w) w.containers.delete(d.key);
         break;
       }
-      case 'toss': this.spawnTossed(d); break;
-      case 'take': this.takeItem(d); break;
       case 'chat': this.chat(d.sys ? null : d.n, String(d.t || '')); break;
       case 'boom': explosionFx(d.x, d.y, d.z, d.pw); break;
       case 'ar': { const a = d.a; G.entities.spawnArrow(a[0], a[1], a[2], a[3], a[4], a[5], 'fx', { effect: a[6] ? 'slow' : null }); break; }
@@ -589,19 +665,6 @@ export class Net {
 
   containerMsg(c) {
     return { s: packSlots(c.slots), b: Math.round((c.burn || 0) * 10) / 10, bm: c.burnMax || 0, ck: Math.round((c.cook || 0) * 10) / 10 };
-  }
-
-  spawnTossed(d) {
-    const a = d.a;
-    if (!Array.isArray(a) || !G.world) return;
-    const it = G.entities.dropItem(a[0], a[1], a[3], a[4], a[5], a[6], a[7], a[8], a[2]);
-    if (it) it.netId = d.n;
-  }
-
-  takeItem(d) {
-    const it = G.entities.items.find((x) => x.netId === d.n);
-    if (!it) return;
-    if (d.c > 0) it.count = d.c; else it.removed = true;
   }
 
   // ------------------------------------------------------------ every frame
@@ -626,6 +689,10 @@ export class Net {
     if (this.out.length) {
       this.send({ k: 'bs', l: this.out });
       this.out = [];
+    }
+    if (this.drops.length) {
+      this.send({ k: 'drop', l: this.drops.map((s) => [...s.a, s.pickupDelay]) });
+      this.drops = [];
     }
     if (this.role === 'host') this.hostTick(dt);
     else this.guestTick(dt);
@@ -654,11 +721,16 @@ export class Net {
   }
 
   syncMobs() {
-    const mobs = G.entities.mobs;
+    const mobs = G.entities.mobs, items = G.entities.items;
     this.mobIndex.clear();
     for (const m of mobs) {
       if (!m.netId) m.netId = ++this.mobSeq;
       this.mobIndex.set(m.netId, m);
+    }
+    this.itemIndex.clear();
+    for (const it of items) {
+      if (!it.netId) it.netId = ++this.itemSeq;
+      this.itemIndex.set(it.netId, it);
     }
     for (const a of this.players.values()) {
       if (!a.ready) continue;
@@ -675,7 +747,22 @@ export class Net {
       }
       const g = [];
       for (const id of known) if (!seen.has(id)) { g.push(id); known.delete(id); }
-      if (l.length || g.length) this.sendTo(a.id, { k: 'm', l, g });
+      // items: sent when they first come in range, then only when they move or change
+      const ki = a.knownItems || (a.knownItems = new Map());
+      const it = [], ig = [], iseen = new Set();
+      for (const e of items) {
+        if (e.removed) continue;
+        const d = Math.hypot(e.pos.x - a.pos.x, e.pos.z - a.pos.z);
+        if (d > (ki.has(e.netId) ? ITEM_RANGE + 8 : ITEM_RANGE)) continue;
+        iseen.add(e.netId);
+        const x = r2(e.pos.x), y = r2(e.pos.y), z = r2(e.pos.z);
+        const sig = `${x},${y},${z},${e.count}`;
+        if (!ki.has(e.netId)) it.push([e.netId, x, y, z, e.count, e.id, e.dmg || 0, Math.max(0, r2(e.pickupDelay - e.age))]);
+        else if (ki.get(e.netId) !== sig) it.push([e.netId, x, y, z, e.count]);
+        ki.set(e.netId, sig);
+      }
+      for (const id of ki.keys()) if (!iseen.has(id)) { ig.push(id); ki.delete(id); }
+      if (l.length || g.length || it.length || ig.length) this.sendTo(a.id, { k: 'm', l, g, it, ig });
     }
   }
 
@@ -701,6 +788,6 @@ export class Net {
       this.tradeSig = tsig;
     }
     this.saveT -= dt;
-    if (this.saveT <= 0) { this.saveT = 15; this.saveGuest(); }
+    if (this.saveT <= 0) { this.saveT = 5; this.saveGuest(); }
   }
 }

@@ -29,11 +29,18 @@ Then open http://localhost:8080.
 How it works:
 
 - The host's browser runs the world: mobs, water, fire, furnaces and the time of day. Guests send what they do and draw what the host sends back.
+- Everyone has their own health, hunger and inventory. The time of day is the same for everyone.
+- You can always hit other players, with fists, weapons or arrows.
+- Dropped items are the same for everyone, and only one player can pick each one up.
 - Chests, furnaces and villager trades are shared.
-- Items you throw or drop are shared too, but block and mob drops go only to whoever broke the block or made the kill.
 - The night is skipped only when everyone is in bed.
 - Press **T** (or the **T** button on iPad) to chat.
-- The host's save keeps each guest's inventory, so they can come back later.
+
+### Nothing is lost
+
+- A world you open to friends stays a multiplayer world. It reopens to friends with the same code every time you load it.
+- Animals, villagers and dropped items are kept when you walk away, and saved with the world.
+- The host's save keeps each guest's inventory and position, so they can come back later.
 
 ## Deploy on Render
 

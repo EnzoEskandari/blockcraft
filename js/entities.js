@@ -479,6 +479,8 @@ function sheepVariant() {
 const players = () => (G.net ? G.net.targets() : G.player ? [G.player] : []);
 const isClient = () => !!(G.net && G.net.role === 'client');
 
+const chunkKey = (x, z) => ((Math.floor(x) >> 4) + 32768) * 65536 + ((Math.floor(z) >> 4) + 32768);
+
 const dist3 = (a, b) => Math.hypot(a.pos.x - b.pos.x, a.pos.y - b.pos.y, a.pos.z - b.pos.z);
 
 class Mob {
@@ -591,9 +593,7 @@ class Mob {
     this.dead = true;
     this.deathTime = 0;
     if (this.key && G.world) G.world.deadMobs.add(this.key);
-    // A kill by another player drops the loot in their world instead
-    const to = this.lootTo && G.clock - this.lootToT < 6 && !this.lootTo.gone ? this.lootTo : null;
-    const dropItem = (id, n, x, y, z) => (to ? to.giveDrop(id, n, x, y, z) : G.entities.dropItem(id, n, x, y, z));
+    const dropItem = (id, n, x, y, z) => G.entities.dropItem(id, n, x, y, z);
     for (const d of this.def.drops) {
       const n = d.min + Math.floor(rand() * (d.max - d.min + 1));
       if (n > 0) dropItem(ID[d.key], n, this.pos.x, this.pos.y + 0.5, this.pos.z);
@@ -1146,33 +1146,50 @@ class ItemEntity {
   update(dt) {
     const w = G.world;
     this.age += dt;
-    const inWater = w.getBlock(Math.floor(this.pos.x), Math.floor(this.pos.y + 0.1), Math.floor(this.pos.z)) === B.water;
-    if (inWater) this.vel.y = Math.min(this.vel.y + 20 * dt, 1.2);
-    else this.vel.y -= 24 * dt;
-    const res = moveBox(w, this, this.vel.x * dt, this.vel.y * dt, this.vel.z * dt);
-    if (res.y) this.vel.y = 0;
-    const f = res.ground ? Math.max(0, 1 - 8 * dt) : Math.max(0, 1 - 0.5 * dt);
-    this.vel.x *= f; this.vel.z *= f;
-    if (res.x) this.vel.x = 0;
-    if (res.z) this.vel.z = 0;
-    // Pushed out if buried by a placed block
-    if (boxBlocked(w, this.pos.x, this.pos.y, this.pos.z, this.hw, this.h)) this.pos.y += dt * 4;
+    if (this.proxy) {
+      // a guest's copy of one of the host's items: it just follows the host
+      const n = this.net;
+      if (n) {
+        if (Math.hypot(n.x - this.pos.x, n.y - this.pos.y, n.z - this.pos.z) > 4) { this.pos.x = n.x; this.pos.y = n.y; this.pos.z = n.z; }
+        else { const k = Math.min(1, dt * 12); this.pos.x += (n.x - this.pos.x) * k; this.pos.y += (n.y - this.pos.y) * k; this.pos.z += (n.z - this.pos.z) * k; }
+      }
+    } else {
+      const inWater = w.getBlock(Math.floor(this.pos.x), Math.floor(this.pos.y + 0.1), Math.floor(this.pos.z)) === B.water;
+      if (inWater) this.vel.y = Math.min(this.vel.y + 20 * dt, 1.2);
+      else this.vel.y -= 24 * dt;
+      const res = moveBox(w, this, this.vel.x * dt, this.vel.y * dt, this.vel.z * dt);
+      if (res.y) this.vel.y = 0;
+      const f = res.ground ? Math.max(0, 1 - 8 * dt) : Math.max(0, 1 - 0.5 * dt);
+      this.vel.x *= f; this.vel.z *= f;
+      if (res.x) this.vel.x = 0;
+      if (res.z) this.vel.z = 0;
+      // Pushed out if buried by a placed block
+      if (boxBlocked(w, this.pos.x, this.pos.y, this.pos.z, this.hw, this.h)) this.pos.y += dt * 4;
+    }
 
     const p = G.player;
     if (!p.dead && this.age > this.pickupDelay) {
       const dx = p.pos.x - this.pos.x, dy = p.pos.y + 0.8 - this.pos.y, dz = p.pos.z - this.pos.z;
       if (dx * dx + dz * dz < 2.2 && Math.abs(dy) < 1.8) {
-        const left = p.inv.add(this.id, this.count, this.dmg);
-        if (left < this.count) {
-          sfx('pop', null, { vol: 0.5 });
-          G.ui && G.ui.invChanged();
+        if (this.proxy) {
+          // ask the host, so two players can't both take the same item
+          if (!(this.askT > G.clock - 0.6)) {
+            const room = p.inv.room(this.id);
+            if (room > 0) { this.askT = G.clock; G.net.send({ k: 'pick', n: this.netId, r: room }); }
+          }
+        } else {
+          const left = p.inv.add(this.id, this.count, this.dmg);
+          if (left < this.count) {
+            sfx('pop', null, { vol: 0.5 });
+            G.ui && G.ui.invChanged();
+          }
+          this.count = left;
+          if (!left) this.removed = true;
         }
-        if (this.netId && G.net && left !== this.count) G.net.itemTaken(this.netId, left);
-        this.count = left;
-        if (!left) this.removed = true;
       }
     }
-    if (this.age > 300 || this.pos.y < -20) this.removed = true;
+    // Items stay on the ground until someone picks them up
+    if (this.pos.y < -20) this.removed = true;
     this.spin += dt * 1.6;
     const bob = Math.sin(this.age * 2.5) * 0.06 + 0.1;
     this.mesh.position.set(this.pos.x, this.pos.y + bob + (this.cube ? 0.13 : 0.2), this.pos.z);
@@ -1245,6 +1262,18 @@ class Arrow {
         sfx('arrowhit', m.pos);
         this.removed = true;
         return;
+      }
+    }
+    if (this.owner === 'player' && G.net) {
+      for (const a of G.net.players.values()) {
+        if (!a.ready || a.dead) continue;
+        const t = rayBox(this.pos.x, this.pos.y, this.pos.z, dx, dy, dz, a.pos.x - a.hw, a.pos.y, a.pos.z - a.hw, a.pos.x + a.hw, a.pos.y + a.h, a.pos.z + a.hw);
+        if (t >= 0 && t <= len) {
+          G.net.pvp(a, dmg, this.pos.x, this.pos.z);
+          sfx('arrowhit', a.pos);
+          this.removed = true;
+          return;
+        }
       }
     }
     if (this.owner !== 'player') {
@@ -1461,19 +1490,100 @@ export class Entities {
     return m;
   }
 
+  // In multiplayer every item lives on the host, so everyone sees the same items; a guest asks the host to drop one
   dropItem(id, count, x, y, z, vx, vy, vz, dmg) {
-    if (!id || count <= 0) return;
-    const it = new ItemEntity(id, count, x, y, z,
-      vx ?? (rand() - 0.5) * 3, vy ?? 3 + rand() * 2, vz ?? (rand() - 0.5) * 3, dmg);
+    if (!id || count <= 0) return { pickupDelay: 0.6 };
+    vx = vx ?? (rand() - 0.5) * 3; vy = vy ?? 3 + rand() * 2; vz = vz ?? (rand() - 0.5) * 3;
+    if (isClient()) return G.net.requestDrop(id, count, x, y, z, vx, vy, vz, dmg || 0);
+    const it = new ItemEntity(id, count, x, y, z, vx, vy, vz, dmg);
+    this.items.push(it);
+    return it;
+  }
+  dropShared(id, count, x, y, z, vx, vy, vz, dmg) { return this.dropItem(id, count, x, y, z, vx, vy, vz, dmg); }
+
+  // A guest's copy of one of the host's items: [id, x, y, z, count, itemId, dmg, pickup delay left]
+  spawnItemProxy(a) {
+    const it = new ItemEntity(a[5], a[4], a[1], a[2], a[3], 0, 0, 0, a[6]);
+    it.proxy = true;
+    it.netId = a[0];
+    it.net = { x: a[1], y: a[2], z: a[3] };
+    it.pickupDelay = a[7] || 0;
     this.items.push(it);
     return it;
   }
 
-  // Items a player throws or drops on death: in multiplayer everyone sees them and anyone can pick them up
-  dropShared(id, count, x, y, z, vx, vy, vz, dmg) {
-    const it = this.dropItem(id, count, x, y, z, vx, vy, vz, dmg);
-    if (it && G.net) G.net.itemTossed(it);
-    return it;
+  // ------------------------------------------------------------ keeping animals, villagers and items
+  // Nothing is lost when an area unloads: its animals, villagers and dropped items are kept with the
+  // chunk and come back when it loads again (and are saved with the world)
+  keepable(e) {
+    if (e.removed || e.proxy) return false;
+    if (e instanceof ItemEntity) return true;
+    return !e.dead && (!e.def.hostile || e.persistent) && e.type !== 'gloomwing';
+  }
+
+  entityData(e) {
+    const r = (v) => Math.round(v * 100) / 100;
+    if (e instanceof ItemEntity) return { i: e.id, c: e.count, d: e.dmg || 0, x: r(e.pos.x), y: r(e.pos.y), z: r(e.pos.z) };
+    const d = { t: e.type, x: r(e.pos.x), y: r(e.pos.y), z: r(e.pos.z), yaw: r(e.yaw), hp: e.hp };
+    if (e.type === 'sheep') d.v = e.variant;
+    if (e.prof) d.p = e.prof;
+    if (e.type === 'slime') d.s = e.size;
+    if (e.baby) d.b = 1;
+    if (e.key) d.k = e.key;
+    if (e.home) d.h = { x: r(e.home.x), y: r(e.home.y), z: r(e.home.z) };
+    if (e.persistent) d.P = 1;
+    if (e.trades) d.u = e.trades.map((t) => t.uses);
+    return d;
+  }
+
+  stash(e) {
+    const w = G.world;
+    if (this.keepable(e)) {
+      const k = chunkKey(e.pos.x, e.pos.z);
+      let st = w.stored.get(k);
+      if (!st) { st = { m: [], i: [] }; w.stored.set(k, st); }
+      (e instanceof ItemEntity ? st.i : st.m).push(this.entityData(e));
+    }
+    e.removed = true;
+  }
+
+  // Called just before a chunk unloads
+  storeChunk(c) {
+    const inside = (e) => (Math.floor(e.pos.x) >> 4) === c.cx && (Math.floor(e.pos.z) >> 4) === c.cz;
+    for (const m of this.mobs) if (!m.removed && inside(m)) this.stash(m);
+    for (const it of this.items) if (!it.removed && inside(it)) this.stash(it);
+  }
+
+  restoreChunk(k) {
+    const w = G.world;
+    const st = w.stored.get(k);
+    if (!st) return;
+    w.stored.delete(k);
+    for (const d of st.m || []) {
+      if (d.k && (w.deadMobs.has(d.k) || this.mobs.some((m) => m.key === d.k))) continue;
+      const m = this.spawnMob(d.t, d.x, d.y, d.z, { variant: d.v, prof: d.p, size: d.s, baby: !!d.b, key: d.k, home: d.h, persistent: !!d.P });
+      if (d.hp) m.hp = Math.min(m.maxHp, d.hp);
+      m.yaw = d.yaw || 0;
+      if (d.u && m.trades) d.u.forEach((u, i) => { if (m.trades[i]) m.trades[i].uses = u; });
+    }
+    for (const d of st.i || []) {
+      const it = new ItemEntity(d.i, d.c, d.x, d.y, d.z, 0, 0, 0, d.d);
+      it.age = 5;
+      this.items.push(it);
+    }
+  }
+
+  // Everything to save: what is stored plus what is out and about right now
+  savedEntities() {
+    const out = {};
+    for (const [k, st] of G.world.stored) out[k] = { m: [...st.m], i: [...st.i] };
+    for (const e of [...this.mobs, ...this.items]) {
+      if (!this.keepable(e)) continue;
+      const k = chunkKey(e.pos.x, e.pos.z);
+      if (!out[k]) out[k] = { m: [], i: [] };
+      (e instanceof ItemEntity ? out[k].i : out[k].m).push(this.entityData(e));
+    }
+    return out;
   }
 
   spawnArrow(x, y, z, vx, vy, vz, owner, opts) {
@@ -1536,8 +1646,6 @@ export class Entities {
     if (this.spawnTimer <= 0) {
       this.spawnTimer = 1;
       if (!isClient()) { this.spawnHostiles(); this.despawn(); }
-      const w = G.world;
-      for (const it of this.items) if (!w.getChunk(Math.floor(it.pos.x) >> 4, Math.floor(it.pos.z) >> 4)) it.removed = true;
     }
   }
 
@@ -1548,6 +1656,7 @@ export class Entities {
     if (isClient()) return;   // guests get their mobs from the host
     const w = G.world;
     const k = (chunk.cx + 32768) * 65536 + (chunk.cz + 32768);
+    this.restoreChunk(k);
     const pending = w.pendingSpawns.get(k);
     if (pending) {
       w.pendingSpawns.delete(k);
@@ -1556,6 +1665,9 @@ export class Entities {
         this.spawnMob(s.type, s.x, s.y, s.z, { prof: s.prof, key: s.key, home: { x: s.x, y: s.y, z: s.z }, persistent: true });
       }
     }
+    // animals are placed once per chunk, ever; after that they are kept like everything else
+    if (w.spawned.has(k)) return;
+    w.spawned.add(k);
     if (rand() > 0.14) return;
     if (this.mobs.filter((m) => PASSIVE.includes(m.type)).length >= 28) return;
     const type = PASSIVE[(rand() * PASSIVE.length) | 0];
@@ -1645,13 +1757,16 @@ export class Entities {
   despawn() {
     const w = G.world, ps = players();
     for (const m of this.mobs) {
+      if (m.removed) continue;
       let d = Infinity;
       for (const q of ps) d = Math.min(d, Math.hypot(m.pos.x - q.pos.x, m.pos.z - q.pos.z));
-      if (!w.getChunk(Math.floor(m.pos.x) >> 4, Math.floor(m.pos.z) >> 4)) { m.removed = true; continue; }
+      // wandered out of the loaded world: kept for when that area loads again
+      if (!w.getChunk(Math.floor(m.pos.x) >> 4, Math.floor(m.pos.z) >> 4)) { this.stash(m); continue; }
       if (m.persistent) continue;
       if (m.def.hostile && (d > 80 || (d > 40 && rand() < 0.02))) m.removed = true;
       if (m.type === 'gloomwing' && G.daylight > 0.8 && rand() < 0.05) m.removed = true;
     }
+    for (const it of this.items) if (!it.removed && !it.proxy && !w.getChunk(Math.floor(it.pos.x) >> 4, Math.floor(it.pos.z) >> 4)) this.stash(it);
   }
 
   // Remember villager trade usage so it survives unloading and saving

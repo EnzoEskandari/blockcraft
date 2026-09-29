@@ -67,6 +67,17 @@ export class Inventory {
     return count;
   }
 
+  // How many more of an item would fit
+  room(id) {
+    const max = maxStack(id);
+    let n = 0;
+    for (const s of this.slots) {
+      if (!s) n += max;
+      else if (max > 1 && s.id === id) n += Math.max(0, max - s.count);
+    }
+    return n;
+  }
+
   count(id) { return this.slots.reduce((n, s) => n + (s && s.id === id ? s.count : 0), 0); }
 
   remove(id, n) {

@@ -364,7 +364,7 @@ export class UI {
       row.type = 'button';
       row.appendChild(h('strong', null, w.name));
       const d = new Date(w.lastPlayed || w.created);
-      row.appendChild(h('span', null, `${w.mode === 'creative' ? 'Creative' : 'Survival'} · seed ${w.seed} · ${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`));
+      row.appendChild(h('span', null, `${w.mode === 'creative' ? 'Creative' : 'Survival'}${w.mp ? ` · Multiplayer ${w.code}` : ''} · seed ${w.seed} · ${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`));
       if (w.id === this.selectedWorld) row.classList.add('sel');
       row.addEventListener('click', () => {
         if (this.selectedWorld === w.id) { this.playSelected(); return; }

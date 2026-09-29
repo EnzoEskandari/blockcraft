@@ -65,7 +65,9 @@ wss.on('connection', (ws) => {
     const room = ws.room && rooms.get(ws.room);
 
     if (m.t === 'host' && !ws.room) {
-      const code = newCode();
+      // a world keeps its code between sessions when it is free
+      const want = String(m.code || '').toUpperCase();
+      const code = want.length === 4 && [...want].every((c) => CODE_CHARS.includes(c)) && !rooms.has(want) ? want : newCode();
       rooms.set(code, { host: ws, peers: new Map(), next: 1 });
       ws.room = code; ws.pid = 0; ws.name = cleanName(m.name);
       send(ws, { t: 'hosted', code, id: 0 });

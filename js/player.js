@@ -344,7 +344,10 @@ export class Player {
       const r = this.pickRay(input);
       const reach = this.creative ? 6 : 5;
       const hit = raycast(w, r.ox, r.oy, r.oz, r.dx, r.dy, r.dz, reach, (id) => id !== B.water);
-      const mobHit = G.entities.pickMob(r.ox, r.oy, r.oz, r.dx, r.dy, r.dz, reach - 1.5);
+      let mobHit = G.entities.pickMob(r.ox, r.oy, r.oz, r.dx, r.dy, r.dz, reach - 1.5);
+      // other players can always be hit
+      const pl = G.net ? G.net.pickPlayer(r.ox, r.oy, r.oz, r.dx, r.dy, r.dz, reach - 1.5) : null;
+      if (pl && (!mobHit || pl.t < mobHit.t)) mobHit = { mob: pl.player, t: pl.t };
       if (mobHit && (!hit || mobHit.t < hit.dist)) target = { mob: mobHit.mob };
       else if (hit) target = { block: hit };
     }
@@ -511,6 +514,15 @@ export class Player {
     const crit = strength > 0.9 && !this.onGround && this.vel.y < 0 && !this.flying && !this.inWater;
     if (crit) dmg *= 1.5;
     this.swing();
+    if (mob.isPlayer) {
+      G.net.pvp(mob, dmg, this.pos.x, this.pos.z);
+      sfx('attack', mob.pos);
+      if (!this.creative) {
+        this.exhaustion += 0.1;
+        if (it && it.durability) { if (this.inv.damageHeld(toolOf(it) === 'sword' ? 1 : 2)) sfx('break_tool'); G.ui.invChanged(); }
+      }
+      return;
+    }
     const kb = (strength > 0.9 ? 1 : 0.5) + (this.sprinting && strength > 0.9 ? 0.6 : 0);
     if (mob.hurt(dmg, this.pos.x, this.pos.z, true, kb)) {
       sfx('attack', mob.pos);
@@ -777,9 +789,11 @@ export class Player {
       this.armor = [null, null, null, null];
     }
     const msgs = { fall: 'You hit the ground too hard', drown: 'You drowned', starve: 'You starved to death', void: 'You fell out of the world', explosion: 'You blew up', fire: 'You burned to death', magic: 'You were killed by magic', arrow: 'You were shot', pearl: 'You hit the ground too hard' };
+    if (kind === 'player' && this.lastAttacker) msgs.player = `You were slain by ${this.lastAttacker}`;
     G.ui.showDeath(msgs[kind] || 'You were slain');
     if (G.net) {
       const told = { fall: 'hit the ground too hard', drown: 'drowned', starve: 'starved to death', void: 'fell out of the world', explosion: 'blew up', fire: 'burned to death', magic: 'was killed by magic', arrow: 'was shot', pearl: 'hit the ground too hard' };
+      if (kind === 'player' && this.lastAttacker) told.player = `was slain by ${this.lastAttacker}`;
       G.net.announce(`${G.net.name} ${told[kind] || 'was slain'}`);
     }
   }
