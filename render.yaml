@@ -1,4 +1,4 @@
-# Render Blueprint: a Node web service that serves the game and relays multiplayer
+# Render Blueprint: a Node web service that serves the game, keeps online worlds and relays multiplayer
 services:
   - type: web
     name: blockcraft
@@ -7,3 +7,7 @@ services:
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /healthz
+    envVars:
+      # Optional: a Postgres connection string (e.g. a free Neon database) to keep online worlds forever
+      - key: DATABASE_URL
+        sync: false

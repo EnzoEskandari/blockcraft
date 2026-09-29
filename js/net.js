@@ -213,23 +213,27 @@ export class Net {
     this.breaking = false;
     this.closed = false;
     this.hostName = role === 'host' ? name : '';
+    this.pendingHello = [];       // host: players who arrived while the world was still loading
   }
 
   // ------------------------------------------------------------ connecting
-  static start(role, name, code, onStatus = () => {}) {
+  // Enter an online world. If nobody is in it, this player runs it (resolves { net, host }),
+  // otherwise they join whoever does (resolves { net, snap }).
+  static connect(worldId, name, have, onStatus = () => {}) {
     const url = serverURL();
-    if (!url) return Promise.reject(new Error('Multiplayer needs the Blockcraft website.'));
-    const net = new Net(role, name);
+    if (!url) return Promise.reject(new Error('Multiplayer only works on the Blockcraft website.'));
+    const net = new Net('pending', name);
+    net.code = worldId;
     return new Promise((resolve, reject) => {
       let settled = false;
       const fail = (msg) => { if (!settled) { settled = true; reject(new Error(msg)); } net.shutdown(); };
       let ws;
       try { ws = new WebSocket(url); } catch { fail('Could not reach the multiplayer server.'); return; }
       net.ws = ws;
-      const timer = setTimeout(() => fail('The multiplayer server did not answer. Check your connection and try again.'), 20000);
+      const timer = setTimeout(() => fail('The multiplayer server did not answer. Check your connection and try again.'), 25000);
       ws.onopen = () => {
-        onStatus(role === 'host' ? 'Opening your world…' : 'Joining…');
-        ws.send(JSON.stringify(role === 'host' ? { t: 'host', name, code } : { t: 'join', code, name }));
+        onStatus('Joining…');
+        ws.send(JSON.stringify({ t: 'world', id: worldId, name, have }));
       };
       ws.onerror = () => {};
       ws.onclose = () => {
@@ -241,18 +245,28 @@ export class Net {
         let m;
         try { m = JSON.parse(ev.data); } catch { return; }
         if (m.t === 'error') { clearTimeout(timer); fail(m.msg); return; }
-        if (m.t === 'hosted') { clearTimeout(timer); net.code = m.code; settled = true; resolve(net); return; }
+        if (m.t === 'hostworld') {
+          clearTimeout(timer);
+          net.role = 'host'; net.id = 0; net.hostName = name;
+          settled = true;
+          resolve({ net, host: m });
+          return;
+        }
         if (m.t === 'joined') {
-          net.id = m.id; net.code = m.code;
+          net.role = 'client'; net.id = m.id;
           onStatus('Downloading the world…');
           net.send({ k: 'hello', name });
           net.onWorld = (snap) => { clearTimeout(timer); settled = true; resolve({ net, snap }); };
+          net.onKick = (msg) => { clearTimeout(timer); fail(msg); };
           return;
         }
         net.onRaw(m);
       };
     });
   }
+
+  // The host sends the whole world to the server so it is kept even when everyone leaves
+  uploadSave(data, v) { this.raw({ t: 'save', data, v }); }
 
   raw(m) { if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(m)); }
   // Guests talk to the host; the host talks to everyone
@@ -282,20 +296,25 @@ export class Net {
     if (G.net === this) G.net = null;
   }
 
-  // The connection dropped by itself
+  // The connection dropped by itself: try to get back in
   lost() {
     if (this.closed) return;
     this.shutdown();
     if (G.net === this) G.net = null;
-    if (this.role === 'client') G.game.leaveRemote('Lost connection to the game.');
-    else G.ui.toast('Lost connection to the multiplayer server. Your friends were disconnected.');
+    G.game.rejoin(this.code, 1500, 'Lost connection. Reconnecting…');
   }
 
   onRaw(m) {
     if (m.t === 'msg') { this.onMsg(m.from, m.d); return; }
     if (m.t === 'peer') return;   // they say hello once their page is ready
     if (m.t === 'left') { this.removePlayer(m.id); return; }
-    if (m.t === 'closed') { this.shutdown(); if (G.net === this) G.net = null; G.game.leaveRemote('The host closed the game.'); }
+    if (m.t === 'rehost') {
+      // whoever was running the world left: reconnect, and the first one back takes over
+      this.saveGuest();
+      this.shutdown();
+      if (G.net === this) G.net = null;
+      G.game.rejoin(this.code, m.wait || 0, `${this.hostName || 'The host'} left. Taking over the world…`);
+    }
   }
 
   // ------------------------------------------------------------ players
@@ -480,11 +499,15 @@ export class Net {
     const w = G.world;
     switch (d.k) {
       case 'hello': {
-        if (!w || G.state === 'title') return;
+        // still loading the world ourselves: answer once it is ready
+        if (!w || G.state === 'title' || !G.player) { this.pendingHello.push([from, d]); return; }
         const used = new Set([...this.players.values()].map((x) => x.slot));
         let slot = 1;
         while (used.has(slot)) slot++;
         const name = String(d.name || 'Player').slice(0, 16);
+        // everyone's inventory is saved under their name, so names have to be different
+        const taken = name.toLowerCase() === this.name.toLowerCase() || [...this.players.values()].some((x) => x.name.toLowerCase() === name.toLowerCase());
+        if (taken) { this.sendTo(from, { k: 'kick', msg: `Someone called ${name} is already playing. Pick a different name.` }); return; }
         this.addPlayer(from, name, slot);
         this.sendTo(from, G.game.worldSnapshot(name));
         this.sendRoster();
@@ -583,6 +606,7 @@ export class Net {
     const w = G.world, p = G.player;
     switch (d.k) {
       case 'world': this.hostName = d.host || 'the host'; if (this.onWorld) { const f = this.onWorld; this.onWorld = null; f(d); } break;
+      case 'kick': if (this.onKick) this.onKick(d.msg); break;
       case 'roster': {
         const keep = new Set();
         for (const [id, name, slot] of d.l) {
@@ -699,6 +723,11 @@ export class Net {
   }
 
   hostTick(dt) {
+    if (this.pendingHello.length && G.player) {
+      const list = this.pendingHello;
+      this.pendingHello = [];
+      for (const [from, d] of list) this.onHostMsg(from, d);
+    }
     this.mobT -= dt;
     if (this.mobT <= 0) { this.mobT = 0.1; this.syncMobs(); }
     this.timeT -= dt;

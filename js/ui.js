@@ -109,9 +109,13 @@ export class UI {
     on('b-single', () => this.openScreen('worlds'));
     on('b-multi', () => this.openScreen('mp'));
     on('b-mp-back', () => this.back());
-    on('b-join', () => this.join());
-    on('b-invite', () => this.invite());
-    $('mp-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); this.join(); } });
+    on('b-join', () => this.playOnline());
+    on('b-new-online', () => { if (this.mpName()) { this.createOnline = true; this.openScreen('create'); } });
+    on('b-copy-link', () => this.copyLink(this.selectedOnline));
+    on('b-copy-link-pause', () => this.copyLink(G.worldMeta && G.worldMeta.online));
+    on('b-delete-online', () => this.askDeleteOnline());
+    on('b-confirm-delete-online', () => this.confirmDeleteOnline());
+    on('b-cancel-delete-online', () => { $('online-delete-confirm').hidden = true; });
     $('chat-form').addEventListener('submit', (e) => {
       e.preventDefault();
       const inp = $('chat-input');
@@ -125,7 +129,7 @@ export class UI {
     on('b-help', () => this.openScreen('help'));
     on('b-help-back', () => this.back());
     on('b-play-world', () => this.playSelected());
-    on('b-new-world', () => this.openScreen('create'));
+    on('b-new-world', () => { this.createOnline = false; this.openScreen('create'); });
     on('b-delete-world', () => this.askDelete());
     on('b-worlds-back', () => this.back());
     on('b-confirm-delete', () => this.confirmDelete());
@@ -139,6 +143,7 @@ export class UI {
         : 'Gather resources, craft, stay alive';
     });
     on('b-create', () => {
+      if (this.createOnline) { this.createOnlineWorld(); return; }
       const name = $('world-name').value.trim() || 'New World';
       G.game.createWorld(name, $('world-seed').value.trim(), $('b-mode').dataset.mode);
     });
@@ -188,12 +193,14 @@ export class UI {
     if (name === 'pause') this.syncPause();
     if (name === 'mp') {
       $('mp-name').value = G.settings.name || '';
-      $('b-join').disabled = false;
-      this.mpStatus('To host, open one of your worlds, pause, and choose Open to Friends. Then share the code.');
+      this.mpStatus('');
+      this.buildOnlineList();
     }
     if (name === 'create') {
-      $('world-name').value = 'New World';
+      $('world-name').value = this.createOnline ? 'Online World' : 'New World';
       $('world-seed').value = '';
+      document.querySelector('#s-create h2').textContent = this.createOnline ? 'Create Online World' : 'Create New World';
+      $('b-create').textContent = this.createOnline ? 'Create Online World' : 'Create New World';
     }
     this.section(name);
     if (G.state === 'playing') exitLock();
@@ -240,6 +247,9 @@ export class UI {
 
   showLoading(p) {
     this.section('loading');
+    const online = G.worldMeta && G.worldMeta.online;
+    $('load-title').textContent = online ? 'Loading world' : 'Generating world';
+    $('load-sub').textContent = online ? G.worldMeta.name : 'Building terrain';
     $('load-bar').style.width = Math.round(p * 100) + '%';
   }
 
@@ -280,61 +290,158 @@ export class UI {
   }
 
   // ---------------------------------------------------------------- multiplayer
-  mpStatus(text) { $('mp-status').textContent = text; }
+  mpStatus(text) { $('mp-status').textContent = text || ''; }
 
-  async join() {
+  onlineLink(id) { return `${location.origin}${location.pathname}?world=${id}`; }
+
+  // Online worlds live on the server, each with a link that never changes
+  async buildOnlineList() {
+    const list = $('online-list');
+    $('online-delete-confirm').hidden = true;
+    list.innerHTML = '';
+    list.appendChild(h('p', 'empty', 'Loading online worlds…'));
+    this.online = [];
+    this.syncOnlineButtons();
+    let res;
+    try { res = await G.game.listOnline(); } catch (err) {
+      list.innerHTML = '';
+      list.appendChild(h('p', 'empty', err && err.message ? err.message : 'Could not load the online worlds.'));
+      return;
+    }
+    if (G.screen !== 'mp') return;
+    this.online = res.worlds || [];
+    list.innerHTML = '';
+    if (!this.online.some((w) => w.id === this.selectedOnline)) this.selectedOnline = this.online.length ? this.online[0].id : null;
+    if (!this.online.length) list.appendChild(h('p', 'empty', 'No online worlds yet. Create one, then send your friends its link.'));
+    for (const w of this.online) {
+      const row = h('button', 'world-row');
+      row.type = 'button';
+      row.appendChild(h('strong', null, w.name));
+      const d = new Date(w.updated || w.created);
+      const who = w.players ? `${w.players} playing now` : `last played ${d.toLocaleDateString()}`;
+      row.appendChild(h('span', null, `${w.mode === 'creative' ? 'Creative' : 'Survival'} · ${who} · link …?world=${w.id}`));
+      if (w.id === this.selectedOnline) row.classList.add('sel');
+      row.addEventListener('click', () => {
+        if (this.selectedOnline === w.id) { this.playOnline(); return; }
+        this.selectedOnline = w.id;
+        for (const r of list.children) r.classList.remove('sel');
+        row.classList.add('sel');
+        $('online-delete-confirm').hidden = true;
+        this.syncOnlineButtons();
+      });
+      list.appendChild(row);
+    }
+    if (!res.permanent && !$('mp-status').textContent) {
+      this.mpStatus('Note: this server has no database yet, so online worlds are also kept in the browsers of the people who play them. Add a database to make them fully permanent (see the README).');
+    }
+    this.syncOnlineButtons();
+  }
+
+  syncOnlineButtons() {
+    const off = !this.selectedOnline || !!this.busy;
+    for (const id of ['b-join', 'b-copy-link', 'b-delete-online']) $(id).disabled = off;
+    $('b-new-online').disabled = !!this.busy;
+  }
+
+  mpName() {
     const name = $('mp-name').value.trim().slice(0, 16);
-    const code = $('mp-code').value.trim().toUpperCase();
-    if (!name) { this.mpStatus('Type your name first.'); $('mp-name').focus(); return; }
-    if (!/^[A-Z0-9]{4}$/.test(code)) { this.mpStatus('The game code is 4 letters or numbers.'); $('mp-code').focus(); return; }
+    if (!name) { this.mpStatus('Type your name first.'); $('mp-name').focus(); return null; }
     G.settings.name = name;
     saveSettings();
-    $('b-join').disabled = true;
+    return name;
+  }
+
+  async playOnline(id = this.selectedOnline) {
+    if (!id || this.busy) return;
+    const name = this.mpName();
+    if (!name) return;
+    this.busy = true;
+    this.syncOnlineButtons();
     this.mpStatus('Connecting…');
-    try {
-      await G.game.joinGame(code, name, (t) => this.mpStatus(t));
-    } catch (err) {
-      this.mpStatus(err && err.message ? err.message : 'Could not join that game.');
-      $('b-join').disabled = false;
+    try { await G.game.joinWorld(id, name, (t) => this.mpStatus(t)); }
+    catch (err) { this.mpStatus(err && err.message ? err.message : 'Could not join that world.'); }
+    this.busy = false;
+    this.syncOnlineButtons();
+  }
+
+  // Opened from a world link (…?world=ID)
+  openOnline(id) {
+    this.selectedOnline = id;
+    this.openScreen('mp');
+    if (G.settings.name) this.playOnline(id);
+    else this.mpStatus('Type your name, then press Play Selected World to join.');
+  }
+
+  async copyLink(id) {
+    if (!id) return;
+    const link = this.onlineLink(id);
+    let ok = false;
+    try { await navigator.clipboard.writeText(link); ok = true; } catch { /* clipboard blocked */ }
+    if (!ok) { window.prompt('Copy this link and send it to your friends:', link); return; }
+    if (G.screen === 'mp') this.mpStatus(`Link copied: ${link}`);
+    else {
+      const b = $('b-copy-link-pause');
+      b.textContent = 'Link copied!';
+      setTimeout(() => { b.textContent = 'Copy Link'; }, 2000);
     }
   }
 
-  async invite() {
-    const name = $('host-name').value.trim().slice(0, 16);
-    if (!name) { $('host-name').focus(); $('mp-info').hidden = false; $('mp-info-head').textContent = 'Type your name first.'; $('mp-code-show').textContent = ''; return; }
-    G.settings.name = name;
-    saveSettings();
-    const b = $('b-invite');
+  askDeleteOnline() {
+    const w = (this.online || []).find((x) => x.id === this.selectedOnline);
+    if (!w) return;
+    $('online-delete-name').textContent = w.name;
+    $('online-delete-confirm').hidden = false;
+  }
+
+  async confirmDeleteOnline() {
+    $('online-delete-confirm').hidden = true;
+    try { await G.game.deleteOnline(this.selectedOnline); this.mpStatus('World deleted.'); } catch (err) { this.mpStatus(err.message); }
+    this.buildOnlineList();
+  }
+
+  async createOnlineWorld() {
+    const name = this.mpName();
+    const b = $('b-create');
+    if (!name) { this.back(); return; }
     b.disabled = true;
-    b.textContent = 'Opening…';
     try {
-      await G.game.hostGame(name);
-      G.net.chat(null, `Your world is open. Code: ${G.net.code}`);
+      const w = await G.game.createOnline($('world-name').value.trim() || 'Online World', $('world-seed').value.trim(), $('b-mode').dataset.mode);
+      this.back();
+      this.selectedOnline = w.id;
+      this.playOnline(w.id);
     } catch (err) {
-      $('mp-info').hidden = false;
-      $('mp-info-head').textContent = err && err.message ? err.message : 'Could not open the world to friends.';
-      $('mp-code-show').textContent = '';
+      this.back();
+      this.mpStatus(err.message);
     }
     b.disabled = false;
-    b.textContent = 'Open to Friends';
-    this.syncPause();
+  }
+
+  // Shown while getting (back) into an online world
+  showBusy(msg) {
+    this.stack.length = 0;
+    if (CONTAINERS.includes(G.screen)) this.closeContainer();
+    G.screen = 'busy';
+    this.section('loading');
+    $('hud').hidden = true;
+    $('load-title').textContent = msg;
+    $('load-sub').textContent = '';
+    $('load-bar').style.width = '0%';
     this.updateTouchVisibility();
   }
 
   syncPause() {
-    const net = G.net;
-    $('host-name').value = G.settings.name || '';
-    $('host-name-field').hidden = !!net;
-    $('b-invite').hidden = !!net;
-    $('b-quit').textContent = net && net.role === 'client' ? 'Disconnect' : 'Save and Quit to Title';
-    if (!net) { if ($('mp-code-show').textContent) $('mp-info').hidden = true; return; }
-    $('mp-info').hidden = false;
-    $('mp-info-head').textContent = net.role === 'host' ? 'Friends choose Multiplayer and enter this code:' : `You're in ${net.hostName}'s world. Code:`;
-    $('mp-code-show').textContent = net.code || '';
+    const net = G.net, meta = G.worldMeta;
+    const online = !!(meta && meta.online);
+    $('mp-box').hidden = !online;
+    $('b-quit').textContent = online ? 'Leave World' : 'Save and Quit to Title';
+    if (!online) return;
+    $('mp-info-head').textContent = 'Online world · anyone with the link can join';
+    $('mp-code-show').textContent = meta.online;
+    if (!net) { $('mp-players').textContent = ''; return; }
     const names = [net.role === 'host' ? `${net.name} (you)` : net.hostName];
     for (const a of net.players.values()) if (a.id !== 0) names.push(a.name);
     if (net.role === 'client') names.push(`${net.name} (you)`);
-    $('mp-players').textContent = names.length > 1 || net.role === 'client' ? 'Playing: ' + names.join(', ') : 'Nobody has joined yet.';
+    $('mp-players').textContent = names.length > 1 ? 'Playing: ' + names.join(', ') : 'Nobody else is here right now.';
   }
 
   chatLine(text, sys) {
@@ -364,7 +471,7 @@ export class UI {
       row.type = 'button';
       row.appendChild(h('strong', null, w.name));
       const d = new Date(w.lastPlayed || w.created);
-      row.appendChild(h('span', null, `${w.mode === 'creative' ? 'Creative' : 'Survival'}${w.mp ? ` · Multiplayer ${w.code}` : ''} · seed ${w.seed} · ${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`));
+      row.appendChild(h('span', null, `${w.mode === 'creative' ? 'Creative' : 'Survival'} · seed ${w.seed} · ${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`));
       if (w.id === this.selectedWorld) row.classList.add('sel');
       row.addEventListener('click', () => {
         if (this.selectedWorld === w.id) { this.playSelected(); return; }

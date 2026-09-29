@@ -145,6 +145,7 @@
   .mp-box { display: flex; flex-direction: column; gap: 8px; width: min(400px, 100%); margin-top: 6px; }
   .mp-code { font: 400 clamp(22px, 6vw, 34px) var(--title-font); letter-spacing: 0.12em; color: var(--accent); text-align: center; text-shadow: 3px 3px 0 var(--shadow); margin: 2px 0; user-select: all; -webkit-user-select: all; }
   .mp-players { font-size: 20px; color: var(--text-dim); text-align: center; margin: 0; }
+  .mp-status { max-width: 560px; overflow-wrap: anywhere; min-height: 1.2em; }
   #click-to-play {
     position: fixed; left: 50%; top: 60%; transform: translateX(-50%); z-index: 5; pointer-events: none;
     font-size: 26px; padding: 6px 16px; background: rgba(0, 0, 0, 0.55); text-shadow: 2px 2px 0 var(--shadow);
@@ -434,12 +435,28 @@
 </section>
 
 <section class="screen menu-bg" id="s-mp" hidden>
-  <h2>Multiplayer</h2>
-  <div class="col">
+  <h2>Online Worlds</h2>
+  <div class="col" style="width:min(560px,100%)">
     <label class="field" for="mp-name">Your name<input id="mp-name" type="text" maxlength="16" autocomplete="nickname" spellcheck="false"></label>
-    <label class="field" for="mp-code">Game code<input id="mp-code" type="text" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="4 letters from the host"></label>
-    <button class="btn" id="b-join" type="button">Join Game</button>
-    <p class="note" id="mp-status">To host, open one of your worlds, pause, and choose Open to Friends. Then share the code.</p>
+  </div>
+  <div class="world-list" id="online-list"></div>
+  <div class="confirm" id="online-delete-confirm" hidden>
+    <p>Delete “<span id="online-delete-name"></span>” for everyone? It will be gone for good.</p>
+    <div class="row2">
+      <button class="btn danger" id="b-confirm-delete-online" type="button">Delete</button>
+      <button class="btn" id="b-cancel-delete-online" type="button">Keep it</button>
+    </div>
+  </div>
+  <p class="note mp-status" id="mp-status"></p>
+  <div class="col" style="width:min(560px,100%)">
+    <div class="row2">
+      <button class="btn" id="b-join" type="button">Play Selected World</button>
+      <button class="btn" id="b-new-online" type="button">Create Online World</button>
+    </div>
+    <div class="row2">
+      <button class="btn" id="b-copy-link" type="button">Copy Link</button>
+      <button class="btn" id="b-delete-online" type="button">Delete</button>
+    </div>
     <button class="btn" id="b-mp-back" type="button">Back</button>
   </div>
 </section>
@@ -517,14 +534,11 @@
     <button class="btn" id="b-pause-options" type="button">Options…</button>
     <button class="btn" id="b-quit" type="button">Save and Quit to Title</button>
   </div>
-  <div class="mp-box" id="mp-box">
-    <label class="field" for="host-name" id="host-name-field">Your name<input id="host-name" type="text" maxlength="16" autocomplete="nickname" spellcheck="false"></label>
-    <button class="btn" id="b-invite" type="button">Open to Friends</button>
-    <div id="mp-info" hidden>
-      <p class="note" id="mp-info-head">Friends choose Multiplayer and enter this code:</p>
-      <div class="mp-code" id="mp-code-show"></div>
-      <p class="mp-players" id="mp-players"></p>
-    </div>
+  <div class="mp-box" id="mp-box" hidden>
+    <p class="note" id="mp-info-head">Online world · anyone with the link can join</p>
+    <div class="mp-code" id="mp-code-show"></div>
+    <button class="btn" id="b-copy-link-pause" type="button">Copy Link</button>
+    <p class="mp-players" id="mp-players"></p>
   </div>
 </section>
 
@@ -546,8 +560,8 @@
 
 <section class="screen menu-bg" id="s-loading" hidden>
   <div class="load-box">
-    <h2>Generating world</h2>
-    <p class="sub">Building terrain</p>
+    <h2 id="load-title">Generating world</h2>
+    <p class="sub" id="load-sub">Building terrain</p>
     <div class="load-track"><div id="load-bar"></div></div>
   </div>
 </section>

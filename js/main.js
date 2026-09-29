@@ -14,7 +14,7 @@ import { hashString } from './noise.js';
 import { packSlots, unpackSlots, stack } from './inventory.js';
 import { rollLoot } from './structures.js';
 import { hash3 } from './noise.js';
-import { Net } from './net.js';
+import { Net, serverURL } from './net.js';
 
 const dayLength = () => G.settings.dayLength || 1200; // seconds; the original's day is 20 minutes
 const isNight = () => G.time > 0.52 && G.time < 0.98;
@@ -463,10 +463,7 @@ export const Game = {
   },
 
   createWorld(name, seedText, mode) {
-    let seed;
-    if (!seedText) seed = (Math.random() * 4294967296) >>> 0;
-    else if (/^-?\d+$/.test(seedText)) seed = Number(BigInt.asUintN(32, BigInt(seedText)));
-    else seed = hashString(seedText);
+    const seed = makeSeed(seedText);
     const meta = { id: Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36), name, seed, mode: mode === 'creative' ? 'creative' : 'survival', created: Date.now(), lastPlayed: Date.now() };
     const list = this.listWorlds();
     list.unshift(meta);
@@ -503,30 +500,70 @@ export const Game = {
 
   renderDistChanged() { buildOffsets(); },
 
-  // ------------------------------------------------------------ multiplayer
+  // ------------------------------------------------------------ online worlds
+  // Online worlds live on the Blockcraft server, each with its own permanent link. Whoever is in the
+  // world first runs it and sends the save to the server every few seconds; the rest join them.
   playerData,
 
-  // Open the current world to friends; resolves with the room code
-  async hostGame(name) {
-    if (G.net) return G.net.code;
-    const meta = G.worldMeta;
-    const net = await Net.start('host', name, meta.code);
-    if (G.state !== 'playing' && G.state !== 'loading') { net.shutdown(); throw new Error('Open a world first.'); }
-    G.net = net;
-    G.world.guests = G.world.guests || {};
-    // remember it: this world stays a multiplayer world with the same code
-    meta.mp = true;
-    meta.code = net.code;
-    const list = this.listWorlds();
-    const m = list.find((x) => x.id === meta.id);
-    if (m) { m.mp = true; m.code = net.code; store('worlds', list); }
-    return net.code;
+  async listOnline() {
+    const away = 'Online worlds only work on the Blockcraft website (your onrender.com link).';
+    if (!serverURL()) throw new Error(away);
+    let r;
+    try { r = await fetch('/api/worlds', { cache: 'no-store' }); } catch { throw new Error('Could not reach the server. Check your connection.'); }
+    if (!r.ok || !(r.headers.get('content-type') || '').includes('json')) throw new Error(away);
+    return r.json();
   },
 
-  async joinGame(code, name, onStatus) {
-    const { net, snap } = await Net.start('client', name, code, onStatus);
+  async createOnline(name, seedText, mode) {
+    const r = await fetch('/api/worlds', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name, seed: makeSeed(seedText), mode }),
+    });
+    if (!r.ok) throw new Error('Could not create the world. Check your connection.');
+    return r.json();
+  },
+
+  async deleteOnline(id) {
+    const r = await fetch('/api/worlds/' + id, { method: 'DELETE' });
+    if (!r.ok) { const b = await r.json().catch(() => ({})); throw new Error(b.error || 'Could not delete that world.'); }
+    remove('online.' + id);
+  },
+
+  async joinWorld(id, name, onStatus) {
+    // this browser's copy of the world, in case the server has lost or has an older one
+    const backup = load('online.' + id);
+    const have = backup && backup.meta ? { v: backup.v || 0, meta: backup.meta } : null;
+    const { net, host, snap } = await Net.connect(id, name, have, onStatus);
     G.net = net;
-    startRemoteWorld(snap);
+    if (snap) { startRemoteWorld(snap, id); return; }
+    let data = null;
+    if (host.useLocal && backup) data = backup.data;
+    else if (host.save) { try { data = JSON.parse(host.save); } catch { data = null; } }
+    const m = host.meta;
+    S.saveVersion = Math.max(m.v || 0, (backup && backup.v) || 0);
+    startWorld({ online: id, id: null, name: m.name, seed: m.seed, mode: m.mode, created: m.created, me: name }, data);
+  },
+
+  // Back into the same online world after the connection dropped or the player running it left
+  rejoin(id, wait, msg) {
+    if (G.worldMeta && G.worldMeta.online && !G.worldMeta.remote) saveWorld();   // keeps a copy in this browser
+    const carry = G.player && !G.player.dead ? playerData(G.player) : null;
+    if (G.net) G.net.shutdown();
+    G.net = null;
+    teardown();
+    G.state = 'title';
+    exitLock();
+    G.ui.showBusy(msg);
+    const name = G.settings.name || 'Player';
+    setTimeout(async () => {
+      S.carry = carry ? { id, d: carry } : null;
+      try { await Game.joinWorld(id, name, (t) => G.ui.showBusy(t)); } catch (err) {
+        S.carry = null;
+        G.ui.showTitle();
+        G.ui.openScreen('mp');
+        G.ui.mpStatus(err && err.message ? err.message : 'Could not get back into the world.');
+      }
+    }, wait);
   },
 
   // Sent to a guest when they join: everything they need to build the same world
@@ -535,21 +572,16 @@ export const Game = {
     return {
       k: 'world', host: G.net.name, name: G.worldMeta.name, seed: w.seed, mode: G.worldMeta.mode,
       time: G.time, day: G.day || 0, nns: G.nightsNoSleep || 0,
-      spawn: p.spawn, edits: packEdits(w), guest: (w.guests && w.guests[name]) || null,
+      spawn: w.worldSpawn || p.spawn, edits: packEdits(w), guest: (w.guests && w.guests[name]) || null,
     };
   },
-
-  // The host left or the connection dropped
-  leaveRemote(msg) {
-    if (G.net) G.net.close();
-    teardown();
-    G.state = 'title';
-    exitLock();
-    G.ui.showTitle();
-    G.ui.openScreen('mp');
-    G.ui.mpStatus(msg);
-  },
 };
+
+function makeSeed(seedText) {
+  if (!seedText) return (Math.random() * 4294967296) >>> 0;
+  if (/^-?\d+$/.test(seedText)) return Number(BigInt.asUintN(32, BigInt(seedText)));
+  return hashString(seedText);
+}
 
 function packEdits(w) {
   const edits = {};
@@ -592,11 +624,11 @@ function applyPlayerData(p, d) {
   if (p.health <= 0) { p.health = 20; p.pos = { ...p.spawn }; }
 }
 
-// A guest's copy of the host's world
-function startRemoteWorld(snap) {
+// A guest's copy of the world the host is running
+function startRemoteWorld(snap, onlineId) {
   initAudio();
   teardown();
-  G.worldMeta = { id: null, remote: true, name: snap.name, seed: snap.seed, mode: snap.mode === 'creative' ? 'creative' : 'survival' };
+  G.worldMeta = { id: null, remote: true, online: onlineId, name: snap.name, seed: snap.seed, mode: snap.mode === 'creative' ? 'creative' : 'survival' };
   const w = new World(snap.seed);
   w.onChange = onBlockChange;
   w.villagerTrades = new Map();
@@ -619,9 +651,17 @@ function startRemoteWorld(snap) {
     p.spawn = { ...sp };
     p.yaw = Math.PI * 0.75;
   }
+  takeCarry(p, onlineId);
   buildOffsets();
   G.state = 'loading';
   G.ui.showLoading(0);
+}
+
+// After reconnecting, a player keeps exactly what they had a moment ago
+function takeCarry(p, onlineId) {
+  const c = S.carry;
+  S.carry = null;
+  if (c && onlineId && c.id === onlineId) applyPlayerData(p, c.d);
 }
 
 // ---------------------------------------------------------------- worlds
@@ -653,7 +693,7 @@ function startWorld(meta, data) {
   G.player = p;
   if (!G.entities) G.entities = new Entities();
   G.clock = 0;
-  if (data && data.player) {
+  if (data) {
     unpackEdits(w, data.edits);
     for (const c of data.containers || []) {
       const [x, y, z] = c.k.split(',').map(Number);
@@ -661,22 +701,30 @@ function startWorld(meta, data) {
       w.containers.set(c.k, { type: c.type, slots: unpackSlots(c.slots, n), burn: c.burn || 0, burnMax: c.burnMax || 0, cook: c.cook || 0, x, y, z });
     }
     for (const k of data.saplings || []) S.saplings.set(k, 30 + Math.random() * 120);
-    applyPlayerData(p, data.player);
     G.day = data.day || 0;
     G.nightsNoSleep = data.nightsNoSleep || 0;
     G.time = data.time ?? 0.03;
   } else {
-    const sp = w.findSpawn();
-    p.pos = { x: sp.x, y: sp.h + 1, z: sp.z };
-    p.spawn = { ...p.pos };
-    p.yaw = Math.PI * 0.75;
     G.time = 0.03;
     G.day = 0;
     G.nightsNoSleep = 0;
+  }
+  // where new players appear
+  let sp = (data && data.worldSpawn) || (data && data.player && data.player.spawn);
+  if (!sp) { const f = w.findSpawn(); sp = { x: f.x, y: f.h + 1, z: f.z }; }
+  w.worldSpawn = sp;
+  // in an online world everyone's inventory is kept under their name
+  const pd = data && (meta.online ? data.guests && data.guests[meta.me] : data.player);
+  if (pd) applyPlayerData(p, pd);
+  else {
+    p.pos = { ...sp };
+    p.spawn = { ...sp };
+    p.yaw = Math.PI * 0.75;
     if (p.creative) {
       ['grass', 'dirt', 'stone', 'cobblestone', 'oak_planks', 'oak_log', 'glass', 'torch', 'bricks'].forEach((k, i) => { p.inv.slots[i] = stack(B[k], 64); });
     }
   }
+  takeCarry(p, meta.online);
   buildOffsets();
   G.state = 'loading';
   G.ui.showLoading(0);
@@ -696,6 +744,7 @@ function saveWorld() {
     time: G.time,
     player: playerData(p),
     guests: w.guests || {},
+    worldSpawn: w.worldSpawn,
     entities: G.entities.savedEntities(),
     spawned: [...w.spawned],
     day: G.day || 0, nightsNoSleep: G.nightsNoSleep || 0,
@@ -703,6 +752,16 @@ function saveWorld() {
     deadMobs: [...w.deadMobs],
     edits, containers, saplings: [...S.saplings.keys()],
   };
+  const meta = G.worldMeta;
+  if (meta.online) {
+    // the server keeps online worlds; this browser keeps a spare copy
+    delete data.player;
+    w.guests[meta.me] = playerData(p);
+    S.saveVersion = (S.saveVersion || 0) + 1;
+    if (G.net) G.net.uploadSave(JSON.stringify(data), S.saveVersion);
+    store('online.' + meta.online, { v: S.saveVersion, meta: { id: meta.online, name: meta.name, seed: meta.seed, mode: meta.mode, created: meta.created }, data });
+    return;
+  }
   const ok = store('world.' + G.worldMeta.id, data);
   const list = Game.listWorlds();
   const m = list.find((x) => x.id === G.worldMeta.id);
@@ -731,12 +790,8 @@ function frame(dt) {
       G.ui.startPlaying();
       G.ui.invChanged();
       if (!G.touchMode) requestLock();
-      const meta = G.worldMeta;
-      if (meta && meta.mp && !meta.remote && !G.net) {
-        Game.hostGame(G.settings.name || 'Player')
-          .then((code) => { G.ui.chatLine(`Open to friends · code ${code}`, true); G.ui.updateTouchVisibility(); })
-          .catch(() => G.ui.toast('Could not reopen this world to friends'));
-      }
+      // an online world is on the server from the moment someone is in it
+      if (G.worldMeta && G.worldMeta.online && !G.worldMeta.remote) saveWorld();
     }
     return;
   }
@@ -826,6 +881,9 @@ function boot(hotData) {
     }
   } catch { /* hot reload unavailable */ }
   if (hotData && hotData.worldId) Game.loadWorld(hotData.worldId);
+  // a world link (…?world=ID) goes straight into that online world
+  const link = new URLSearchParams(location.search).get('world');
+  if (link && !(hotData && hotData.worldId)) G.ui.openOnline(link.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6));
   requestAnimationFrame(loop);
 }
 
