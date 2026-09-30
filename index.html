@@ -146,6 +146,8 @@
   .mp-code { font: 400 clamp(22px, 6vw, 34px) var(--title-font); letter-spacing: 0.12em; color: var(--accent); text-align: center; text-shadow: 3px 3px 0 var(--shadow); margin: 2px 0; user-select: all; -webkit-user-select: all; }
   .mp-players { font-size: 20px; color: var(--text-dim); text-align: center; margin: 0; }
   .mp-status { max-width: 560px; overflow-wrap: anywhere; min-height: 1.2em; }
+  .linkbtn { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); text-decoration: underline; cursor: pointer; }
+  #s-mp.signed-out #online-list, #s-mp.signed-out .mp-world-buttons { display: none; }
   #click-to-play {
     position: fixed; left: 50%; top: 60%; transform: translateX(-50%); z-index: 5; pointer-events: none;
     font-size: 26px; padding: 6px 16px; background: rgba(0, 0, 0, 0.55); text-shadow: 2px 2px 0 var(--shadow);
@@ -436,9 +438,16 @@
 
 <section class="screen menu-bg" id="s-mp" hidden>
   <h2>Online Worlds</h2>
-  <div class="col" style="width:min(560px,100%)">
-    <label class="field" for="mp-name">Your name<input id="mp-name" type="text" maxlength="16" autocomplete="nickname" spellcheck="false"></label>
-  </div>
+  <form class="col" id="mp-auth" autocomplete="on" hidden>
+    <p class="note">Sign in so you are always you: your items stay with your account on any device.</p>
+    <label class="field" for="auth-name">Username<input id="auth-name" name="username" type="text" maxlength="16" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+    <label class="field" for="auth-pass">Password<input id="auth-pass" name="password" type="password" maxlength="100" autocomplete="current-password"></label>
+    <div class="row2">
+      <button class="btn" id="b-sign-in" type="submit">Sign In</button>
+      <button class="btn" id="b-sign-up" type="button">Create Account</button>
+    </div>
+  </form>
+  <p class="note" id="mp-account" hidden>Signed in as <strong id="mp-account-name"></strong> · <button class="linkbtn" id="b-sign-out" type="button">Sign out</button></p>
   <div class="world-list" id="online-list"></div>
   <div class="confirm" id="online-delete-confirm" hidden>
     <p>Delete “<span id="online-delete-name"></span>” for everyone? It will be gone for good.</p>
@@ -449,11 +458,11 @@
   </div>
   <p class="note mp-status" id="mp-status"></p>
   <div class="col" style="width:min(560px,100%)">
-    <div class="row2">
+    <div class="row2 mp-world-buttons">
       <button class="btn" id="b-join" type="button">Play Selected World</button>
       <button class="btn" id="b-new-online" type="button">Create Online World</button>
     </div>
-    <div class="row2">
+    <div class="row2 mp-world-buttons">
       <button class="btn" id="b-copy-link" type="button">Copy Link</button>
       <button class="btn" id="b-delete-online" type="button">Delete</button>
     </div>

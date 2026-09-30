@@ -29,6 +29,8 @@ async function openDatabase(url, pg) {
     pool.on('error', (err) => console.error('database connection error:', err.message));
     await pool.query(`create table if not exists blockcraft_worlds (
       id text primary key, meta jsonb not null, save text, updated bigint not null default 0)`);
+    await pool.query('create table if not exists blockcraft_accounts (id text primary key, data jsonb not null)');
+    await pool.query('create table if not exists blockcraft_sessions (token text primary key, account text not null, created bigint not null)');
     return {
       kind: 'database',
       permanent: true,
@@ -46,6 +48,14 @@ async function openDatabase(url, pg) {
           on conflict (id) do update set meta = excluded.meta, save = excluded.save, updated = excluded.updated`, [meta.id, meta, gzip(save).toString('base64'), meta.updated || 0]);
       },
       async del(id) { await pool.query('delete from blockcraft_worlds where id = $1', [id]); },
+      // accounts and sign-in sessions (tokens are stored hashed)
+      async loadAccounts() { return (await pool.query('select data from blockcraft_accounts')).rows.map((r) => r.data); },
+      async putAccount(a) {
+        await pool.query('insert into blockcraft_accounts (id, data) values ($1, $2) on conflict (id) do update set data = excluded.data', [a.id, a]);
+      },
+      async loadSessions() { return (await pool.query('select token, account, created from blockcraft_sessions')).rows.map((r) => ({ ...r, created: Number(r.created) })); },
+      async putSession(x) { await pool.query('insert into blockcraft_sessions (token, account, created) values ($1, $2, $3) on conflict (token) do nothing', [x.token, x.account, x.created]); },
+      async delSession(token) { await pool.query('delete from blockcraft_sessions where token = $1', [token]); },
     };
   }
 }
@@ -54,6 +64,11 @@ async function openFiles(root) {
   const dir = process.env.DATA_DIR || join(root, 'data');
   await mkdir(dir, { recursive: true });
   const file = (id, ext) => join(dir, `${id}.${ext}`);
+  // accounts and sessions are small, so each lives in one JSON file
+  const readJson = async (name) => { try { return JSON.parse(await readFile(join(dir, name), 'utf8')); } catch { return {}; } };
+  const accounts = await readJson('accounts.json');
+  const sessions = await readJson('sessions.json');
+  const flush = (name, obj) => writeFile(join(dir, name), JSON.stringify(obj));
   return {
     kind: 'disk',
     // a free Render server forgets its files when it restarts; a Render disk (DATA_DIR) or your own computer doesn't
@@ -78,5 +93,10 @@ async function openFiles(root) {
       await rm(file(id, 'save.gz'), { force: true });
       await rm(file(id, 'meta.json'), { force: true });
     },
+    async loadAccounts() { return Object.values(accounts); },
+    async putAccount(a) { accounts[a.id] = a; await flush('accounts.json', accounts); },
+    async loadSessions() { return Object.values(sessions); },
+    async putSession(x) { sessions[x.token] = x; await flush('sessions.json', sessions); },
+    async delSession(token) { delete sessions[token]; await flush('sessions.json', sessions); },
   };
 }

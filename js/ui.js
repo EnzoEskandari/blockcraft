@@ -110,7 +110,10 @@ export class UI {
     on('b-multi', () => this.openScreen('mp'));
     on('b-mp-back', () => this.back());
     on('b-join', () => this.playOnline());
-    on('b-new-online', () => { if (this.mpName()) { this.createOnline = true; this.openScreen('create'); } });
+    on('b-new-online', () => { if (this.signedIn()) { this.createOnline = true; this.openScreen('create'); } });
+    $('mp-auth').addEventListener('submit', (e) => { e.preventDefault(); initAudio(); sfx('click'); this.auth(false); });
+    on('b-sign-up', () => this.auth(true));
+    on('b-sign-out', async () => { await G.game.signOut(); this.syncAccount(); this.mpStatus('Signed out.'); });
     on('b-copy-link', () => this.copyLink(this.selectedOnline));
     on('b-copy-link-pause', () => this.copyLink(G.worldMeta && G.worldMeta.online));
     on('b-delete-online', () => this.askDeleteOnline());
@@ -192,9 +195,10 @@ export class UI {
     if (name === 'options') this.syncOptions();
     if (name === 'pause') this.syncPause();
     if (name === 'mp') {
-      $('mp-name').value = G.settings.name || '';
       this.mpStatus('');
-      this.buildOnlineList();
+      this.syncAccount();
+      // make sure the saved sign-in still works
+      G.game.checkAccount().then(() => { if (G.screen === 'mp') this.syncAccount(false); });
     }
     if (name === 'create') {
       $('world-name').value = this.createOnline ? 'Online World' : 'New World';
@@ -344,22 +348,52 @@ export class UI {
     $('b-new-online').disabled = !!this.busy;
   }
 
-  mpName() {
-    const name = $('mp-name').value.trim().slice(0, 16);
-    if (!name) { this.mpStatus('Type your name first.'); $('mp-name').focus(); return null; }
-    G.settings.name = name;
-    saveSettings();
-    return name;
+  // Signed in: the online worlds; signed out: the sign-in form
+  syncAccount(rebuild = true) {
+    const a = G.account;
+    $('s-mp').classList.toggle('signed-out', !a);
+    $('mp-auth').hidden = !!a;
+    $('mp-account').hidden = !a;
+    if (a) {
+      $('mp-account-name').textContent = a.name;
+      if (rebuild || !this.online) this.buildOnlineList();
+    } else {
+      $('auth-pass').value = '';
+      if (!$('mp-status').textContent) this.mpStatus('');
+    }
+  }
+
+  signedIn() {
+    if (G.account) return true;
+    this.mpStatus('Sign in first.');
+    return false;
+  }
+
+  async auth(create) {
+    const name = $('auth-name').value.trim(), pw = $('auth-pass').value;
+    if (!name || !pw) { this.mpStatus('Type a username and a password.'); (name ? $('auth-pass') : $('auth-name')).focus(); return; }
+    if (this.busy) return;
+    this.busy = true;
+    this.mpStatus(create ? 'Creating your account…' : 'Signing in…');
+    try {
+      await G.game.signIn(name, pw, create);
+      this.mpStatus(create ? `Welcome, ${G.account.name}! Your account is ready.` : `Welcome back, ${G.account.name}.`);
+      this.busy = false;
+      this.syncAccount();
+      if (this.pendingWorld) { const id = this.pendingWorld; this.pendingWorld = null; this.playOnline(id); }
+    } catch (err) {
+      this.busy = false;
+      this.mpStatus(err && err.message ? err.message : 'Could not sign in.');
+    }
   }
 
   async playOnline(id = this.selectedOnline) {
     if (!id || this.busy) return;
-    const name = this.mpName();
-    if (!name) return;
+    if (!this.signedIn()) { this.pendingWorld = id; return; }
     this.busy = true;
     this.syncOnlineButtons();
     this.mpStatus('Connecting…');
-    try { await G.game.joinWorld(id, name, (t) => this.mpStatus(t)); }
+    try { await G.game.joinWorld(id, (t) => this.mpStatus(t)); }
     catch (err) { this.mpStatus(err && err.message ? err.message : 'Could not join that world.'); }
     this.busy = false;
     this.syncOnlineButtons();
@@ -369,8 +403,8 @@ export class UI {
   openOnline(id) {
     this.selectedOnline = id;
     this.openScreen('mp');
-    if (G.settings.name) this.playOnline(id);
-    else this.mpStatus('Type your name, then press Play Selected World to join.');
+    if (G.account) this.playOnline(id);
+    else { this.pendingWorld = id; this.mpStatus('Sign in or create an account to join this world.'); }
   }
 
   async copyLink(id) {
@@ -401,9 +435,8 @@ export class UI {
   }
 
   async createOnlineWorld() {
-    const name = this.mpName();
     const b = $('b-create');
-    if (!name) { this.back(); return; }
+    if (!G.account) { this.back(); this.signedIn(); return; }
     b.disabled = true;
     try {
       const w = await G.game.createOnline($('world-name').value.trim() || 'Online World', $('world-seed').value.trim(), $('b-mode').dataset.mode);

@@ -214,14 +214,17 @@ export class Net {
     this.closed = false;
     this.hostName = role === 'host' ? name : '';
     this.pendingHello = [];       // host: players who arrived while the world was still loading
+    this.peerInfo = new Map();    // host: who each connection really is (from the server, not from them)
   }
 
   // ------------------------------------------------------------ connecting
   // Enter an online world. If nobody is in it, this player runs it (resolves { net, host }),
   // otherwise they join whoever does (resolves { net, snap }).
-  static connect(worldId, name, have, onStatus = () => {}) {
+  static connect(worldId, account, have, onStatus = () => {}) {
     const url = serverURL();
     if (!url) return Promise.reject(new Error('Multiplayer only works on the Blockcraft website.'));
+    if (!account) return Promise.reject(new Error('Sign in to play online.'));
+    const name = account.name;
     const net = new Net('pending', name);
     net.code = worldId;
     return new Promise((resolve, reject) => {
@@ -233,7 +236,7 @@ export class Net {
       const timer = setTimeout(() => fail('The multiplayer server did not answer. Check your connection and try again.'), 25000);
       ws.onopen = () => {
         onStatus('Joining…');
-        ws.send(JSON.stringify({ t: 'world', id: worldId, name, have }));
+        ws.send(JSON.stringify({ t: 'world', id: worldId, token: account.token, have }));
       };
       ws.onerror = () => {};
       ws.onclose = () => {
@@ -306,7 +309,16 @@ export class Net {
 
   onRaw(m) {
     if (m.t === 'msg') { this.onMsg(m.from, m.d); return; }
-    if (m.t === 'peer') return;   // they say hello once their page is ready
+    if (m.t === 'peer') { this.peerInfo.set(m.id, { name: m.name, account: m.account }); return; }   // they say hello once their page is ready
+    if (m.t === 'replaced') {
+      // save everything first (the world if we run it, our inventory if not), then step aside
+      if (this.role === 'host') G.game.saveNow();
+      else this.saveGuest();
+      this.shutdown();
+      if (G.net === this) G.net = null;
+      G.game.leaveOnline('You joined this world from another tab or device, so you left it here.');
+      return;
+    }
     if (m.t === 'left') { this.removePlayer(m.id); return; }
     if (m.t === 'rehost') {
       // whoever was running the world left: reconnect, and the first one back takes over
@@ -504,12 +516,13 @@ export class Net {
         const used = new Set([...this.players.values()].map((x) => x.slot));
         let slot = 1;
         while (used.has(slot)) slot++;
-        const name = String(d.name || 'Player').slice(0, 16);
-        // everyone's inventory is saved under their name, so names have to be different
-        const taken = name.toLowerCase() === this.name.toLowerCase() || [...this.players.values()].some((x) => x.name.toLowerCase() === name.toLowerCase());
-        if (taken) { this.sendTo(from, { k: 'kick', msg: `Someone called ${name} is already playing. Pick a different name.` }); return; }
-        this.addPlayer(from, name, slot);
-        this.sendTo(from, G.game.worldSnapshot(name));
+        // the server told us who this is when they connected; their items are saved under that account
+        const info = this.peerInfo.get(from);
+        if (!info) return;
+        const name = info.name;
+        const a = this.addPlayer(from, name, slot);
+        a.account = info.account;
+        this.sendTo(from, G.game.worldSnapshot(info.account, name));
         this.sendRoster();
         this.announce(`${name} joined the game`);
         break;
@@ -597,7 +610,7 @@ export class Net {
         explosionDamage(d.x, d.y, d.z, d.pw, a, false);
         this.sendNear(d.x, d.z, FX_RANGE, d, from);
         break;
-      case 'save': if (a && d.d && w) { w.guests[a.name] = d.d; } break;
+      case 'save': if (a && a.account && d.d && w) { w.guests[a.account] = d.d; } break;
       default: break;
     }
   }

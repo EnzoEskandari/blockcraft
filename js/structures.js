@@ -5,7 +5,7 @@
 // checks the biome there, and builds a plan (a list of parts with bounding boxes). When a chunk
 // generates, every part that overlaps it is stamped with writes clipped to that chunk, so a
 // structure comes out identical no matter which chunk loads first.
-import { B, ID, BLOCKS } from './blocks.js';
+import { B, ID, BLOCKS, ITEMS } from './blocks.js';
 import { hash3, mulberry32 } from './noise.js';
 import { CS, CH, SEA, BIOME } from './constants.js';
 
@@ -33,17 +33,71 @@ function rotFor(fx, fz) {
 }
 
 // ---------------------------------------------------------------- loot
+// From worst to best: villages and outposts hold everyday things and worn gear, temples and
+// shipwrecks hold treasure. Each table: rolls [min, max], items [key, min, max, weight],
+// sure (always in the chest) and wear (how used any tools and armour are, 0-1).
 const LOOT = {
-  village_house: { rolls: [3, 6], items: [['bread', 1, 4, 10], ['wheat', 2, 6, 8], ['apple', 1, 3, 8], ['emerald', 1, 3, 4], ['wheat_seeds', 2, 5, 6], ['oak_sapling', 1, 2, 3], ['iron_ingot', 1, 2, 2], ['book', 1, 1, 2]] },
-  blacksmith: { rolls: [3, 8], items: [['iron_ingot', 1, 5, 10], ['bread', 1, 3, 8], ['apple', 1, 3, 8], ['gold_ingot', 1, 3, 5], ['iron_pickaxe', 1, 1, 5], ['iron_sword', 1, 1, 5], ['iron_helmet', 1, 1, 4], ['iron_chestplate', 1, 1, 3], ['iron_leggings', 1, 1, 3], ['iron_boots', 1, 1, 4], ['obsidian', 3, 7, 5], ['diamond', 1, 3, 3], ['oak_sapling', 3, 7, 4]] },
-  pyramid: { rolls: [2, 5], items: [['bone', 4, 6, 25], ['rotten_flesh', 3, 7, 25], ['gunpowder', 1, 8, 10], ['gold_ingot', 2, 7, 15], ['iron_ingot', 1, 5, 15], ['emerald', 1, 3, 15], ['diamond', 1, 3, 5], ['sand', 1, 8, 10], ['book', 1, 1, 10], ['golden_helmet', 1, 1, 3], ['iron_chestplate', 1, 1, 3]] },
-  jungle_temple: { rolls: [2, 6], items: [['diamond', 1, 3, 3], ['iron_ingot', 1, 5, 10], ['gold_ingot', 2, 7, 15], ['emerald', 1, 3, 4], ['bone', 4, 6, 20], ['rotten_flesh', 3, 7, 16], ['book', 1, 1, 5], ['golden_chestplate', 1, 1, 2]] },
-  igloo: { rolls: [2, 5], items: [['apple', 1, 3, 15], ['coal', 1, 4, 15], ['gold_ingot', 1, 2, 10], ['wheat', 2, 3, 10], ['stone_axe', 1, 1, 2], ['rotten_flesh', 1, 1, 10], ['emerald', 1, 1, 1], ['bread', 1, 2, 8]] },
-  outpost: { rolls: [2, 4], items: [['wheat', 3, 5, 7], ['book', 1, 1, 1], ['arrow', 2, 7, 4], ['string', 1, 6, 4], ['iron_ingot', 1, 3, 3], ['emerald', 1, 2, 2], ['dark_oak_log', 2, 3, 5], ['bread', 1, 3, 4]] },
-  mansion: { rolls: [2, 5], items: [['iron_ingot', 1, 4, 10], ['gold_ingot', 1, 4, 5], ['emerald', 1, 4, 5], ['diamond_chestplate', 1, 1, 1], ['diamond_hoe', 1, 1, 1], ['bread', 1, 3, 10], ['book', 1, 2, 5], ['string', 1, 6, 10], ['bone', 1, 8, 10], ['diamond', 1, 2, 2], ['iron_leggings', 1, 1, 3]] },
-  ruined_portal: { rolls: [4, 8], items: [['obsidian', 1, 2, 40], ['flint', 1, 4, 40], ['iron_ingot', 3, 9, 40], ['flint_and_steel', 1, 1, 40], ['gold_ingot', 2, 8, 15], ['golden_sword', 1, 1, 15], ['golden_axe', 1, 1, 15], ['golden_helmet', 1, 1, 15], ['golden_boots', 1, 1, 15], ['glowstone', 4, 12, 5], ['gold_block', 1, 2, 1]] },
-  shipwreck_supply: { rolls: [3, 8], items: [['paper', 1, 12, 8], ['wheat', 8, 21, 7], ['bread', 1, 3, 5], ['coal', 2, 8, 6], ['rotten_flesh', 5, 24, 5], ['gunpowder', 1, 5, 3], ['tnt', 1, 2, 1], ['leather_helmet', 1, 1, 3], ['leather_chestplate', 1, 1, 3], ['leather_boots', 1, 1, 3], ['pumpkin', 1, 3, 2]] },
-  shipwreck_treasure: { rolls: [3, 6], items: [['iron_ingot', 1, 5, 90], ['gold_ingot', 1, 5, 10], ['emerald', 1, 5, 40], ['diamond', 1, 1, 5]] },
+  village_house: {
+    rolls: [2, 5], wear: [0.3, 0.8],
+    items: [['bread', 1, 3, 10], ['wheat', 2, 6, 8], ['wheat_seeds', 2, 6, 8], ['apple', 1, 3, 8], ['cooked_porkchop', 1, 2, 3], ['coal', 1, 3, 6], ['torch', 2, 6, 5],
+      ['stick', 2, 6, 4], ['oak_sapling', 1, 2, 4], ['feather', 1, 3, 3], ['white_wool', 1, 3, 3], ['leather', 1, 3, 3], ['string', 1, 2, 2], ['flint', 1, 2, 2],
+      ['paper', 1, 3, 3], ['book', 1, 1, 2], ['emerald', 1, 1, 2], ['iron_ingot', 1, 1, 1], ['wooden_pickaxe', 1, 1, 2], ['stone_axe', 1, 1, 2],
+      ['leather_helmet', 1, 1, 2], ['leather_boots', 1, 1, 2]],
+  },
+  blacksmith: {
+    rolls: [3, 6], wear: [0.25, 0.7],
+    items: [['iron_ingot', 1, 4, 10], ['coal', 2, 6, 8], ['bread', 1, 3, 6], ['apple', 1, 3, 5], ['gold_ingot', 1, 2, 3], ['flint', 1, 3, 3], ['obsidian', 1, 3, 2],
+      ['stone_pickaxe', 1, 1, 3], ['iron_pickaxe', 1, 1, 3], ['iron_sword', 1, 1, 3], ['iron_axe', 1, 1, 2], ['iron_shovel', 1, 1, 2],
+      ['iron_helmet', 1, 1, 2], ['iron_boots', 1, 1, 2], ['iron_leggings', 1, 1, 1], ['iron_chestplate', 1, 1, 1], ['chainmail_chestplate', 1, 1, 1], ['diamond', 1, 1, 1]],
+  },
+  outpost: {
+    rolls: [2, 4], wear: [0.4, 0.85],
+    items: [['arrow', 2, 8, 8], ['string', 1, 4, 6], ['wheat', 2, 5, 6], ['dark_oak_log', 2, 4, 5], ['bread', 1, 2, 4], ['bone', 1, 3, 4], ['rotten_flesh', 1, 4, 4],
+      ['bow', 1, 1, 3], ['stone_sword', 1, 1, 2], ['leather_chestplate', 1, 1, 2], ['iron_ingot', 1, 2, 2], ['emerald', 1, 1, 1], ['book', 1, 1, 1]],
+  },
+  igloo: {
+    rolls: [3, 5], wear: [0.2, 0.6],
+    items: [['apple', 1, 3, 12], ['coal', 1, 4, 12], ['bread', 1, 2, 8], ['cooked_mutton', 1, 3, 6], ['wheat', 2, 3, 6], ['torch', 2, 5, 4], ['gold_ingot', 1, 2, 6],
+      ['iron_ingot', 1, 2, 3], ['emerald', 1, 1, 2], ['stone_axe', 1, 1, 3], ['leather_helmet', 1, 1, 3]],
+  },
+  ruined_portal: {
+    rolls: [4, 7], wear: [0.1, 0.6],
+    items: [['obsidian', 1, 3, 30], ['flint', 1, 4, 30], ['iron_ingot', 2, 6, 25], ['flint_and_steel', 1, 1, 20], ['gold_ingot', 2, 8, 20],
+      ['golden_sword', 1, 1, 12], ['golden_axe', 1, 1, 12], ['golden_pickaxe', 1, 1, 10], ['golden_helmet', 1, 1, 10], ['golden_chestplate', 1, 1, 8],
+      ['golden_leggings', 1, 1, 8], ['golden_boots', 1, 1, 10], ['glowstone', 4, 12, 8], ['emerald', 1, 2, 6], ['gold_block', 1, 2, 3], ['diamond', 1, 1, 2]],
+  },
+  mansion: {
+    rolls: [3, 7], wear: [0, 0.4],
+    items: [['iron_ingot', 2, 5, 10], ['gold_ingot', 2, 5, 8], ['emerald', 1, 4, 8], ['diamond', 1, 2, 4], ['bread', 2, 4, 6], ['book', 1, 3, 6], ['bookshelf', 1, 2, 3],
+      ['string', 2, 6, 6], ['bone', 2, 6, 5], ['redstone', 2, 6, 5], ['lapis_lazuli', 2, 6, 5], ['cobweb', 1, 3, 3], ['iron_leggings', 1, 1, 3], ['iron_chestplate', 1, 1, 3],
+      ['chainmail_chestplate', 1, 1, 3], ['diamond_pickaxe', 1, 1, 1], ['diamond_chestplate', 1, 1, 1], ['diamond_hoe', 1, 1, 1]],
+  },
+  pyramid: {
+    rolls: [4, 7], wear: [0, 0.25], sure: [['gold_ingot', 2, 5]],
+    items: [['diamond', 1, 3, 8], ['emerald', 2, 5, 10], ['gold_ingot', 2, 7, 14], ['iron_ingot', 2, 6, 12], ['gold_block', 1, 1, 3], ['lapis_lazuli', 3, 8, 6],
+      ['redstone', 3, 8, 6], ['bone', 2, 6, 10], ['rotten_flesh', 2, 6, 8], ['gunpowder', 2, 6, 8], ['tnt', 1, 3, 4], ['sand', 3, 8, 4], ['book', 1, 3, 6],
+      ['shade_pearl', 1, 1, 3], ['golden_chestplate', 1, 1, 4], ['golden_leggings', 1, 1, 3], ['iron_chestplate', 1, 1, 4], ['diamond_sword', 1, 1, 2],
+      ['diamond_pickaxe', 1, 1, 2], ['diamond_helmet', 1, 1, 1], ['diamond_boots', 1, 1, 1]],
+  },
+  jungle_temple: {
+    rolls: [4, 7], wear: [0, 0.25], sure: [['diamond', 1, 2], ['emerald', 1, 3]],
+    items: [['diamond', 1, 3, 8], ['emerald', 2, 5, 10], ['gold_ingot', 2, 7, 12], ['iron_ingot', 2, 6, 12], ['gold_block', 1, 1, 2], ['bone', 2, 6, 10],
+      ['rotten_flesh', 2, 6, 8], ['arrow', 4, 12, 6], ['bow', 1, 1, 4], ['book', 1, 3, 6], ['jungle_log', 3, 6, 4], ['shade_pearl', 1, 1, 3],
+      ['iron_pickaxe', 1, 1, 4], ['iron_helmet', 1, 1, 4], ['golden_chestplate', 1, 1, 3], ['diamond_sword', 1, 1, 2], ['diamond_axe', 1, 1, 2], ['diamond_leggings', 1, 1, 1]],
+  },
+  shipwreck_supply: {
+    rolls: [4, 8], wear: [0, 0.4], sure: [['bread', 2, 5]],
+    items: [['paper', 2, 12, 8], ['wheat', 8, 20, 6], ['coal', 3, 10, 8], ['gunpowder', 2, 6, 6], ['tnt', 1, 3, 4], ['pumpkin', 1, 3, 3], ['cooked_porkchop', 2, 5, 6],
+      ['steak', 2, 5, 4], ['apple', 2, 5, 5], ['book', 1, 3, 5], ['emerald', 1, 3, 4], ['diamond', 1, 1, 2], ['leather_helmet', 1, 1, 3],
+      ['chainmail_helmet', 1, 1, 3], ['chainmail_chestplate', 1, 1, 3], ['chainmail_leggings', 1, 1, 3], ['chainmail_boots', 1, 1, 3],
+      ['iron_sword', 1, 1, 3], ['iron_axe', 1, 1, 3], ['iron_pickaxe', 1, 1, 3]],
+  },
+  shipwreck_treasure: {
+    rolls: [5, 9], wear: [0, 0.15], sure: [['diamond', 2, 4], ['emerald', 3, 8], ['gold_ingot', 3, 8]],
+    items: [['iron_ingot', 3, 9, 20], ['gold_ingot', 3, 9, 14], ['emerald', 3, 9, 14], ['diamond', 1, 4, 10], ['lapis_lazuli', 4, 10, 8], ['gold_block', 1, 2, 4],
+      ['iron_block', 1, 1, 3], ['diamond_block', 1, 1, 1], ['emerald_block', 1, 1, 1], ['shade_pearl', 1, 2, 4], ['glowstone', 2, 6, 4], ['golden_helmet', 1, 1, 3],
+      ['diamond_sword', 1, 1, 3], ['diamond_pickaxe', 1, 1, 3], ['diamond_chestplate', 1, 1, 2], ['diamond_helmet', 1, 1, 2], ['diamond_boots', 1, 1, 2]],
+  },
 };
 
 // Items for a structure chest, spread over 27 slots
@@ -52,17 +106,25 @@ export function rollLoot(table, seed) {
   const slots = new Array(27).fill(null);
   if (!T) return slots;
   const r = mulberry32(seed >>> 0);
+  const put = (key, min, max) => {
+    const id = ID[key];
+    if (!id) return;
+    const def = ITEMS[id];
+    const count = Math.min(def ? def.stack : 64, min + Math.floor(r() * (max - min + 1)));
+    // tools and armour found lying around are used; the better the place, the less worn
+    let dmg = 0;
+    if (def && def.durability && T.wear) dmg = Math.floor(def.durability * (T.wear[0] + r() * (T.wear[1] - T.wear[0])));
+    let slot = Math.floor(r() * 27);
+    for (let t = 0; t < 27 && slots[slot]; t++) slot = (slot + 7) % 27;
+    if (!slots[slot]) slots[slot] = { id, count, dmg };
+  };
+  for (const [key, min, max] of T.sure || []) put(key, min, max);
   const total = T.items.reduce((n, it) => n + it[3], 0);
   const rolls = T.rolls[0] + Math.floor(r() * (T.rolls[1] - T.rolls[0] + 1));
   for (let k = 0; k < rolls; k++) {
     let pick = r() * total;
     const it = T.items.find((x) => (pick -= x[3]) < 0) || T.items[0];
-    const id = ID[it[0]];
-    if (!id) continue;
-    const count = it[1] + Math.floor(r() * (it[2] - it[1] + 1));
-    let slot = Math.floor(r() * 27);
-    for (let t = 0; t < 27 && slots[slot]; t++) slot = (slot + 7) % 27;
-    if (!slots[slot]) slots[slot] = { id, count, dmg: 0 };
+    put(it[0], it[1], it[2]);
   }
   return slots;
 }

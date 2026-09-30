@@ -514,9 +514,43 @@ export const Game = {
     return r.json();
   },
 
+  // ------------------------------------------------------------ accounts
+  // Signing in makes you the same player on any device; your items are saved under your account
+  async signIn(name, password, create) {
+    let r;
+    try {
+      r = await fetch(create ? '/api/signup' : '/api/login', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, password }),
+      });
+    } catch { throw new Error('Could not reach the server. Check your connection.'); }
+    const b = await r.json().catch(() => ({}));
+    if (!r.ok || !b.token) throw new Error(b.error || 'Accounts only work on the Blockcraft website.');
+    G.account = { ...b.account, token: b.token };
+    store('account', G.account);
+    return G.account;
+  },
+
+  async signOut() {
+    const a = G.account;
+    G.account = null;
+    remove('account');
+    if (a) fetch('/api/logout', { method: 'POST', headers: authHeader(a) }).catch(() => {});
+  },
+
+  // Still signed in? (a session lasts until you sign out)
+  async checkAccount() {
+    const a = G.account;
+    if (!a) return null;
+    try {
+      const r = await fetch('/api/me', { headers: authHeader(a), cache: 'no-store' });
+      if (r.status === 401) { G.account = null; remove('account'); return null; }
+    } catch { /* offline: keep it */ }
+    return G.account;
+  },
+
   async createOnline(name, seedText, mode) {
     const r = await fetch('/api/worlds', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
+      method: 'POST', headers: { 'content-type': 'application/json', ...authHeader(G.account) },
       body: JSON.stringify({ name, seed: makeSeed(seedText), mode }),
     });
     if (!r.ok) throw new Error('Could not create the world. Check your connection.');
@@ -524,16 +558,17 @@ export const Game = {
   },
 
   async deleteOnline(id) {
-    const r = await fetch('/api/worlds/' + id, { method: 'DELETE' });
+    const r = await fetch('/api/worlds/' + id, { method: 'DELETE', headers: authHeader(G.account) });
     if (!r.ok) { const b = await r.json().catch(() => ({})); throw new Error(b.error || 'Could not delete that world.'); }
     remove('online.' + id);
   },
 
-  async joinWorld(id, name, onStatus) {
+  async joinWorld(id, onStatus) {
+    const acc = G.account;
     // this browser's copy of the world, in case the server has lost or has an older one
     const backup = load('online.' + id);
     const have = backup && backup.meta ? { v: backup.v || 0, meta: backup.meta } : null;
-    const { net, host, snap } = await Net.connect(id, name, have, onStatus);
+    const { net, host, snap } = await Net.connect(id, acc, have, onStatus);
     G.net = net;
     if (snap) { startRemoteWorld(snap, id); return; }
     let data = null;
@@ -541,7 +576,7 @@ export const Game = {
     else if (host.save) { try { data = JSON.parse(host.save); } catch { data = null; } }
     const m = host.meta;
     S.saveVersion = Math.max(m.v || 0, (backup && backup.v) || 0);
-    startWorld({ online: id, id: null, name: m.name, seed: m.seed, mode: m.mode, created: m.created, me: name }, data);
+    startWorld({ online: id, id: null, name: m.name, seed: m.seed, mode: m.mode, created: m.created, me: acc.id, meName: acc.name }, data);
   },
 
   // Back into the same online world after the connection dropped or the player running it left
@@ -554,10 +589,9 @@ export const Game = {
     G.state = 'title';
     exitLock();
     G.ui.showBusy(msg);
-    const name = G.settings.name || 'Player';
     setTimeout(async () => {
       S.carry = carry ? { id, d: carry } : null;
-      try { await Game.joinWorld(id, name, (t) => G.ui.showBusy(t)); } catch (err) {
+      try { await Game.joinWorld(id, (t) => G.ui.showBusy(t)); } catch (err) {
         S.carry = null;
         G.ui.showTitle();
         G.ui.openScreen('mp');
@@ -567,15 +601,41 @@ export const Game = {
   },
 
   // Sent to a guest when they join: everything they need to build the same world
-  worldSnapshot(name) {
+  worldSnapshot(account, name) {
     const w = G.world, p = G.player;
     return {
       k: 'world', host: G.net.name, name: G.worldMeta.name, seed: w.seed, mode: G.worldMeta.mode,
       time: G.time, day: G.day || 0, nns: G.nightsNoSleep || 0,
-      spawn: w.worldSpawn || p.spawn, edits: packEdits(w), guest: (w.guests && w.guests[name]) || null,
+      spawn: w.worldSpawn || p.spawn, edits: packEdits(w), guest: playerRecord(w.guests, account, name),
     };
   },
+
+  saveNow() { saveWorld(); },
+
+  // Sent back to the title screen (signed in somewhere else)
+  leaveOnline(msg) {
+    teardown();
+    G.state = 'title';
+    exitLock();
+    G.ui.showTitle();
+    G.ui.openScreen('mp');
+    G.ui.mpStatus(msg);
+  },
 };
+
+const authHeader = (a) => (a && a.token ? { authorization: 'Bearer ' + a.token } : {});
+
+// A player's saved inventory in an online world, by account. Worlds from before accounts saved it by
+// name: the account with that username (usernames are unique) takes it over the first time.
+function playerRecord(guests, account, name) {
+  if (!guests || !account) return null;
+  if (guests[account]) return guests[account];
+  const old = Object.keys(guests).find((k) => !k.startsWith('u_') && k.toLowerCase() === String(name).toLowerCase());
+  if (!old) return null;
+  guests[account] = guests[old];
+  delete guests[old];
+  return guests[account];
+}
 
 function makeSeed(seedText) {
   if (!seedText) return (Math.random() * 4294967296) >>> 0;
@@ -714,7 +774,7 @@ function startWorld(meta, data) {
   if (!sp) { const f = w.findSpawn(); sp = { x: f.x, y: f.h + 1, z: f.z }; }
   w.worldSpawn = sp;
   // in an online world everyone's inventory is kept under their name
-  const pd = data && (meta.online ? data.guests && data.guests[meta.me] : data.player);
+  const pd = data && (meta.online ? playerRecord(w.guests, meta.me, meta.meName) : data.player);
   if (pd) applyPlayerData(p, pd);
   else {
     p.pos = { ...sp };
@@ -881,6 +941,7 @@ function boot(hotData) {
     }
   } catch { /* hot reload unavailable */ }
   if (hotData && hotData.worldId) Game.loadWorld(hotData.worldId);
+  G.account = load('account');
   // a world link (…?world=ID) goes straight into that online world
   const link = new URLSearchParams(location.search).get('world');
   if (link && !(hotData && hotData.worldId)) G.ui.openOnline(link.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6));

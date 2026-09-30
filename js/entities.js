@@ -447,7 +447,7 @@ export const MOB_TYPES = {
   chicken: { name: 'Chicken', hp: 4, w: 0.4, h: 0.7, speed: 1.4, sound: 'chicken', pitch: 1.6, drops: [drop('chicken', 1, 1), drop('feather', 0, 2)], anim: 'biped' },
   zombie: { name: 'Zombie', hp: 20, w: 0.6, h: 1.95, speed: 2.4, hostile: true, damage: 3, burns: true, zombieLike: true, sound: 'zombie', pitch: 0.8, drops: [drop('rotten_flesh', 0, 2)], anim: 'human' },
   husk: { name: 'Husk', hp: 20, w: 0.6, h: 1.95, speed: 2.4, hostile: true, damage: 3, hungerHit: true, zombieLike: true, sound: 'zombie', pitch: 0.65, drops: [drop('rotten_flesh', 0, 2)], anim: 'human' },
-  drowned: { name: 'Drowned', hp: 20, w: 0.6, h: 1.95, speed: 2.4, hostile: true, damage: 3, burns: true, swims: true, zombieLike: true, sound: 'zombie', pitch: 1.0, drops: [drop('rotten_flesh', 0, 2)], anim: 'human' },
+  drowned: { name: 'Drowned', hp: 20, w: 0.6, h: 1.95, speed: 1.9, hostile: true, damage: 3, burns: true, swims: true, zombieLike: true, sound: 'zombie', pitch: 1.0, drops: [drop('rotten_flesh', 0, 2)], anim: 'human' },
   zombie_villager: { name: 'Zombie Villager', hp: 20, w: 0.6, h: 1.95, speed: 2.3, hostile: true, damage: 3, burns: true, zombieLike: true, sound: 'zombie', pitch: 0.9, drops: [drop('rotten_flesh', 0, 2)], anim: 'human' },
   skeleton: { name: 'Skeleton', hp: 20, w: 0.6, h: 1.99, speed: 2.5, hostile: true, ranged: 'bow', burns: true, sound: 'skeleton', pitch: 1.3, drops: [drop('bone', 0, 2), drop('arrow', 0, 2)], anim: 'human' },
   stray: { name: 'Stray', hp: 20, w: 0.6, h: 1.99, speed: 2.5, hostile: true, ranged: 'bow', slowArrows: true, burns: true, sound: 'skeleton', pitch: 1.1, drops: [drop('bone', 0, 2), drop('arrow', 0, 2)], anim: 'human' },
@@ -626,7 +626,13 @@ class Mob {
     if (!def.hostile) return null;
     if (def.neutral && !this.angry) return null;
     if (this.type === 'spider' && G.daylight >= 0.55 && !this.provoked) return null;
-    for (const p of ps) consider(p, def.flies ? 64 : def.always ? 24 : 20);
+    const night = G.time > 0.52 && G.time < 0.98;
+    for (const p of ps) {
+      if (def.swims) {
+        const wet = G.world.getBlock(Math.floor(p.pos.x), Math.floor(p.pos.y + 0.5), Math.floor(p.pos.z)) === B.water;
+        if (wet || night) consider(p, 12);
+      } else consider(p, def.flies ? 64 : def.always ? 24 : 20);
+    }
     if (def.zombieLike || def.huntsVillagers) for (const m of mobs) if (!m.dead && m.def.villager) consider(m, 16);
     const a = this.attacker;
     if (a && !a.dead && !a.removed && !a.gone && (a.def || (a.isPlayer && a.mode === 'survival'))) consider(a, 24);
@@ -876,7 +882,7 @@ class Mob {
     const bx = Math.floor(this.pos.x), bz = Math.floor(this.pos.z);
     this.inWater = w.getBlock(bx, Math.floor(this.pos.y + this.h * 0.4), bz) === B.water;
     if (this.inWater && def.swims) {
-      const want = t ? Math.sign(t.pos.y + 0.5 - this.pos.y) * 2.5 : 0;
+      const want = t ? Math.sign(t.pos.y + 0.5 - this.pos.y) * 1.8 : 0;
       this.vel.y += (want - this.vel.y) * Math.min(1, dt * 3);
     } else if (this.inWater) {
       this.vel.y = Math.min(this.vel.y + 26 * dt, 2.2);
@@ -1706,14 +1712,14 @@ export class Entities {
       const c = w.getChunk(x >> 4, z >> 4);
       if (!c || !c.light) continue;
       const biome = c.biomes[((z & 15) << 4) | (x & 15)];
-      // Drowned rise out of dark water
-      if (rand() < 0.2) {
+      // Drowned rise out of deep water now and then: at night, or in the day only where it is very deep
+      if (rand() < 0.06) {
         let y = SEA;
         if (w.getBlock(x, y, z) !== B.water) continue;
         while (y > 2 && w.getBlock(x, y - 1, z) === B.water) y--;
-        if (SEA - y < 2) continue;
-        const [sky, blk] = w.getLight(x, y, z);
-        if (Math.max(Math.round(sky * G.daylight), blk) > 7 && !night) continue;
+        const depth = SEA - y;
+        if (depth < 5 || (!night && depth < 12)) continue;
+        if (this.mobs.filter((m) => m.type === 'drowned' && !m.dead && Math.hypot(m.pos.x - p.pos.x, m.pos.z - p.pos.z) < 64).length >= 3) continue;
         this.spawnMob('drowned', x + 0.5, y, z + 0.5);
         return;
       }
