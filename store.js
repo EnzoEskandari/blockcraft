@@ -1,6 +1,6 @@
-// Where online worlds are kept: a Postgres database when DATABASE_URL is set (permanent),
-// otherwise files in DATA_DIR or ./data (permanent on your own computer or a Render disk,
-// but wiped whenever a free Render server restarts).
+// Where online worlds are kept: a Postgres database when DATABASE_URL is set (permanent; saves are
+// stored gzipped as base64 text), otherwise files in DATA_DIR or ./data (permanent on your own
+// computer or a Render disk, but wiped whenever a free Render server restarts).
 import zlib from 'node:zlib';
 import { mkdir, readFile, writeFile, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -8,21 +8,34 @@ import { join } from 'node:path';
 const gzip = (s) => zlib.gzipSync(Buffer.from(s));
 const gunzip = (b) => zlib.gunzipSync(b).toString();
 
-export async function openStore(root) {
+export async function openStore(root, deps = {}) {
   const url = process.env.DATABASE_URL;
   if (url) {
-    const { default: pg } = await import('pg');
+    try { return await openDatabase(url.trim(), deps.pg || (await import('pg')).default); } catch (err) {
+      // a wrong DATABASE_URL shouldn't take the game down: fall back to files and say why
+      console.error('Could not use the database, falling back to files:', err.message);
+      const s = await openFiles(root);
+      s.dbError = err.message;
+      return s;
+    }
+  }
+  return openFiles(root);
+}
+
+async function openDatabase(url, pg) {
+  {
     const local = /@(localhost|127\.0\.0\.1)[:/]/.test(url);
-    const pool = new pg.Pool({ connectionString: url, ssl: local ? false : { rejectUnauthorized: false }, max: 3 });
+    const pool = new pg.Pool({ connectionString: url, ssl: local ? false : { rejectUnauthorized: false }, max: 3, connectionTimeoutMillis: 15000 });
+    pool.on('error', (err) => console.error('database connection error:', err.message));
     await pool.query(`create table if not exists blockcraft_worlds (
-      id text primary key, meta jsonb not null, save bytea, updated bigint not null default 0)`);
+      id text primary key, meta jsonb not null, save text, updated bigint not null default 0)`);
     return {
       kind: 'database',
       permanent: true,
       async list() { return (await pool.query('select meta from blockcraft_worlds')).rows.map((r) => r.meta); },
       async getSave(id) {
         const r = await pool.query('select save from blockcraft_worlds where id = $1', [id]);
-        return r.rows[0] && r.rows[0].save ? gunzip(r.rows[0].save) : null;
+        return r.rows[0] && r.rows[0].save ? gunzip(Buffer.from(r.rows[0].save, 'base64')) : null;
       },
       async putMeta(meta) {
         await pool.query(`insert into blockcraft_worlds (id, meta, updated) values ($1, $2, $3)
@@ -30,12 +43,14 @@ export async function openStore(root) {
       },
       async putSave(meta, save) {
         await pool.query(`insert into blockcraft_worlds (id, meta, save, updated) values ($1, $2, $3, $4)
-          on conflict (id) do update set meta = excluded.meta, save = excluded.save, updated = excluded.updated`, [meta.id, meta, gzip(save), meta.updated || 0]);
+          on conflict (id) do update set meta = excluded.meta, save = excluded.save, updated = excluded.updated`, [meta.id, meta, gzip(save).toString('base64'), meta.updated || 0]);
       },
       async del(id) { await pool.query('delete from blockcraft_worlds where id = $1', [id]); },
     };
   }
+}
 
+async function openFiles(root) {
   const dir = process.env.DATA_DIR || join(root, 'data');
   await mkdir(dir, { recursive: true });
   const file = (id, ext) => join(dir, `${id}.${ext}`);

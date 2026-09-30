@@ -331,7 +331,8 @@ export class UI {
       });
       list.appendChild(row);
     }
-    if (!res.permanent && !$('mp-status').textContent) {
+    if (res.dbError && !$('mp-status').textContent) this.mpStatus(res.dbError + ' Online worlds are kept in players’ browsers until it works.');
+    else if (!res.permanent && !$('mp-status').textContent) {
       this.mpStatus('Note: this server has no database yet, so online worlds are also kept in the browsers of the people who play them. Add a database to make them fully permanent (see the README).');
     }
     this.syncOnlineButtons();

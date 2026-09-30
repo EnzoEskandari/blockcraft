@@ -58,7 +58,7 @@ const server = http.createServer(async (req, res) => {
     if (p === '/healthz') { res.writeHead(200, { 'content-type': 'text/plain' }); res.end('ok'); return; }
     if (p === '/api/worlds' && req.method === 'GET') {
       const list = [...worlds.values()].map((m) => ({ ...m, players: playersIn(m.id) })).sort((a, b) => (b.updated || 0) - (a.updated || 0));
-      json(res, 200, { permanent: store.permanent, storage: store.kind, worlds: list });
+      json(res, 200, { permanent: store.permanent, storage: store.kind, dbError: store.dbError ? 'The database could not be reached. Check DATABASE_URL on Render.' : undefined, worlds: list });
       return;
     }
     if (p === '/api/worlds' && req.method === 'POST') {
