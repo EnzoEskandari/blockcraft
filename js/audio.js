@@ -115,6 +115,14 @@ const MOB = {
   shade: (d, t) => { const o = tone(d, t, 1.0, 'sine', 220, 110, 0.3); const l = ctx.createOscillator(), lg = ctx.createGain(); l.frequency.value = 7; lg.gain.value = 40; l.connect(lg); lg.connect(o.frequency); l.start(t); l.stop(t + 1.05); },
   gloomwing: (d, t) => { tone(d, t, 0.5, 'sawtooth', 1400, 600, 0.18, 2600); noise(d, t, 0.4, 'highpass', 3000, 1, 0.12); },
   golem: (d, t) => { tone(d, t, 0.2, 'triangle', 90, 60, 0.4); noise(d, t, 0.12, 'bandpass', 900, 3, 0.3); },
+  // the Nether and the End
+  wailer: (d, t) => { const o = tone(d, t, 1.4, 'sine', 700, 340, 0.3); const l = ctx.createOscillator(), lg = ctx.createGain(); l.frequency.value = 6; lg.gain.value = 60; l.connect(lg); lg.connect(o.frequency); l.start(t); l.stop(t + 1.45); },
+  cinder: (d, t) => { noise(d, t, 0.6, 'bandpass', 900, 1.5, 0.3, 300); tone(d, t, 0.5, 'sawtooth', 110, 90, 0.15, 500); },
+  snoutling: (d, t) => { tone(d, t, 0.14, 'square', 260, 200, 0.25, 800); tone(d, t + 0.17, 0.2, 'square', 240, 160, 0.22, 800); },
+  tusker: (d, t) => { noise(d, t, 0.5, 'lowpass', 400, 2, 0.45, 120); tone(d, t, 0.4, 'sawtooth', 80, 60, 0.3, 300); },
+  strider: (d, t) => { tone(d, t, 0.3, 'triangle', 500, 380, 0.2, 1200); },
+  clamper: (d, t) => { noise(d, t, 0.2, 'bandpass', 1200, 4, 0.3); tone(d, t, 0.15, 'triangle', 300, 420, 0.15); },
+  dragon: (d, t) => { noise(d, t, 1.8, 'lowpass', 600, 1, 0.8, 90); tone(d, t, 1.6, 'sawtooth', 70, 45, 0.5, 400); },
 };
 
 export function sfx(name, pos, opts = {}) {
@@ -167,6 +175,14 @@ export function sfx(name, pos, opts = {}) {
     case 'armor': noise(d, t, 0.15, 'bandpass', 2200, 3, 0.3); tone(d, t, 0.12, 'triangle', 700, 650, 0.12); break;
     case 'teleport': tone(d, t, 0.4, 'sine', 300, 1200, 0.25); noise(d, t, 0.3, 'bandpass', 1500, 4, 0.15); break;
     case 'splash_potion': for (let i = 0; i < 4; i++) tone(d, t + i * 0.02, 0.15, 'sine', 2200 + Math.random() * 2000, 1500, 0.1); noise(d, t, 0.3, 'highpass', 2500, 1, 0.3); break;
+    case 'fireball': noise(d, t, 0.5, 'lowpass', 900, 0.8, 0.5, 200); tone(d, t, 0.3, 'sawtooth', 160, 60, 0.2, 400); break;
+    case 'extinguish': noise(d, t, 0.5, 'highpass', 2600, 0.8, 0.35); break;
+    case 'bucket': noise(d, t, 0.25, 'lowpass', 1100, 0.8, 0.35, 500); break;
+    case 'portal': { const o = tone(d, t, 2.5, 'sine', 180, 260, 0.2); const l = ctx.createOscillator(), lg = ctx.createGain(); l.frequency.value = 4; lg.gain.value = 30; l.connect(lg); lg.connect(o.frequency); l.start(t); l.stop(t + 2.55); break; }
+    case 'travel': tone(d, t, 1.2, 'sine', 140, 900, 0.4); noise(d, t, 1.2, 'bandpass', 1200, 2, 0.3); break;
+    case 'eye': tone(d, t, 0.3, 'triangle', 900, 1400, 0.2); break;
+    case 'frame': tone(d, t, 0.25, 'triangle', 500, 700, 0.3); noise(d, t, 0.1, 'bandpass', 2000, 3, 0.2); break;
+    case 'portal_open': for (let i = 0; i < 5; i++) tone(d, t + i * 0.12, 0.9, 'sine', 220 * (1 + i * 0.25), 330 * (1 + i * 0.25), 0.18); break;
     default: if (MOB[name]) MOB[name](d, t, opts);
   }
 }

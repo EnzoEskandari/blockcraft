@@ -384,25 +384,45 @@ export function buildChunkMesh(world, chunk) {
             }
           }
         } else if (rt === RENDER.LIQUID) {
+          // water is see-through and drawn with the transparent pass; lava is opaque
+          const buf = TRANS[id] || id === WATER ? TB : OB;
           const layer = FACE[id * 6];
           const level = meta ? meta[(y << 8) | (z << 4) | x] & 7 : 0;
-          const h = rB[ri + RA] === WATER ? 16 : Math.max(3, 14 - level * 2);
+          const h = rB[ri + RA] === id ? 16 : Math.max(3, 14 - level * 2);
           for (let f = 0; f < 6; f++) {
             const nb = rB[ri + N_OFF[f]];
-            if (nb === WATER || OPAQUE[nb]) continue;
+            if (nb === id || OPAQUE[nb]) continue;
             if (f === 3 && y === 0) continue;
             const bi = ri + N_OFF[f];
             const sky = Math.max(rS[bi], rS[ri]) * 17, blk = Math.max(rL[bi], rL[ri]) * 17;
             const m = FACES[f].shade * 255;
             const cs = CORNERS[f];
-            TB.ensure(4);
+            buf.ensure(4);
             for (let k = 0; k < 4; k++) {
               const c = cs[k];
               const py = c[1] ? h : 0;
-              TB.vert((x + c[0]) * 16, y * 16 + py, (z + c[2]) * 16, UV[k][0], f === 2 || f === 3 ? UV[k][1] : (UV[k][1] ? h : 0), layer, m, m, m, sky, blk);
+              buf.vert((x + c[0]) * 16, y * 16 + py, (z + c[2]) * 16, UV[k][0], f === 2 || f === 3 ? UV[k][1] : (UV[k][1] ? h : 0), layer, m, m, m, sky, blk);
             }
-            TB.quad(false, false);
+            buf.quad(false, false);
           }
+        } else if (rt === RENDER.PORTAL) {
+          // a thin glowing sheet across the frame (meta 0: along x, 1: along z)
+          const layer = FACE[id * 6];
+          const alongZ = meta && (meta[(y << 8) | (z << 4) | x] & 1);
+          const sky = rS[ri] * 17, blk = 255;
+          const layers = [layer, layer, layer, layer, layer, layer];
+          let skip = 0;
+          for (let f = 0; f < 6; f++) if (rB[ri + N_OFF[f]] === id) skip |= 1 << f;
+          if (alongZ) emitBox(TB, x * 16, y * 16, z * 16, 6, 0, 0, 10, 16, 16, layers, sky, blk, skip);
+          else emitBox(TB, x * 16, y * 16, z * 16, 0, 0, 6, 16, 16, 10, layers, sky, blk, skip);
+        } else if (rt === RENDER.END_PORTAL) {
+          // end portals are a flat starry surface; gateways are a full starry cube
+          const layer = FACE[id * 6];
+          const layers = [layer, layer, layer, layer, layer, layer];
+          let skip = 0;
+          for (let f = 0; f < 6; f++) { const nb = rB[ri + N_OFF[f]]; if (nb === id || OPAQUE[nb]) skip |= 1 << f; }
+          if (id === B.end_portal) emitBox(OB, x * 16, y * 16, z * 16, 0, 0, 0, 16, 12, 16, layers, 255, 255, skip | 0b111011);
+          else emitBox(OB, x * 16, y * 16, z * 16, 0, 0, 0, 16, 16, 16, layers, 255, 255, skip);
         }
       }
     }

@@ -8,6 +8,7 @@ import { sameItem, stack, craftableTimes, takeIngredients } from './inventory.js
 import { requestLock, exitLock, setTouchMode, resetTouch } from './input.js';
 import { sfx, setVolume, initAudio } from './audio.js';
 import { BIOME_NAMES } from './world.js';
+import { DIM_BIOME_NAMES } from './dims.js';
 
 const $ = (id) => document.getElementById(id);
 const h = (tag, cls, text) => {
@@ -214,7 +215,7 @@ export class UI {
 
   back() {
     const cur = G.screen;
-    if (cur === 'death') return;
+    if (cur === 'death' || cur === 'credits' || cur === 'busy') return;
     if (CONTAINERS.includes(cur)) this.closeContainer();
     const prev = this.stack.pop();
     if (prev) {
@@ -279,6 +280,42 @@ export class UI {
   }
 
   hideClickToPlay() { $('click-to-play').hidden = true; }
+
+  portalOverlay(a) {
+    const el = $('portal-overlay');
+    el.style.opacity = (a * 0.9).toFixed(2);
+  }
+
+  // The ending, after stepping into the exit portal: scrolls by, then you are home
+  showCredits(onDone) {
+    this.stack.length = 0;
+    if (CONTAINERS.includes(G.screen)) this.closeContainer();
+    G.screen = 'credits';
+    this.section('credits');
+    this.updateTouchVisibility();
+    const el = $('credits-scroll');
+    const start = performance.now();
+    const H = () => el.scrollHeight;
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      cancelAnimationFrame(this.creditsRaf);
+      $('b-credits-skip').onclick = null;
+      G.screen = null;
+      this.section(null);
+      onDone();
+    };
+    const tick = () => {
+      const t = (performance.now() - start) / 1000;
+      const y = window.innerHeight - t * 38;
+      el.style.transform = `translateY(${y}px)`;
+      if (y < -H() + window.innerHeight * 0.4) { finish(); return; }
+      this.creditsRaf = requestAnimationFrame(tick);
+    };
+    tick();
+    $('b-credits-skip').onclick = (e) => { e.preventDefault(); sfx('click'); finish(); };
+  }
 
   sleepOverlay(a) {
     const el = $('sleep');
@@ -682,16 +719,19 @@ export class UI {
       $('armor-bar').style.visibility = ap > 0 ? 'visible' : 'hidden';
       $('armor-bar').childNodes.forEach((e, i) => { e.className = 'armor-icon' + (ap >= (i + 1) * 2 ? ' full' : ap === i * 2 + 1 ? ' half' : ''); });
     }
-    // Health bar for the mob you are fighting
-    const fm = G.lastHitMob;
-    const showBar = fm && G.clock - G.lastHitTime < 5 && !fm.removed;
+    // Health bar for the mob you are fighting, or the boss nearby
+    const boss = G.boss && G.clock < G.boss.until ? G.boss : null;
+    const lm = G.lastHitMob;
+    const fm = boss ? { def: { name: boss.name }, hp: boss.hp, maxHp: boss.max } : lm;
+    const showBar = !!boss || (lm && G.clock - G.lastHitTime < 5 && !lm.removed);
     if (showBar) {
       const frac = Math.max(0, fm.hp) / (fm.maxHp || 1);
       const key = fm.def.name + Math.ceil(Math.max(0, fm.hp));
       if (c.mobBar !== key) {
         c.mobBar = key;
-        $('mob-name').textContent = `${fm.def.name}  ${Math.ceil(Math.max(0, fm.hp))} / ${fm.maxHp}`;
+        $('mob-name').textContent = boss ? fm.def.name : `${fm.def.name}  ${Math.ceil(Math.max(0, fm.hp))} / ${fm.maxHp}`;
         $('mob-fill').style.width = (frac * 100).toFixed(1) + '%';
+        $('mob-bar').classList.toggle('boss', !!boss);
       }
     }
     if (c.mobBarShown !== !!showBar) { c.mobBarShown = !!showBar; $('mob-bar').hidden = !showBar; }
@@ -703,6 +743,8 @@ export class UI {
     if (p.effects.poison > 0) fx.push(['Poison', p.effects.poison]);
     if (p.effects.slow > 0) fx.push(['Slowness', p.effects.slow]);
     if (p.hungerEffect > 0) fx.push(['Hunger', p.hungerEffect]);
+    if (p.effects.wither > 0) fx.push(['Wither', p.effects.wither]);
+    if (p.effects.levitation > 0) fx.push(['Levitation', p.effects.levitation]);
     const fxKey = fx.map((e) => e[0] + Math.ceil(e[1])).join();
     if (c.fx !== fxKey) {
       c.fx = fxKey;
@@ -747,7 +789,8 @@ export class UI {
         const yaw = ((-p.yaw % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
         const facing = dirs[Math.round((yaw + Math.PI) / (Math.PI / 2)) % 4];
         const chunk = G.world.getChunk(Math.floor(x) >> 4, Math.floor(z) >> 4);
-        const biome = chunk ? BIOME_NAMES[chunk.biomes[((Math.floor(z) & 15) << 4) | (Math.floor(x) & 15)]] : '?';
+        const bi = chunk ? chunk.biomes[((Math.floor(z) & 15) << 4) | (Math.floor(x) & 15)] : -1;
+        const biome = BIOME_NAMES[bi] || DIM_BIOME_NAMES[bi] || '?';
         const [sl, bl] = G.world.getLight(Math.floor(x), Math.floor(p.eyeY), Math.floor(z));
         const tod = Math.floor(((G.time + 0.25) % 1) * 24);
         if (!this.nearCache || this.frames2++ % 6 === 0) {

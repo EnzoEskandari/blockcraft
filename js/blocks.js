@@ -1,7 +1,7 @@
 // Block, item, recipe and smelting definitions.
 // Block ids fit in a byte (they are stored in chunk arrays); plain items start at 256.
 
-export const RENDER = { CUBE: 0, CROSS: 1, TORCH: 2, LIQUID: 3, BED: 4, DOOR: 5, FENCE: 6 };
+export const RENDER = { CUBE: 0, CROSS: 1, TORCH: 2, LIQUID: 3, BED: 4, DOOR: 5, FENCE: 6, PORTAL: 7, END_PORTAL: 8 };
 
 export const BLOCKS = [];  // id -> block def
 export const ITEMS = [];   // id -> item def (obtainable blocks are also items)
@@ -167,6 +167,49 @@ block(99, 'oak_fence', 'Oak Fence', { render: RENDER.FENCE, tex: 'oak_planks', o
 block(100, 'cobweb', 'Cobweb', { ...plant, hardness: 4, tool: 'sword', slow: 0.25, drops: one('string') });
 block(101, 'fire', 'Fire', { render: RENDER.CROSS, solid: false, opaque: false, light: 15, hardness: 0, noItem: true, replaceable: true, sound: 'grass', drops: none });
 
+// ---- the Nether and the End
+const nuggets = (r) => [[ID.gold_nugget, 2 + Math.floor(r() * 5)]];
+const NYLIUM = () => [B.crimson_nylium, B.warped_nylium, B.soul_soil];
+block(102, 'lava', 'Lava', { render: RENDER.LIQUID, solid: false, opaque: false, atten: 1, light: 15, hardness: -1, noItem: true, replaceable: true });
+block(103, 'nether_portal', 'Nether Portal', { render: RENDER.PORTAL, solid: false, opaque: false, translucent: true, light: 11, hardness: -1, noItem: true, drops: none, sound: 'glass' });
+block(104, 'soul_sand', 'Soul Sand', { hardness: 0.5, tool: 'shovel', sound: 'sand' });
+block(105, 'soul_soil', 'Soul Soil', { hardness: 0.5, tool: 'shovel', sound: 'sand' });
+block(106, 'nether_quartz_ore', 'Nether Quartz Ore', { hardness: 3, tool: 'pickaxe', level: 0, drops: one('nether_quartz') });
+block(107, 'nether_gold_ore', 'Nether Gold Ore', { hardness: 3, tool: 'pickaxe', level: 0, drops: nuggets });
+block(108, 'magma_block', 'Magma Block', { light: 3, hardness: 0.5, tool: 'pickaxe', level: 0 });
+block(109, 'basalt', 'Basalt', { tex: { top: 'basalt_top', bottom: 'basalt_top', side: 'basalt_side' }, hardness: 1.25, tool: 'pickaxe', level: 0 });
+block(110, 'blackstone', 'Blackstone', { hardness: 1.5, tool: 'pickaxe', level: 0 });
+block(111, 'gilded_blackstone', 'Gilded Blackstone', { hardness: 1.5, tool: 'pickaxe', level: 0, drops: (r) => (r() < 0.1 ? nuggets(r) : [[ID.gilded_blackstone, 1]]) });
+block(112, 'crimson_nylium', 'Crimson Nylium', { tex: { top: 'crimson_nylium', bottom: 'netherrack', side: 'crimson_nylium_side' }, hardness: 0.4, tool: 'pickaxe', level: 0, drops: one('netherrack') });
+block(113, 'warped_nylium', 'Warped Nylium', { tex: { top: 'warped_nylium', bottom: 'netherrack', side: 'warped_nylium_side' }, hardness: 0.4, tool: 'pickaxe', level: 0, drops: one('netherrack') });
+block(114, 'crimson_stem', 'Crimson Stem', { tex: { top: 'crimson_stem_top', bottom: 'crimson_stem_top', side: 'crimson_stem' }, hardness: 2, tool: 'axe', sound: 'wood' });
+block(115, 'warped_stem', 'Warped Stem', { tex: { top: 'warped_stem_top', bottom: 'warped_stem_top', side: 'warped_stem' }, hardness: 2, tool: 'axe', sound: 'wood' });
+block(116, 'crimson_planks', 'Crimson Planks', { hardness: 2, tool: 'axe', sound: 'wood' });
+block(117, 'warped_planks', 'Warped Planks', { hardness: 2, tool: 'axe', sound: 'wood' });
+block(118, 'nether_wart_block', 'Nether Wart Block', { hardness: 1, tool: 'hoe', sound: 'grass' });
+block(119, 'warped_wart_block', 'Warped Wart Block', { hardness: 1, tool: 'hoe', sound: 'grass' });
+block(120, 'shroomlight', 'Shroomlight', { light: 15, hardness: 1, tool: 'hoe', sound: 'grass' });
+block(121, 'nether_bricks', 'Nether Bricks', { hardness: 2, tool: 'pickaxe', level: 0 });
+block(122, 'nether_brick_fence', 'Nether Brick Fence', { render: RENDER.FENCE, tex: 'nether_bricks', opaque: false, hardness: 2, tool: 'pickaxe', level: 0, art: 'fence' });
+block(123, 'crimson_roots', 'Crimson Roots', { ...plant, replaceable: true, support: NYLIUM });
+block(124, 'warped_roots', 'Warped Roots', { ...plant, replaceable: true, support: NYLIUM });
+block(125, 'crimson_fungus', 'Crimson Fungus', { ...plant, support: NYLIUM });
+block(126, 'warped_fungus', 'Warped Fungus', { ...plant, support: NYLIUM });
+block(127, 'nether_wart', 'Nether Wart', { ...plant, support: () => [B.soul_sand], drops: (r) => [[ID.nether_wart, 2 + Math.floor(r() * 3)]] });
+block(128, 'bone_block', 'Bone Block', { tex: { top: 'bone_block_top', bottom: 'bone_block_top', side: 'bone_block_side' }, hardness: 2, tool: 'pickaxe', level: 0 });
+block(129, 'quartz_block', 'Block of Quartz', { hardness: 0.8, tool: 'pickaxe', level: 0 });
+block(130, 'end_stone', 'End Stone', { hardness: 3, tool: 'pickaxe', level: 0 });
+block(131, 'end_stone_bricks', 'End Stone Bricks', { hardness: 3, tool: 'pickaxe', level: 0 });
+block(132, 'end_portal_frame', 'End Portal Frame', { tex: { top: 'end_portal_frame_top', bottom: 'end_stone', side: 'end_portal_frame_side' }, light: 1, hardness: -1, drops: none });
+block(133, 'end_portal_frame_filled', 'End Portal Frame', { tex: { top: 'end_portal_frame_eye', bottom: 'end_stone', side: 'end_portal_frame_side' }, light: 1, hardness: -1, noItem: true, drops: none });
+block(134, 'end_portal', 'End Portal', { render: RENDER.END_PORTAL, solid: false, opaque: false, light: 15, hardness: -1, noItem: true, drops: none });
+block(135, 'end_gateway', 'End Gateway', { render: RENDER.END_PORTAL, tex: 'end_portal', solid: false, opaque: false, light: 15, hardness: -1, noItem: true, drops: none });
+block(136, 'violetstone', 'Violetstone', { hardness: 1.5, tool: 'pickaxe', level: 0 });
+block(137, 'violetstone_pillar', 'Violetstone Pillar', { tex: { top: 'violetstone_pillar_top', bottom: 'violetstone_pillar_top', side: 'violetstone_pillar' }, hardness: 1.5, tool: 'pickaxe', level: 0 });
+block(138, 'end_rod', 'End Rod', { render: RENDER.TORCH, solid: false, opaque: false, light: 14, hardness: 0, sound: 'glass' });
+block(139, 'dragon_egg', 'Dragon Egg', { light: 1, hardness: 3, stack: 1 });
+block(140, 'spawner', 'Monster Spawner', { opaque: false, cutout: true, hardness: 5, tool: 'pickaxe', level: 0, sound: 'metal', drops: none });
+
 // How easily fire catches each block
 const FLAMMABLE = {
   oak_log: 5, birch_log: 5, spruce_log: 5, jungle_log: 5, dark_oak_log: 5,
@@ -174,7 +217,7 @@ const FLAMMABLE = {
   oak_leaves: 60, birch_leaves: 60, spruce_leaves: 60, jungle_leaves: 60, dark_oak_leaves: 60,
   tall_grass: 100, dead_bush: 100, dandelion: 100, poppy: 100, oak_sapling: 100, hay_bale: 60,
   bookshelf: 30, oak_fence: 20, crafting_table: 5, tnt: 100, cactus: 0, sugar_cane: 60, oak_door: 5, oak_door_top: 5,
-  bed_foot: 20, bed_head: 20, pumpkin: 5, cobweb: 60,
+  bed_foot: 20, bed_head: 20, pumpkin: 5, cobweb: 60, nether_wart_block: 0, crimson_roots: 60, warped_roots: 60,
 };
 for (const [k, v] of Object.entries(FLAMMABLE)) if (BLOCKS[B[k]]) BLOCKS[B[k]].flammable = v;
 WOOL_COLORS.forEach(([k]) => { BLOCKS[B[k + '_wool']].flammable = 60; });
@@ -242,6 +285,19 @@ item(291, 'slime_ball', 'Slimeball');
 item(292, 'gloom_membrane', 'Gloom Membrane');
 item(293, 'shade_pearl', 'Shade Pearl', { stack: 16 });
 item(294, 'potion', 'Potion', { stack: 1, hidden: true });
+item(295, 'bucket', 'Bucket', { stack: 16 });
+item(296, 'water_bucket', 'Water Bucket', { stack: 1 });
+item(297, 'lava_bucket', 'Lava Bucket', { stack: 1, fuel: 1000 });
+item(298, 'cinder_rod', 'Cinder Rod', { fuel: 120 });
+item(299, 'cinder_powder', 'Cinder Powder');
+item(360, 'shade_eye', 'Eye of the Shade', { stack: 16 });
+item(361, 'nether_quartz', 'Nether Quartz');
+item(362, 'gold_nugget', 'Gold Nugget');
+item(363, 'nether_brick', 'Nether Brick');
+item(364, 'magma_cream', 'Magma Cream');
+item(365, 'wailer_tear', 'Wailer Tear');
+item(366, 'clamper_shell', 'Clamper Shell');
+item(367, 'charred_skull', 'Charred Skull');
 
 export const TOOL_MATERIALS = [
   { key: 'wooden', name: 'Wooden', tier: 0, speed: 2, durability: 59, dmg: 0, ing: '#planks' },
@@ -304,8 +360,8 @@ export function fuelValue(id) { const d = ITEMS[id]; return d ? d.fuel : 0; }
 
 // ---------------------------------------------------------------- recipes
 const TAGS = {
-  '#planks': ['oak_planks', 'birch_planks', 'spruce_planks', 'jungle_planks', 'dark_oak_planks'],
-  '#log': ['oak_log', 'birch_log', 'spruce_log', 'jungle_log', 'dark_oak_log'],
+  '#planks': ['oak_planks', 'birch_planks', 'spruce_planks', 'jungle_planks', 'dark_oak_planks', 'crimson_planks', 'warped_planks'],
+  '#log': ['oak_log', 'birch_log', 'spruce_log', 'jungle_log', 'dark_oak_log', 'crimson_stem', 'warped_stem'],
   '#wool': WOOL_COLORS.map(([k]) => k + '_wool'),
   '#coal': ['coal', 'charcoal'],
 };
@@ -341,6 +397,21 @@ const RECIPE_DEFS = [
   { in: ['iron_ingot', 'flint'], out: ['flint_and_steel', 1] },
   { in: ['cobblestone', 'oak_leaves'], out: ['mossy_cobblestone', 1] },
   { shape: ['###', '###', '###'], key: { '#': 'glowstone' }, out: ['glowstone', 9], skip: true },
+  // the Nether and the End
+  { in: ['crimson_stem'], out: ['crimson_planks', 4] },
+  { in: ['warped_stem'], out: ['warped_planks', 4] },
+  { shape: ['X X', ' X '], key: { X: 'iron_ingot' }, out: ['bucket', 1] },
+  { in: ['cinder_rod'], out: ['cinder_powder', 2] },
+  { in: ['shade_pearl', 'cinder_powder'], out: ['shade_eye', 1] },
+  { shape: ['##', '##'], key: { '#': 'nether_brick' }, out: ['nether_bricks', 1] },
+  { shape: ['#N#', '#N#'], key: { '#': 'nether_bricks', N: 'nether_brick' }, out: ['nether_brick_fence', 6] },
+  { shape: ['##', '##'], key: { '#': 'nether_quartz' }, out: ['quartz_block', 1] },
+  { shape: ['##', '##'], key: { '#': 'magma_cream' }, out: ['magma_block', 1] },
+  { shape: ['##', '##'], key: { '#': 'end_stone' }, out: ['end_stone_bricks', 4] },
+  { shape: ['###', '###', '###'], key: { '#': 'gold_nugget' }, out: ['gold_ingot', 1] },
+  { in: ['gold_ingot'], out: ['gold_nugget', 9] },
+  { shape: ['###', '###', '###'], key: { '#': 'bone' }, out: ['bone_block', 1] },
+  { in: ['bone_block'], out: ['bone', 9] },
 ];
 for (const [block, ingot] of [['emerald_block', 'emerald'], ['iron_block', 'iron_ingot'], ['gold_block', 'gold_ingot'], ['diamond_block', 'diamond'], ['coal_block', 'coal'], ['redstone_block', 'redstone'], ['lapis_block', 'lapis_lazuli']]) {
   RECIPE_DEFS.push({ shape: ['###', '###', '###'], key: { '#': ingot }, out: [block, 1] });
@@ -450,7 +521,17 @@ const SMELT_DEFS = {
   clay_ball: 'brick', porkchop: 'cooked_porkchop', beef: 'steak', chicken: 'cooked_chicken',
   mutton: 'cooked_mutton', oak_log: 'charcoal', birch_log: 'charcoal', spruce_log: 'charcoal',
   diamond_ore: 'diamond', coal_ore: 'coal', clay: 'terracotta', emerald_ore: 'emerald', lapis_ore: 'lapis_lazuli', redstone_ore: 'redstone',
+  netherrack: 'nether_brick', nether_quartz_ore: 'nether_quartz', nether_gold_ore: 'gold_ingot', crimson_stem: 'charcoal', warped_stem: 'charcoal',
+  jungle_log: 'charcoal', dark_oak_log: 'charcoal',
 };
+
+// Mining a block drops it only with a good enough pickaxe (stone needs wood, iron ore stone,
+// diamonds iron, obsidian diamond); other tools and blocks always drop
+export function canHarvest(def, held) {
+  if (def.tool !== 'pickaxe' || def.level < 0) return true;
+  const it = held ? ITEMS[held.id] : null;
+  return !!(it && !it.isBlock && it.tool === 'pickaxe' && it.tier >= def.level);
+}
 export const SMELTING = new Map();
 for (const [a, b] of Object.entries(SMELT_DEFS)) SMELTING.set(ID[a], ID[b]);
 

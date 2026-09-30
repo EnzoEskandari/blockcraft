@@ -16,7 +16,12 @@ const ID_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';   // no 0/O or 1/I look-ali
 const ID_RE = /^[A-HJ-NP-Z2-9]{6}$/;
 
 const store = await openStore(ROOT);
-const worlds = new Map((await store.list()).map((m) => [m.id, m]));
+// online worlds, and the saves of their Nether and End ("ID~nether", "ID~end")
+const DIMS = ['overworld', 'nether', 'end'];
+const roomKey = (id, dim) => (dim === 'overworld' ? id : `${id}~${dim}`);
+const all = await store.list();
+const worlds = new Map(all.filter((m) => !m.id.includes('~')).map((m) => [m.id, m]));
+const dimMetas = new Map(all.filter((m) => m.id.includes('~')).map((m) => [m.id, m]));
 console.log(`Online worlds: ${worlds.size} (${store.kind}${store.permanent ? '' : ', not permanent'})`);
 
 // ---------------------------------------------------------------- accounts
@@ -84,7 +89,7 @@ function newId() {
 }
 
 const cleanName = (n, max = 16) => String(n || '').replace(/[^\w .'!-]/g, '').trim().slice(0, max);
-const playersIn = (id) => { const r = rooms.get(id); return r ? 1 + r.peers.size : 0; };
+const playersIn = (id) => DIMS.reduce((n, d) => { const r = rooms.get(roomKey(id, d)); return n + (r ? 1 + r.peers.size : 0); }, 0);
 
 // ---------------------------------------------------------------- HTTP
 const server = http.createServer(async (req, res) => {
@@ -154,9 +159,9 @@ const server = http.createServer(async (req, res) => {
       const owner = worlds.get(id).owner;
       if (owner && owner !== who.id) { json(res, 403, { error: `Only ${worlds.get(id).ownerName || 'its creator'} can delete this world.` }); return; }
       if (playersIn(id)) { json(res, 409, { error: 'Someone is playing in that world right now' }); return; }
-      await store.del(id);
+      for (const d of DIMS) { const k = roomKey(id, d); await store.del(k); saves.delete(k); dimMetas.delete(k); }
+      await store.delPlayers(id);
       worlds.delete(id);
-      saves.delete(id);
       json(res, 200, { ok: true });
       return;
     }
@@ -174,8 +179,16 @@ const server = http.createServer(async (req, res) => {
 // Latest save of each active world, written to the store at most every few seconds
 const saves = new Map();   // id -> { data, dirty, timer }
 
+function metaOf(key) {
+  if (worlds.has(key)) return worlds.get(key);
+  if (!key.includes('~')) return null;
+  let m = dimMetas.get(key);
+  if (!m) { m = { id: key, dimOf: key.split('~')[0], updated: Date.now(), v: 0 }; dimMetas.set(key, m); }
+  return m;
+}
+
 async function writeSave(id) {
-  const s = saves.get(id), meta = worlds.get(id);
+  const s = saves.get(id), meta = metaOf(id);
   if (!s || !meta || !s.dirty) return;
   s.dirty = false;
   clearTimeout(s.timer); s.timer = null;
@@ -184,7 +197,7 @@ async function writeSave(id) {
 }
 
 function queueSave(id, data, v) {
-  const meta = worlds.get(id);
+  const meta = metaOf(id);
   if (!meta) return;
   meta.updated = Date.now();
   meta.v = Math.max(meta.v || 0, v || 0);
@@ -197,6 +210,31 @@ function queueSave(id, data, v) {
 async function latestSave(id) {
   const s = saves.get(id);
   return s ? s.data : store.getSave(id);
+}
+
+// ---------------------------------------------------------------- players
+// Each player's own record in each world (inventory, position, which dimension), sent by their browser
+const records = new Map();   // "world|account" -> { data, dirty, timer }
+async function getRecord(world, account) {
+  const k = world + '|' + account;
+  if (records.has(k)) return records.get(k).data;
+  const data = await store.getPlayer(world, account).catch(() => null);
+  records.set(k, { data, dirty: false, timer: null });
+  return data;
+}
+function putRecord(world, account, data) {
+  const k = world + '|' + account;
+  let r = records.get(k);
+  if (!r) { r = { data, dirty: false, timer: null }; records.set(k, r); }
+  r.data = data;
+  r.dirty = true;
+  if (!r.timer) r.timer = setTimeout(() => flushRecord(world, account), 3000);
+}
+async function flushRecord(world, account) {
+  const r = records.get(world + '|' + account);
+  if (!r || !r.dirty) return;
+  clearTimeout(r.timer); r.timer = null; r.dirty = false;
+  try { await store.putPlayer(world, account, r.data); } catch (err) { r.dirty = true; console.error('player save failed', err.message); }
 }
 
 // ---------------------------------------------------------------- rooms
@@ -223,9 +261,14 @@ wss.on('connection', (ws) => {
       if (!acc) { send(ws, { t: 'error', msg: 'Sign in to play online.' }); ws.joining = false; return; }
       ws.account = acc.id;
       const id = String(m.id || '').toUpperCase();
-      // already in this world from another tab or device: that one steps aside
-      const cur = rooms.get(id);
-      const old = cur && [cur.host, ...cur.peers.values()].find((q) => q.account === acc.id && q.readyState === 1);
+      ws.world = id;
+      // already in this world (any dimension) from another tab or device: that one steps aside
+      let old = null;
+      for (const d of DIMS) {
+        const r0 = rooms.get(roomKey(id, d));
+        const q = r0 && [r0.host, ...r0.peers.values()].find((x) => x.account === acc.id && x.readyState === 1 && x !== ws);
+        if (q) old = q;
+      }
       if (old) {
         // it saves and leaves by itself; give it a moment before letting this one in
         send(old, { t: 'replaced' });
@@ -234,13 +277,19 @@ wss.on('connection', (ws) => {
           old.once('close', () => { clearTimeout(timer); r(); });
         });
         await new Promise((r) => setTimeout(r, 300));
+        await flushRecord(id, acc.id);
       }
+      // your own record in this world, then which dimension: where you are travelling to, or wherever you last were
+      const me = await getRecord(id, acc.id);
+      const dim = DIMS.includes(m.dim) ? m.dim : me && DIMS.includes(me.dim) ? me.dim : 'overworld';
+      const key = roomKey(id, dim);
       let meta = worlds.get(id);
-      const have = m.have && typeof m.have === 'object' ? m.have : null;
+      const haves = m.haves && typeof m.haves === 'object' ? m.haves : {};
+      const have = haves[dim] && typeof haves[dim] === 'object' ? haves[dim] : null;
       let useLocal = false;
       if (!meta) {
         // The server forgot this world (it restarted without a database): bring it back from a player's copy
-        const hm = have && have.meta;
+        const hm = (have && have.meta) || Object.values(haves).map((h) => h && h.meta).find(Boolean);
         if (!ID_RE.test(id) || !hm || hm.id !== id) { send(ws, { t: 'error', msg: 'That world does not exist. It may have been deleted.' }); ws.joining = false; return; }
         meta = { id, name: cleanName(hm.name, 32) || 'Online World', seed: Number(hm.seed) >>> 0, mode: hm.mode === 'creative' ? 'creative' : 'survival', created: hm.created || Date.now(), updated: Date.now(), v: 0 };
         worlds.set(id, meta);
@@ -248,24 +297,27 @@ wss.on('connection', (ws) => {
         useLocal = true;
       }
       ws.name = acc.name;
-      const r = rooms.get(id);
+      const r = rooms.get(key);
       if (r && r.host.readyState === 1) {
-        if (r.peers.size + 1 >= MAX_PLAYERS) { send(ws, { t: 'error', msg: 'That world is full.' }); ws.joining = false; return; }
+        if (playersIn(id) >= MAX_PLAYERS) { send(ws, { t: 'error', msg: 'That world is full.' }); ws.joining = false; return; }
         const pid = r.next++;
         r.peers.set(pid, ws);
-        ws.room = id; ws.pid = pid;
-        send(ws, { t: 'joined', id: pid, code: id });
+        ws.room = key; ws.pid = pid;
+        send(ws, { t: 'joined', id: pid, code: id, dim, me });
         send(r.host, { t: 'peer', id: pid, name: ws.name, account: acc.id });
         return;
       }
-      // Nobody is running this world: this player hosts it
-      rooms.set(id, { host: ws, peers: new Map(), next: 1 });
-      ws.room = id; ws.pid = 0;
-      if (have && (have.v || 0) > (meta.v || 0)) useLocal = true;   // their copy is newer than the server's
-      const save = useLocal ? null : await latestSave(id);
-      send(ws, { t: 'hostworld', meta, save, useLocal });
+      // Nobody is running this dimension: this player runs it
+      rooms.set(key, { host: ws, peers: new Map(), next: 1 });
+      ws.room = key; ws.pid = 0;
+      const rm = metaOf(key);
+      if (have && (have.v || 0) > (rm.v || 0)) useLocal = true;   // their copy is newer than the server's
+      else if (dim !== 'overworld' && have && !saves.has(key) && !(await store.getSave(key))) useLocal = true;
+      const save = useLocal ? null : await latestSave(key);
+      send(ws, { t: 'hostworld', meta, dim, v: rm.v || 0, save, useLocal, me });
       return;
     }
+    if (m.t === 'me' && ws.world && ws.account && m.data && typeof m.data === 'object') { putRecord(ws.world, ws.account, m.data); return; }
     if (m.t === 'save' && room && ws.pid === 0 && typeof m.data === 'string') { queueSave(ws.room, m.data, m.v); return; }
     if (m.t === 'to' && room) {
       // Guests only talk to the host; the host can talk to one guest, several, or everyone
@@ -278,6 +330,7 @@ wss.on('connection', (ws) => {
   });
 
   ws.on('close', async () => {
+    if (ws.world && ws.account) flushRecord(ws.world, ws.account);
     const id = ws.room;
     const r = id && rooms.get(id);
     if (!r) return;
@@ -310,6 +363,7 @@ setInterval(() => {
 // Write pending saves before the server stops (Render sends SIGTERM on restarts and deploys)
 async function shutdown() {
   for (const id of saves.keys()) await writeSave(id);
+  for (const k of records.keys()) { const [w, a] = k.split('|'); await flushRecord(w, a); }
   process.exit(0);
 }
 process.on('SIGTERM', shutdown);

@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { G } from './game.js';
 import { R, itemModel, tintModel, brightness } from './render.js';
-import { BLOCKS, ID, B, WOOL_COLORS } from './blocks.js';
+import { BLOCKS, ITEMS, ID, B, WOOL_COLORS } from './blocks.js';
 import { moveBox, raycast, rayBox, boxBlocked } from './physics.js';
 import { sfx } from './audio.js';
 import { mulberry32 } from './noise.js';
@@ -479,6 +479,9 @@ function sheepVariant() {
 const players = () => (G.net ? G.net.targets() : G.player ? [G.player] : []);
 const isClient = () => !!(G.net && G.net.role === 'client');
 
+// Any golden armour keeps snoutlings friendly
+const wearsGold = (p) => (p.remote ? p.gold : (p.armor || []).some((s) => s && ITEMS[s.id] && ITEMS[s.id].material === 'golden'));
+
 const chunkKey = (x, z) => ((Math.floor(x) >> 4) + 32768) * 65536 + ((Math.floor(z) >> 4) + 32768);
 
 const dist3 = (a, b) => Math.hypot(a.pos.x - b.pos.x, a.pos.y - b.pos.y, a.pos.z - b.pos.z);
@@ -490,12 +493,13 @@ class Mob {
     this.def = def;
     this.pos = { x, y, z };
     this.vel = { x: 0, y: 0, z: 0 };
-    this.size = type === 'slime' ? (opts.size || [1, 2, 4][Math.floor(rand() * 3)]) : 1;
+    const slimy = !!def.slime;
+    this.size = slimy ? (opts.size || [1, 2, 4][Math.floor(rand() * 3)]) : 1;
     this.baby = !!opts.baby;
-    const scale = type === 'slime' ? this.size : this.baby ? 0.55 : 1;
-    this.hw = type === 'slime' ? 0.26 * this.size : (def.w / 2) * scale;
-    this.h = type === 'slime' ? 0.52 * this.size : def.h * scale;
-    this.hp = type === 'slime' ? SLIME_HP[this.size] : def.hp;
+    const scale = slimy ? this.size : this.baby ? 0.55 : 1;
+    this.hw = slimy ? 0.26 * this.size : (def.w / 2) * scale;
+    this.h = slimy ? 0.52 * this.size : def.h * scale;
+    this.hp = slimy ? SLIME_HP[this.size] : def.hp;
     this.maxHp = this.hp;
     this.variant = type === 'sheep' ? (opts.variant ?? sheepVariant()) : type === 'villager' ? (opts.prof || 'nitwit') : 0;
     this.prof = type === 'villager' ? this.variant : null;
@@ -533,6 +537,7 @@ class Mob {
     if (scale !== 1) m.inner.scale.setScalar(scale / 16);
     this.baseScale = scale / 16;
     if (type === 'slime') { m.mat.transparent = true; m.mat.opacity = 0.82; }
+    if (def.init) def.init(this, opts);
     R.scene.add(m.root);
     const hold = (itemId, s = 12) => {
       const it = itemModel(itemId);
@@ -565,12 +570,13 @@ class Mob {
       G.net.send({ k: 'hit', id: this.netId, d: amount, x: fromX, z: fromZ, kb, p: byPlayer ? 1 : 0 });
       return true;
     }
+    if (this.def.damageScale) amount *= this.def.damageScale(this);
     this.hp -= amount;
     this.invul = 0.5;
     this.hurtTime = 0.35;
     const dx = this.pos.x - fromX, dz = this.pos.z - fromZ;
     const d = Math.hypot(dx, dz) || 1;
-    const resist = this.def.golem ? 0.1 : 1;
+    const resist = this.def.heavy ? 0 : this.def.golem ? 0.1 : 1;
     this.vel.x += (dx / d) * 7 * kb * resist;
     this.vel.z += (dz / d) * 7 * kb * resist;
     if (!this.def.flies) this.vel.y = (4 + 1.5 * Math.min(1, kb)) * resist;
@@ -578,6 +584,7 @@ class Mob {
     if (byPlayer) {
       if (byPlayer !== 'remote') { G.lastHitMob = this; G.lastHitTime = G.clock; }
       this.provoked = true;
+      if (this.def.groupAnger) for (const m of G.entities.mobs) if (m.type === this.type && !m.dead && dist3(m, this) < 20) { m.angry = true; m.angryTime = 0; m.retarget = 0; if (attacker) m.attacker = attacker; }
       if (this.def.neutral) { this.angry = true; this.angryTime = 0; }
       if (this.def.villager) for (const g of G.entities.mobs) if (g.def.golem && dist3(g, this) < 16) g.provoked = true;
     }
@@ -592,18 +599,21 @@ class Mob {
   die(killer) {
     this.dead = true;
     this.deathTime = 0;
+    if (this.def.onDie) this.def.onDie(this, killer);
     if (this.key && G.world) G.world.deadMobs.add(this.key);
     const dropItem = (id, n, x, y, z) => G.entities.dropItem(id, n, x, y, z);
     for (const d of this.def.drops) {
+      if (d.roll !== undefined && rand() >= d.roll) continue;
       const n = d.min + Math.floor(rand() * (d.max - d.min + 1));
       if (n > 0) dropItem(ID[d.key], n, this.pos.x, this.pos.y + 0.5, this.pos.z);
     }
     if (this.type === 'sheep') dropItem(55 + this.variant, 1, this.pos.x, this.pos.y + 0.5, this.pos.z);
-    if (this.type === 'slime') {
+    if (this.def.slime) {
       if (this.size > 1) {
         const n = 2 + Math.floor(rand() * 3);
-        for (let i = 0; i < n; i++) G.entities.spawnMob('slime', this.pos.x + (rand() - 0.5) * this.hw, this.pos.y + 0.2, this.pos.z + (rand() - 0.5) * this.hw, { size: this.size / 2 });
-      } else if (rand() < 0.7) dropItem(ID.slime_ball, 1 + Math.floor(rand() * 2), this.pos.x, this.pos.y + 0.3, this.pos.z);
+        for (let i = 0; i < n; i++) G.entities.spawnMob(this.type, this.pos.x + (rand() - 0.5) * this.hw, this.pos.y + 0.2, this.pos.z + (rand() - 0.5) * this.hw, { size: this.size / 2 });
+      } else if (this.type === 'slime' && rand() < 0.7) dropItem(ID.slime_ball, 1 + Math.floor(rand() * 2), this.pos.x, this.pos.y + 0.3, this.pos.z);
+      if (this.type === 'magma_slime' && this.size > 1 && rand() < 0.5) dropItem(ID.magma_cream, 1, this.pos.x, this.pos.y + 0.3, this.pos.z);
     }
     if (this.def.villager && killer && killer.def && killer.def.zombieLike && rand() < 0.5) {
       G.entities.spawnMob('zombie_villager', this.pos.x, this.pos.y, this.pos.z);
@@ -615,7 +625,7 @@ class Mob {
   // Who this mob wants to chase or fight right now
   pickTarget() {
     const def = this.def, mobs = G.entities.mobs;
-    const ps = players().filter((p) => !p.dead && p.mode === 'survival');
+    const ps = players().filter((p) => !p.dead && p.mode === 'survival' && !(def.goldLover && !this.angry && wearsGold(p)));
     let best = null, bd = Infinity;
     const consider = (e, range) => { const d = dist3(this, e); if (d < range && d < bd) { bd = d; best = e; } };
     if (def.golem) {
@@ -661,7 +671,7 @@ class Mob {
     const o = { t: this.type };
     if (this.type === 'sheep') o.v = this.variant;
     if (this.prof) o.p = this.prof;
-    if (this.type === 'slime') o.s = this.size;
+    if (this.def.slime) o.s = this.size;
     if (this.baby) o.b = 1;
     if (this.trades) o.u = this.trades.map((tr) => tr.uses);
     o.m = this.maxHp;
@@ -714,17 +724,15 @@ class Mob {
     if (this.soundCd <= 0) { this.soundCd = 6 + rand() * 12; if (pdist < 16) sfx(this.def.sound, this.pos, { vol: 0.8 }); }
     // Shades still notice when this player stares at them
     this.stareCd = (this.stareCd || 0) - dt;
-    if (this.def.teleports && !this.angry && p && !p.dead && p.mode === 'survival' && pdist < 40 && this.stareCd <= 0) {
-      const hx = this.pos.x - p.pos.x, hy = this.pos.y + this.h - 0.35 - p.eyeY, hz = this.pos.z - p.pos.z;
-      const d = Math.hypot(hx, hy, hz) || 1, look = p.lookDir();
-      if ((hx * look.x + hy * look.y + hz * look.z) / d > 0.985 && this.canSee(p)) { this.stareCd = 2; G.net.send({ k: 'stare', id: this.netId }); }
-    }
+    if (this.def.teleports && !this.angry && this.stareCd <= 0 && this.staredAt(p)) { this.stareCd = 2; G.net.send({ k: 'stare', id: this.netId }); }
     this.animate(dt, Math.min(8, Math.hypot(this.vel.x, this.vel.z)), pdist);
   }
 
   update(dt) {
     if (this.proxy) { this.proxyUpdate(dt); return; }
     const def = this.def, w = G.world, p = G.player;
+    if (def.ai) { def.ai(this, dt); return; }   // flyers, bosses and other special mobs (dimmobs.js)
+    if (def.tick) def.tick(this, dt);
     this.age += dt;
     this.hurtTime -= dt;
     this.invul -= dt;
@@ -821,6 +829,8 @@ class Mob {
           const dmg = def.golem ? 7 + Math.floor(rand() * 14) : def.damage;
           this.hit(t, dmg);
           if (def.golem) { if (t.isPlayer) t.vel.y = 9; else t.vel.y = 10; sfx('golem', this.pos); }
+          if (def.launch) t.vel.y = def.launch;
+          if (def.witherHit && t.isPlayer) t.addEffect('wither', 10);
           if (def.zombieLike && this.model.parts.arm0) this.model.parts.arm0.rotation.x = this.model.parts.arm1.rotation.x = -2.1;
           if (this.type === 'vindicator') this.model.parts.arm1.rotation.x = -2.6;
         }
@@ -880,8 +890,14 @@ class Mob {
       this.vel.z += (mz * speed - this.vel.z) * (def.slime ? 0 : k);
     } else { this.vel.x *= 0.5; this.vel.z *= 0.5; }
     const bx = Math.floor(this.pos.x), bz = Math.floor(this.pos.z);
-    this.inWater = w.getBlock(bx, Math.floor(this.pos.y + this.h * 0.4), bz) === B.water;
-    if (this.inWater && def.swims) {
+    const mid = w.getBlock(bx, Math.floor(this.pos.y + this.h * 0.4), bz);
+    this.inWater = mid === B.water;
+    this.inLava = mid === B.lava || w.getBlock(bx, Math.floor(this.pos.y + 0.1), bz) === B.lava;
+    if (this.inLava && !def.fireImmune) this.fire = Math.max(this.fire, 8);
+    if (this.inLava) {
+      this.vel.y = Math.min(this.vel.y + 18 * dt, 1.2);
+      this.vel.x *= 0.7; this.vel.z *= 0.7;
+    } else if (this.inWater && def.swims) {
       const want = t ? Math.sign(t.pos.y + 0.5 - this.pos.y) * 1.8 : 0;
       this.vel.y += (want - this.vel.y) * Math.min(1, dt * 3);
     } else if (this.inWater) {
@@ -921,7 +937,8 @@ class Mob {
 
   burnCheck(dt) {
     const def = this.def, w = G.world;
-    if (def.burns && G.daylight > 0.75 && !this.inWater) {
+    if (def.fireImmune) { this.fire = 0; return; }
+    if (def.burns && G.dim !== 'nether' && G.dim !== 'end' && G.daylight > 0.75 && !this.inWater) {
       const [sky] = w.getLight(Math.floor(this.pos.x), Math.floor(this.pos.y + this.h - 0.1), Math.floor(this.pos.z));
       if (sky >= 15) this.fire = 1;
     }
@@ -929,7 +946,7 @@ class Mob {
       this.fire -= dt;
       if (rand() < dt * 12) flame(this.pos.x + (rand() - 0.5) * 0.6, this.pos.y + rand() * this.h, this.pos.z + (rand() - 0.5) * 0.6);
       this.burnTick = (this.burnTick || 0) + dt;
-      if (this.burnTick > 1) { this.burnTick = 0; this.invul = 0; this.hurt(1, this.pos.x, this.pos.z, false, 0); }
+      if (this.burnTick > (this.inLava ? 0.5 : 1)) { this.burnTick = 0; this.invul = 0; this.hurt(this.inLava ? 4 : 1, this.pos.x, this.pos.z, false, 0); }
     }
   }
 
@@ -942,13 +959,21 @@ class Mob {
     }
   }
 
+  // Only a straight look into a shade's eyes makes it angry: the farther away it is, the more exactly you
+  // have to aim (the same narrow cone the original game uses)
+  staredAt(p) {
+    if (!p || p.dead || p.mode !== 'survival') return false;
+    const eyeY = this.pos.y + this.h * 0.87;
+    const hx = this.pos.x - p.pos.x, hy = eyeY - p.eyeY, hz = this.pos.z - p.pos.z;
+    const d = Math.hypot(hx, hy, hz);
+    if (d > 64 || d < 0.5) return false;
+    const look = p.lookDir();
+    return (hx * look.x + hy * look.y + hz * look.z) / d > 1 - 0.025 / d && this.canSee(p);
+  }
+
   shadeLogic(dt, p, pdist) {
-    if (!this.angry && p && !p.dead && p.mode === 'survival' && pdist < 40) {
-      const ex = p.pos.x, ey = p.eyeY, ez = p.pos.z;
-      const hx = this.pos.x - ex, hy = this.pos.y + this.h - 0.35 - ey, hz = this.pos.z - ez;
-      const d = Math.hypot(hx, hy, hz) || 1;
-      const look = p.lookDir();
-      if ((hx * look.x + hy * look.y + hz * look.z) / d > 0.985 && this.canSee(p)) {
+    if (!this.angry && p && pdist < 64) {
+      if (this.staredAt(p)) {
         this.angry = true;
         this.angryTime = 0;
         this.retarget = 0;
@@ -1022,6 +1047,7 @@ class Mob {
     const x = Math.floor(this.pos.x + mx * (this.hw + 0.6)), z = Math.floor(this.pos.z + mz * (this.hw + 0.6));
     const y = Math.floor(this.pos.y);
     if (w.getBlock(x, y, z) === B.water || w.getBlock(x, y - 1, z) === B.water) return false;
+    if (w.getBlock(x, y, z) === B.lava || w.getBlock(x, y - 1, z) === B.lava) return this.type === 'strider';   // only striders walk on lava
     for (let d = 1; d <= 3; d++) if (w.isSolid(x, y - d, z)) return true;
     return false;
   }
@@ -1062,6 +1088,7 @@ class Mob {
     d = Math.atan2(Math.sin(d), Math.cos(d));
     root.rotation.y += d * Math.min(1, dt * 8);
     const a = def.anim;
+    if (def.animate) def.animate(this, dt, hs);
     if (a === 'quad') {
       if (P.leg0) { P.leg0.rotation.x = sw; P.leg3.rotation.x = sw; P.leg1.rotation.x = -sw; P.leg2.rotation.x = -sw; }
     } else if (a === 'biped') {
@@ -1128,6 +1155,7 @@ class Mob {
   }
 
   dispose() {
+    if (this.def.dispose) this.def.dispose(this);
     R.scene.remove(this.model.root);
     this.model.mat.dispose();
   }
@@ -1355,6 +1383,8 @@ class Thrown {
     const P = G.entities.particles, p = G.player;
     if (this.kind === 'pearl') {
       for (let i = 0; i < 20; i++) P.spawn(p.pos.x + (rand() - 0.5), p.pos.y + rand() * 1.8, p.pos.z + (rand() - 0.5), (rand() - 0.5) * 2, rand(), (rand() - 0.5) * 2, 0.3, 0.8, 0.75, 0.08, 0.7, -0.05);
+      // now and then a shademite crawls out where a pearl lands
+      if (!(G.net && G.net.role === 'client') && rand() < 0.05) G.entities.spawnMob('shademite', this.pos.x, this.pos.y + 0.1, this.pos.z);
       if (!p.dead) {
         p.pos.x = this.pos.x; p.pos.y = this.pos.y + 0.05; p.pos.z = this.pos.z;
         while (boxBlocked(G.world, p.pos.x, p.pos.y, p.pos.z, p.hw, p.h) && p.pos.y < 126) p.pos.y += 0.5;
@@ -1482,6 +1512,7 @@ export class Entities {
     this.arrows = [];
     this.tnts = [];
     this.thrown = [];
+    this.projectiles = [];   // fireballs, clamper bullets, thrown eyes (dimmobs.js)
     this.particles = new Particles();
     this.spawnTimer = 0;
   }
@@ -1533,7 +1564,7 @@ export class Entities {
     const d = { t: e.type, x: r(e.pos.x), y: r(e.pos.y), z: r(e.pos.z), yaw: r(e.yaw), hp: e.hp };
     if (e.type === 'sheep') d.v = e.variant;
     if (e.prof) d.p = e.prof;
-    if (e.type === 'slime') d.s = e.size;
+    if (e.def.slime) d.s = e.size;
     if (e.baby) d.b = 1;
     if (e.key) d.k = e.key;
     if (e.home) d.h = { x: r(e.home.x), y: r(e.home.y), z: r(e.home.z) };
@@ -1647,11 +1678,12 @@ export class Entities {
     sweep(this.arrows);
     sweep(this.tnts);
     sweep(this.thrown);
+    sweep(this.projectiles);
     this.particles.update(dt);
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0) {
       this.spawnTimer = 1;
-      if (!isClient()) { this.spawnHostiles(); this.despawn(); }
+      if (!isClient()) { this.spawnHostiles(); this.despawn(); if (this.tickSpawners) this.tickSpawners(); }
     }
   }
 
@@ -1671,8 +1703,9 @@ export class Entities {
         this.spawnMob(s.type, s.x, s.y, s.z, { prof: s.prof, key: s.key, home: { x: s.x, y: s.y, z: s.z }, persistent: true });
       }
     }
+    if (w.dim === 'end' && this.onEndChunk) this.onEndChunk(chunk);
     // animals are placed once per chunk, ever; after that they are kept like everything else
-    if (w.spawned.has(k)) return;
+    if (w.dim !== 'overworld' || w.spawned.has(k)) return;
     w.spawned.add(k);
     if (rand() > 0.14) return;
     if (this.mobs.filter((m) => PASSIVE.includes(m.type)).length >= 28) return;
@@ -1694,6 +1727,7 @@ export class Entities {
   // Night mobs: picked by biome, spawned in the dark 24-44 blocks from the player
   spawnHostiles() {
     const w = G.world;
+    if (w.dim !== 'overworld') { if (this.spawnDim) this.spawnDim(); return; }
     const alive = players().filter((q) => !q.dead);
     if (!alive.length) return;
     const p = alive[(rand() * alive.length) | 0];
@@ -1782,9 +1816,9 @@ export class Entities {
   }
 
   clear() {
-    for (const arr of [this.mobs, this.items, this.arrows, this.tnts, this.thrown]) { arr.forEach((e) => e.dispose()); arr.length = 0; }
+    for (const arr of [this.mobs, this.items, this.arrows, this.tnts, this.thrown, this.projectiles]) { arr.forEach((e) => e.dispose()); arr.length = 0; }
     this.particles.clear();
   }
 }
 
-export { blockParticles as spawnBlockParticles, smoke, flame, ItemEntity };
+export { blockParticles as spawnBlockParticles, smoke, flame, ItemEntity, Mob, MODELS, humanoid, rect, px, eyes, quadLegs, players, dist3, SLIME_HP, SLIME_DMG, Thrown };

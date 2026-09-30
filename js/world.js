@@ -3,6 +3,7 @@ import { Simplex, mulberry32, hash3, fbm2, smoothstep } from './noise.js';
 import { B, BLOCKS } from './blocks.js';
 import { CS, CH, SEA, BIOME, BIOME_NAMES } from './constants.js';
 import { stampStructures, structurePartsNear } from './structures.js';
+import { generateNether, generateEnd, netherBiome, endColumn } from './dims.js';
 
 export { CS, CH, SEA, BIOME, BIOME_NAMES };
 
@@ -28,8 +29,9 @@ export class Chunk {
 }
 
 export class World {
-  constructor(seed) {
+  constructor(seed, dim = 'overworld') {
     this.seed = seed >>> 0;
+    this.dim = dim;
     const r = mulberry32(this.seed);
     this.nCont = new Simplex(r);
     this.nMount = new Simplex(r);
@@ -41,6 +43,10 @@ export class World {
     this.nCave2 = new Simplex(r);
     this.nCave3 = new Simplex(r);
     this.nSurf = new Simplex(r);
+    // the Nether and the End have their own noise, seeded from the same world seed
+    const rd = mulberry32((this.seed ^ 0x6e7468) >>> 0);
+    this.nN1 = new Simplex(rd); this.nN2 = new Simplex(rd); this.nNB1 = new Simplex(rd); this.nNB2 = new Simplex(rd); this.nNS = new Simplex(rd);
+    this.nEnd = new Simplex(rd);
     this.chunks = new Map();
     this.edits = new Map();       // ckey -> Map(idx -> id | meta << 8)
     this.containers = new Map();  // "x,y,z" -> chest / furnace state
@@ -53,6 +59,8 @@ export class World {
     this.deadMobs = new Set();        // keys of structure mobs that were killed (they don't come back)
     this.stored = new Map();          // ckey -> animals, villagers and items kept while that chunk is unloaded
     this.spawned = new Set();         // ckeys of chunks that have had their animals placed
+    this.spawners = new Map();        // "x,y,z" -> monster spawner state
+    this.flags = {};                  // world events, e.g. the dragon beaten
   }
 
   getChunk(cx, cz) { return this.chunks.get(ckey(cx, cz)); }
@@ -130,6 +138,8 @@ export class World {
 
   // ------------------------------------------------------------ terrain shape
   column(x, z) {
+    if (this.dim === 'nether') return { h: 64, biome: netherBiome(this, x, z) };
+    if (this.dim === 'end') { const e = endColumn(this, x, z); return { h: e ? e.top : 0, biome: 30 }; }
     const c = fbm2(this.nCont, x * 0.0028, z * 0.0028, 4);
     const d = fbm2(this.nDetail, x * 0.025, z * 0.025, 3);
     const mRaw = fbm2(this.nMount, x * 0.0032 + 100, z * 0.0032 - 50, 3);
@@ -154,6 +164,7 @@ export class World {
   }
 
   findSpawn() {
+    if (this.dim !== 'overworld') return { x: 0.5, z: 0.5, h: 70 };
     for (let r = 0; r < 4000; r += 8) {
       for (let a = 0; a < 8; a++) {
         const x = Math.round(Math.cos(a * Math.PI / 4) * r), z = Math.round(Math.sin(a * Math.PI / 4) * r);
@@ -166,6 +177,7 @@ export class World {
 
   // ------------------------------------------------------------ generation
   generate(cx, cz) {
+    if (this.dim !== 'overworld') return this.generateOther(cx, cz);
     const chunk = new Chunk(cx, cz);
     const blocks = chunk.blocks;
     const seed = this.seed;
@@ -247,7 +259,8 @@ export class World {
 
           if (y > 0 && y <= h && id !== B.bedrock) {
             const nearWater = h <= SEA + 1;
-            if (!(nearWater && y >= h - 5) && !(y === h && h <= SEA + 2) && cave(lx, y, lz) < 0) id = 0;
+            // deep caves hold lava, the way to obsidian
+            if (!(nearWater && y >= h - 5) && !(y === h && h <= SEA + 2) && cave(lx, y, lz) < 0) id = y <= 10 ? B.lava : 0;
           }
           blocks[(y << 8) | (lz << 4) | lx] = id;
         }
@@ -311,7 +324,21 @@ export class World {
     }
 
     stampStructures(this, chunk);
+    return this.finishChunk(chunk);
+  }
 
+  // The Nether and the End
+  generateOther(cx, cz) {
+    const chunk = new Chunk(cx, cz);
+    if (this.dim === 'nether') generateNether(this, chunk);
+    else generateEnd(this, chunk);
+    stampStructures(this, chunk);
+    return this.finishChunk(chunk);
+  }
+
+  finishChunk(chunk) {
+    const cx = chunk.cx, cz = chunk.cz, blocks = chunk.blocks;
+    const x0 = cx * CS, z0 = cz * CS;
     // Player edits from the save file
     const edits = this.edits.get(ckey(cx, cz));
     if (edits) {
@@ -331,6 +358,7 @@ export class World {
         maxY = i >> 8;
         if (BLOCKS[b].light) emitters++;
         if (b === B.fire) this.fires.set(`${x0 + (i & 15)},${i >> 8},${z0 + ((i >> 4) & 15)}`, { t: 0, age: 0 });
+        if (b === B.spawner) this.spawners.set(`${x0 + (i & 15)},${i >> 8},${z0 + ((i >> 4) & 15)}`, {});
         if (b >= B.wheat_0 && b <= B.wheat_2) {
           const key = `${x0 + (i & 15)},${i >> 8},${z0 + ((i >> 4) & 15)}`;
           if (!this.crops.has(key)) this.crops.set(key, 0);

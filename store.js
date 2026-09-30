@@ -31,6 +31,7 @@ async function openDatabase(url, pg) {
       id text primary key, meta jsonb not null, save text, updated bigint not null default 0)`);
     await pool.query('create table if not exists blockcraft_accounts (id text primary key, data jsonb not null)');
     await pool.query('create table if not exists blockcraft_sessions (token text primary key, account text not null, created bigint not null)');
+    await pool.query('create table if not exists blockcraft_players (world text not null, account text not null, data jsonb not null, primary key (world, account))');
     return {
       kind: 'database',
       permanent: true,
@@ -56,6 +57,15 @@ async function openDatabase(url, pg) {
       async loadSessions() { return (await pool.query('select token, account, created from blockcraft_sessions')).rows.map((r) => ({ ...r, created: Number(r.created) })); },
       async putSession(x) { await pool.query('insert into blockcraft_sessions (token, account, created) values ($1, $2, $3) on conflict (token) do nothing', [x.token, x.account, x.created]); },
       async delSession(token) { await pool.query('delete from blockcraft_sessions where token = $1', [token]); },
+      // each player's inventory and position in each online world
+      async getPlayer(world, account) {
+        const r = await pool.query('select data from blockcraft_players where world = $1 and account = $2', [world, account]);
+        return r.rows[0] ? r.rows[0].data : null;
+      },
+      async putPlayer(world, account, data) {
+        await pool.query('insert into blockcraft_players (world, account, data) values ($1, $2, $3) on conflict (world, account) do update set data = excluded.data', [world, account, data]);
+      },
+      async delPlayers(world) { await pool.query('delete from blockcraft_players where world = $1', [world]); },
     };
   }
 }
@@ -98,5 +108,12 @@ async function openFiles(root) {
     async loadSessions() { return Object.values(sessions); },
     async putSession(x) { sessions[x.token] = x; await flush('sessions.json', sessions); },
     async delSession(token) { delete sessions[token]; await flush('sessions.json', sessions); },
+    async getPlayer(world, account) { const all = await readJson(`${world}.players.json`); return all[account] || null; },
+    async putPlayer(world, account, data) {
+      const all = await readJson(`${world}.players.json`);
+      all[account] = data;
+      await flush(`${world}.players.json`, all);
+    },
+    async delPlayers(world) { await rm(join(dir, `${world}.players.json`), { force: true }); },
   };
 }

@@ -8,6 +8,7 @@ A block-building survival game that runs in the browser, on laptop or iPad. Feat
 - Villages with traders
 - Structures
 - Night mobs
+- The Nether and the End, with their mobs, fortresses, bastions, strongholds, end cities and the Void Dragon
 - Online multiplayer worlds
 
 The game is plain HTML and JavaScript; Three.js loads from a CDN. A small Node server (`server.js`) serves the files, keeps the online worlds, and relays multiplayer messages.
@@ -20,6 +21,14 @@ npm start
 ```
 
 Then open http://localhost:8080. Online worlds are saved in the `data/` folder.
+
+## The Nether and the End
+
+- **The Nether:** build an obsidian frame (at least 4 wide and 5 tall) and light it with flint and steel. Stand in the portal for 4 seconds. Obsidian comes from water meeting a lava source (use buckets) and needs a diamond pickaxe to mine.
+- **Inside:** there are five biomes. Fortresses hold cinders, whose rods make cinder powder. Snoutlings leave you alone if you wear gold, and trade if you toss them a gold ingot.
+- **Finding the End:** craft an Eye of the Shade from a shade pearl and cinder powder. Thrown eyes fly toward the nearest stronghold, 640 to 960 blocks from the centre of the world. Dig down, and fill the 12 frames in its portal room.
+- **The End:** break the crystals on the pillars (they heal the Void Dragon), then beat the dragon. Its exit portal plays the ending and sends you home. A gateway also opens to the outer islands and their end cities.
+- **Shades** only attack if you look them in the eyes, or hit them.
 
 ## Online worlds
 
@@ -39,6 +48,7 @@ How it works:
 - You can always hit other players, with fists, weapons or arrows.
 - Dropped items are the same for everyone, and only one player can pick each one up.
 - Chests, furnaces and villager trades are shared.
+- Each dimension runs on its own, so friends can be in the Overworld, the Nether and the End at the same time. You come back wherever you left.
 - Animals, villagers and dropped items are kept when you walk away.
 - Press **T** (or the **T** button on iPad) to chat.
 

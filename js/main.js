@@ -1,12 +1,12 @@
 // Boot, main loop, chunk streaming, block updates, saving.
 import { G, loadSettings, store, load, remove, isTouchDevice } from './game.js';
 import { buildTextures, buildIcons } from './textures.js';
-import { BLOCKS, B, SMELTING, fuelValue, maxStack } from './blocks.js';
+import { BLOCKS, B, ID, SMELTING, fuelValue, maxStack, canHarvest } from './blocks.js';
 import { World, ckey, CH } from './world.js';
 import { initMesher, buildChunkMesh, computeLight } from './mesher.js';
 import { R, initRenderer, setChunkMeshes, disposeChunkMeshes, updateSky, render } from './render.js';
 import { Player } from './player.js';
-import { Entities, spawnBlockParticles } from './entities.js';
+import { Entities, spawnBlockParticles, explode } from './entities.js';
 import { UI } from './ui.js';
 import { input, initInput, pollInput, endFrame, setTouchMode, requestLock, exitLock } from './input.js';
 import { initAudio, blockSound, sfx } from './audio.js';
@@ -15,6 +15,8 @@ import { packSlots, unpackSlots, stack } from './inventory.js';
 import { rollLoot } from './structures.js';
 import { hash3 } from './noise.js';
 import { Net, serverURL } from './net.js';
+import './dimmobs.js';
+import { findPortalFrame, portalCells, findNearbyPortal, buildPortal, END_SPAWN, endColumn, DIMS } from './dims.js';
 
 const dayLength = () => G.settings.dayLength || 1200; // seconds; the original's day is 20 minutes
 const isNight = () => G.time > 0.52 && G.time < 0.98;
@@ -157,9 +159,21 @@ function onBlockChange(x, y, z, oldId, newId) {
   if (G.net) G.net.blockChanged(x, y, z, newId);
   if (isGuest()) return;   // falling sand, water and the rest happen on the host
   S.updates.push(x, y, z);
-  if (newId === 0 || newId === B.water) {
-    const t = G.clock + 0.25;
+  const liquid = (id) => id === B.water || id === B.lava;
+  if (newId === 0 || liquid(newId) || liquid(oldId)) {
+    // lava creeps slowly (faster in the Nether), water quickly
+    const lavaNear = newId === B.lava || oldId === B.lava;
+    const t = G.clock + (lavaNear ? (G.dim === 'nether' ? 0.5 : 1.5) : 0.25);
     S.water.push([x, y, z, t], [x, y - 1, z, t], [x + 1, y, z, t], [x - 1, y, z, t], [x, y, z + 1, t], [x, y, z - 1, t]);
+  }
+  // breaking a portal block or its frame collapses the whole portal
+  if ((oldId === B.obsidian || oldId === B.nether_portal) && newId !== oldId && !S.collapsing) {
+    S.collapsing = true;
+    for (const [dx, dy, dz] of NEIGHBORS6) {
+      if (w.getBlock(x + dx, y + dy, z + dz) !== B.nether_portal) continue;
+      for (const [a, b, c] of portalCells(w, x + dx, y + dy, z + dz)) w.setBlock(a, b, c, 0);
+    }
+    S.collapsing = false;
   }
 }
 
@@ -195,7 +209,8 @@ function processUpdates() {
   }
 }
 
-// Simple flowing water: sources spread up to 4 blocks sideways and fall straight down
+// Flowing liquids: sources spread sideways (water 4 blocks, lava 2, or 4 in the Nether) and fall straight
+// down. Where water meets lava the lava hardens: a lava source into obsidian, flowing lava into cobblestone.
 function processWater() {
   const w = G.world;
   if (!S.water.length) return;
@@ -206,20 +221,41 @@ function processWater() {
     n++;
     const [x, y, z] = e;
     if (y < 1 || y >= CH - 1) continue;
-    const id = w.getBlock(x, y, z);
-    if (id !== 0 && !(BLOCKS[id].replaceable && id !== B.water)) continue;
     if (!w.getChunk(x >> 4, z >> 4)) continue;
-    let level = -1;
-    if (w.getBlock(x, y + 1, z) === B.water) level = 1;
-    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      if (w.getBlock(x + dx, y, z + dz) !== B.water) continue;
-      const l = w.getMeta(x + dx, y, z + dz) & 7;
-      const underN = w.getBlock(x + dx, y - 1, z + dz);
-      if (l < 4 && (underN !== 0 || l === 0)) level = level < 0 ? l + 1 : Math.min(level, l + 1);
+    const id = w.getBlock(x, y, z);
+    if (id === B.water || id === B.lava) { mixLiquids(w, x, y, z); continue; }
+    if (id !== 0 && !BLOCKS[id].replaceable) continue;
+    for (const liquid of [B.water, B.lava]) {
+      const range = liquid === B.water ? 4 : w.dim === 'nether' ? 4 : 2;
+      let level = -1;
+      if (w.getBlock(x, y + 1, z) === liquid) level = 1;
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        if (w.getBlock(x + dx, y, z + dz) !== liquid) continue;
+        const l = w.getMeta(x + dx, y, z + dz) & 7;
+        const underN = w.getBlock(x + dx, y - 1, z + dz);
+        if (l < range && (underN !== 0 || l === 0)) level = level < 0 ? l + 1 : Math.min(level, l + 1);
+      }
+      if (level >= 0) { w.setBlock(x, y, z, liquid, level); mixLiquids(w, x, y, z); break; }
     }
-    if (level >= 0) w.setBlock(x, y, z, B.water, level);
   }
   S.water = keep;
+}
+
+function mixLiquids(w, x, y, z) {
+  const id = w.getBlock(x, y, z);
+  if (id !== B.water && id !== B.lava) return;
+  const other = id === B.water ? B.lava : B.water;
+  for (const [dx, dy, dz] of NEIGHBORS6) {
+    const nx = x + dx, ny = y + dy, nz = z + dz;
+    if (w.getBlock(nx, ny, nz) !== other) continue;
+    // the lava one of the pair turns to stone
+    const [lx, ly, lz] = id === B.lava ? [x, y, z] : [nx, ny, nz];
+    const source = (w.getMeta(lx, ly, lz) & 7) === 0;
+    w.setBlock(lx, ly, lz, source ? B.obsidian : B.cobblestone);
+    sfx('extinguish', { x: lx + 0.5, y: ly + 0.5, z: lz + 0.5 }, { vol: 0.6 });
+    for (let i = 0; i < 6; i++) G.entities.particles.spawn(lx + Math.random(), ly + 1, lz + Math.random(), 0, 1, 0, 0.7, 0.7, 0.7, 0.15, 0.8, -0.06);
+    if (id === B.lava) return;
+  }
 }
 
 function tickFurnaces(dt) {
@@ -233,7 +269,8 @@ function tickFurnaces(dt) {
     if (c.burn <= 0 && canSmelt && fuel && fuelValue(fuel.id)) {
       c.burnMax = c.burn = fuelValue(fuel.id);
       fuel.count--;
-      if (!fuel.count) c.slots[1] = null;
+      if (fuel.id === ID.lava_bucket) c.slots[1] = { id: ID.bucket, count: 1, dmg: 0 };   // the bucket is left behind
+      else if (!fuel.count) c.slots[1] = null;
       c.changed = true;
     }
     if (c.burn > 0 && canSmelt) {
@@ -365,7 +402,8 @@ export const Game = {
     } else if (def.bed) {
       for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (BLOCKS[w.getBlock(x + dx, y, z + dz)].bed) { w.setBlock(x + dx, y, z + dz, 0); break; }
     }
-    if (drop) {
+    // a player needs a good enough pickaxe for stone, ores and obsidian to drop anything
+    if (drop && (!byPlayer || canHarvest(def, G.player && G.player.inv.held))) {
       const drops = def.drops ? def.drops(Math.random) : [[id, 1]];
       for (const [did, n] of drops) G.entities.dropItem(did, n, x + 0.5, y + 0.3, z + 0.5, (Math.random() - 0.5) * 2, 3, (Math.random() - 0.5) * 2);
     }
@@ -402,6 +440,13 @@ export const Game = {
   ignite(x, y, z) {
     const w = G.world;
     if (y < 1 || y >= CH - 1) return;
+    // fire inside an empty obsidian frame opens a nether portal instead
+    const frame = w.dim !== 'end' ? findPortalFrame(w, x, y, z) : null;
+    if (frame) {
+      for (const [a, b, c] of frame.cells) w.setBlock(a, b, c, B.nether_portal, frame.axis);
+      sfx('portal', { x: x + 0.5, y: y + 0.5, z: z + 0.5 });
+      return;
+    }
     w.setBlock(x, y, z, B.fire);
     w.fires.set(`${x},${y},${z}`, { t: 0, age: 0 });
   },
@@ -419,6 +464,16 @@ export const Game = {
 
   useBed(x, y, z) {
     const p = G.player;
+    if (G.dim !== 'overworld') {
+      // beds blow up outside the overworld
+      this.removeBlock(x, y, z, false);
+      explode(x + 0.5, y + 0.5, z + 0.5, 5);
+      for (let k = 0; k < 8; k++) {
+        const fx = x + Math.floor((Math.random() - 0.5) * 6), fy = y + Math.floor((Math.random() - 0.5) * 2), fz = z + Math.floor((Math.random() - 0.5) * 6);
+        if (G.world.getBlock(fx, fy, fz) === 0 && this.canBurnAt(fx, fy, fz)) this.ignite(fx, fy, fz);
+      }
+      return;
+    }
     p.bedSpawn = { x, y, z };
     if (!isNight()) { G.ui.toast('Respawn point set. You can only sleep at night'); return; }
     if (G.entities.hostilesNear(x + 0.5, y, z + 0.5, 8)) { G.ui.toast('You may not rest now, there are monsters nearby'); return; }
@@ -474,12 +529,17 @@ export const Game = {
   loadWorld(id) {
     const meta = this.listWorlds().find((w) => w.id === id);
     if (!meta) return;
-    startWorld(meta, load('world.' + id));
+    // you come back in whichever dimension you left in
+    const g = loadGlobals(id);
+    const dim = (g && g.player && g.player.dim) || 'overworld';
+    const data = load('world.' + dimKey(id, dim));
+    startWorld({ ...meta, dim }, data, { globals: g });
   },
 
   deleteWorld(id) {
     store('worlds', this.listWorlds().filter((w) => w.id !== id));
-    remove('world.' + id);
+    for (const d of DIMS) remove('world.' + dimKey(id, d));
+    remove('world.' + id + '@g');
   },
 
   quitToTitle() {
@@ -494,8 +554,88 @@ export const Game = {
   respawn() {
     G.sleeping = null;
     G.player.respawn();
+    // you always come back to life in the overworld
+    if (G.dim !== 'overworld') { this.travel('overworld', 'spawn'); return; }
     G.ui.startPlaying();
     if (!G.touchMode) requestLock();
+  },
+
+  // ------------------------------------------------------------ dimensions
+  // Through a portal ('portal'), into the End ('end'), or back to your bed or the world spawn ('spawn')
+  travel(to, how) {
+    if (S.travelling || !G.player || !G.worldMeta) return;
+    S.travelling = true;
+    const p = G.player, meta = G.worldMeta;
+    let arrival, pos;
+    if (how === 'portal') {
+      const f = to === 'nether' ? 1 / 8 : 8;
+      arrival = { type: 'portal', x: Math.floor(p.pos.x * f), y: Math.floor(Math.max(to === 'nether' ? 34 : 50, Math.min(CH - 12, p.pos.y))), z: Math.floor(p.pos.z * f) };
+      pos = { x: arrival.x + 0.5, y: arrival.y, z: arrival.z + 0.5 };
+    } else if (how === 'end') {
+      arrival = { type: 'end' };
+      pos = { x: END_SPAWN.x + 0.5, y: END_SPAWN.y, z: END_SPAWN.z + 0.5 };
+    } else {
+      arrival = { type: 'spawn' };
+      pos = respawnPoint(p);
+    }
+    const carry = playerData(p);
+    carry.pos = pos;
+    carry.dim = to;
+    sfx('travel', null, { vol: 0.6 });
+    G.ui.showBusy(DIM_TITLE[to]);
+    if (meta.online) {
+      if (!meta.remote) saveWorld();
+      const net = G.net;
+      G.net = null;
+      if (net) { net.sendMe(carry); net.shutdown(); }
+      teardown();
+      G.state = 'title';
+      exitLock();
+      S.carry = { id: meta.online, d: carry };
+      S.arrival = arrival;
+      Game.joinWorld(meta.online, (t) => G.ui.showBusy(t), to)
+        .catch((err) => { S.carry = null; S.arrival = null; G.ui.showTitle(); G.ui.openScreen('mp'); G.ui.mpStatus(err && err.message ? err.message : 'Could not travel there.'); })
+        .finally(() => { S.travelling = false; });
+      return;
+    }
+    saveWorld(carry);
+    startWorld({ ...meta, dim: to }, load('world.' + dimKey(meta.id, to)), { player: carry, globals: loadGlobals(meta.id), arrival });
+    S.travelling = false;
+  },
+
+  // Stepping into the exit portal after beating the dragon: the ending, then home
+  finishEnd() {
+    if (S.travelling || G.screen === 'credits') return;
+    exitLock();
+    G.ui.showCredits(() => this.travel('overworld', 'spawn'));
+  },
+
+  // End gateways jump between the main island and the outer islands
+  gateway() {
+    const w = G.world, p = G.player;
+    if ((S.gatewayCd || 0) > G.clock) return;
+    S.gatewayCd = G.clock + 4;
+    const outward = Math.hypot(p.pos.x, p.pos.z) < 500;
+    const a = Math.atan2(p.pos.z, p.pos.x);
+    let tx = Math.round(Math.cos(a) * (outward ? 1010 : 90)), tz = Math.round(Math.sin(a) * (outward ? 1010 : 90)), ty = 70;
+    if (outward) {
+      for (let d = 1010; d < 1700; d += 8) {
+        const x = Math.round(Math.cos(a) * d), z = Math.round(Math.sin(a) * d);
+        const c = endColumn(w, x, z);
+        if (c) { tx = x; tz = z; ty = c.top + 1; break; }
+      }
+    } else {
+      const c = endColumn(w, tx, tz);
+      if (c) ty = c.top + 1;
+    }
+    p.pos = { x: tx + 0.5, y: ty, z: tz + 0.5 };
+    p.vel = { x: 0, y: 0, z: 0 };
+    p.fallDist = 0;
+    p.portalCooldown = true;
+    sfx('teleport', p.pos);
+    S.arrival = { type: 'gateway', x: tx, y: ty, z: tz, outward };
+    G.state = 'loading';
+    G.ui.showLoading(0);
   },
 
   renderDistChanged() { buildOffsets(); },
@@ -563,26 +703,31 @@ export const Game = {
     remove('online.' + id);
   },
 
-  async joinWorld(id, onStatus) {
+  // Each dimension of an online world runs on its own: the first player in it runs it. Without `dim`
+  // the server puts you back wherever you last were.
+  async joinWorld(id, onStatus, dim) {
     const acc = G.account;
-    // this browser's copy of the world, in case the server has lost or has an older one
-    const backup = load('online.' + id);
-    const have = backup && backup.meta ? { v: backup.v || 0, meta: backup.meta } : null;
-    const { net, host, snap } = await Net.connect(id, acc, have, onStatus);
-    G.net = net;
-    if (snap) { startRemoteWorld(snap, id); return; }
+    // this browser's copies of the world, in case the server has lost them or has older ones
+    const haves = {};
+    for (const d of DIMS) { const b = load('online.' + dimKey(id, d)); if (b && b.meta) haves[d] = { v: b.v || 0, meta: b.meta }; }
+    const res = await Net.connect(id, acc, haves, onStatus, dim);
+    G.net = res.net;
+    const room = DIMS.includes(res.dim) ? res.dim : 'overworld';
+    if (res.snap) { startRemoteWorld(res.snap, id, room, res.me); return; }
+    const backup = load('online.' + dimKey(id, room));
     let data = null;
-    if (host.useLocal && backup) data = backup.data;
-    else if (host.save) { try { data = JSON.parse(host.save); } catch { data = null; } }
-    const m = host.meta;
-    S.saveVersion = Math.max(m.v || 0, (backup && backup.v) || 0);
-    startWorld({ online: id, id: null, name: m.name, seed: m.seed, mode: m.mode, created: m.created, me: acc.id, meName: acc.name }, data);
+    if (res.host.useLocal && backup) data = backup.data;
+    else if (res.host.save) { try { data = JSON.parse(res.host.save); } catch { data = null; } }
+    const m = res.host.meta;
+    S.saveVersion = Math.max(res.host.v || 0, (backup && backup.v) || 0);
+    startWorld({ online: id, id: null, dim: room, name: m.name, seed: m.seed, mode: m.mode, created: m.created, me: acc.id, meName: acc.name }, data, { me: res.me });
   },
 
   // Back into the same online world after the connection dropped or the player running it left
   rejoin(id, wait, msg) {
     if (G.worldMeta && G.worldMeta.online && !G.worldMeta.remote) saveWorld();   // keeps a copy in this browser
     const carry = G.player && !G.player.dead ? playerData(G.player) : null;
+    const dim = G.dim;
     if (G.net) G.net.shutdown();
     G.net = null;
     teardown();
@@ -591,7 +736,7 @@ export const Game = {
     G.ui.showBusy(msg);
     setTimeout(async () => {
       S.carry = carry ? { id, d: carry } : null;
-      try { await Game.joinWorld(id, (t) => G.ui.showBusy(t)); } catch (err) {
+      try { await Game.joinWorld(id, (t) => G.ui.showBusy(t), dim); } catch (err) {
         S.carry = null;
         G.ui.showTitle();
         G.ui.openScreen('mp');
@@ -622,6 +767,47 @@ export const Game = {
     G.ui.mpStatus(msg);
   },
 };
+
+const DIM_TITLE = { nether: 'Entering the Nether', end: 'Entering the End', overworld: 'Returning to the Overworld' };
+const dimKey = (id, dim) => (dim && dim !== 'overworld' ? `${id}~${dim}` : id);
+
+// Time of day and the player (singleplayer), kept apart from each dimension's blocks
+function loadGlobals(id) { return load('world.' + id + '@g') || load('world.' + id); }
+
+// Where you come back to life: your bed, or the world spawn (always in the overworld)
+function respawnPoint(p) {
+  const b = p.bedSpawn;
+  return b ? { x: b.x + 0.5, y: b.y + 1, z: b.z + 0.5 } : { ...p.spawn };
+}
+
+// After a dimension loads: come out of a portal (found or built), onto the End platform, or through a gateway
+function arrive(a) {
+  const w = G.world, p = G.player;
+  const set = (x, y, z, id, m = 0) => w.setBlock(x, y, z, id, m);
+  if (a.type === 'portal') {
+    const found = findNearbyPortal(w, a.x, a.y, a.z, G.dim === 'nether' ? 16 : 32);
+    const spot = found ? { x: found.x + 0.5, y: found.y, z: found.z + 0.5 } : buildPortal(w, a.x, a.y, a.z, set);
+    p.pos = { ...spot };
+    p.portalCooldown = true;
+  } else if (a.type === 'end') {
+    const { x, y, z } = END_SPAWN;
+    for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) {
+      set(x + dx, y - 1, z + dz, B.obsidian);
+      for (let k = 0; k <= 2; k++) set(x + dx, y + k, z + dz, 0);
+    }
+    p.pos = { x: x + 0.5, y, z: z + 0.5 };
+    p.yaw = Math.PI / 2;
+  } else if (a.type === 'gateway') {
+    if (!w.isSolid(a.x, a.y - 1, a.z)) for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) set(a.x + dx, a.y - 1, a.z + dz, B.end_stone);
+    // a way back from the outer islands
+    if (a.outward && w.getBlock(a.x + 3, a.y + 1, a.z) !== B.end_gateway) {
+      set(a.x + 3, a.y, a.z, B.bedrock); set(a.x + 3, a.y + 1, a.z, B.end_gateway); set(a.x + 3, a.y + 2, a.z, B.bedrock);
+    }
+    p.pos = { x: a.x + 0.5, y: a.y, z: a.z + 0.5 };
+  } else return;
+  p.vel = { x: 0, y: 0, z: 0 };
+  p.fallDist = 0;
+}
 
 const authHeader = (a) => (a && a.token ? { authorization: 'Bearer ' + a.token } : {});
 
@@ -667,7 +853,7 @@ function playerData(p) {
   return {
     pos: { ...p.pos }, yaw: p.yaw, pitch: p.pitch, health: p.health, food: p.food, saturation: p.saturation,
     inv: packSlots(p.inv.slots), selected: p.inv.selected, spawn: p.spawn, flying: p.flying,
-    armor: packSlots(p.armor), bed: p.bedSpawn,
+    armor: packSlots(p.armor), bed: p.bedSpawn, dim: G.dim || 'overworld',
   };
 }
 
@@ -685,11 +871,12 @@ function applyPlayerData(p, d) {
 }
 
 // A guest's copy of the world the host is running
-function startRemoteWorld(snap, onlineId) {
+function startRemoteWorld(snap, onlineId, dim = 'overworld', me = null) {
   initAudio();
   teardown();
-  G.worldMeta = { id: null, remote: true, online: onlineId, name: snap.name, seed: snap.seed, mode: snap.mode === 'creative' ? 'creative' : 'survival' };
-  const w = new World(snap.seed);
+  G.worldMeta = { id: null, remote: true, online: onlineId, dim, name: snap.name, seed: snap.seed, mode: snap.mode === 'creative' ? 'creative' : 'survival' };
+  G.dim = dim;
+  const w = new World(snap.seed, dim);
   w.onChange = onBlockChange;
   w.villagerTrades = new Map();
   w.deadMobs = new Set();
@@ -704,7 +891,9 @@ function startRemoteWorld(snap, onlineId) {
   G.time = snap.time ?? 0.03;
   G.day = snap.day || 0;
   G.nightsNoSleep = snap.nns || 0;
-  if (snap.guest) applyPlayerData(p, snap.guest);
+  w.worldSpawn = snap.spawn || null;
+  const pd = me || snap.guest;
+  if (pd) applyPlayerData(p, pd);
   else {
     const sp = snap.spawn || { x: 0, y: 80, z: 0 };
     p.pos = { x: sp.x + (Math.random() - 0.5) * 3, y: sp.y, z: sp.z + (Math.random() - 0.5) * 3 };
@@ -736,23 +925,27 @@ function teardown() {
   G.sleeping = null;
 }
 
-function startWorld(meta, data) {
+function startWorld(meta, data, opts = {}) {
   initAudio();
   teardown();
+  const dim = meta.dim || 'overworld';
   G.worldMeta = meta;
-  const w = new World(meta.seed);
+  G.dim = dim;
+  const w = new World(meta.seed, dim);
   w.onChange = onBlockChange;
   w.villagerTrades = new Map(Object.entries((data && data.villagers) || {}));
   w.deadMobs = new Set((data && data.deadMobs) || []);
   w.guests = (data && data.guests) || {};
   w.stored = new Map(Object.entries((data && data.entities) || {}).map(([k, v]) => [Number(k), v]));
   w.spawned = new Set((data && data.spawned) || []);
+  w.flags = (data && data.flags) || {};
   G.world = w;
   const p = new Player();
   p.mode = meta.mode;
   G.player = p;
   if (!G.entities) G.entities = new Entities();
   G.clock = 0;
+  const g = opts.globals || data;   // time of day, the world spawn and (singleplayer) the player
   if (data) {
     unpackEdits(w, data.edits);
     for (const c of data.containers || []) {
@@ -761,20 +954,22 @@ function startWorld(meta, data) {
       w.containers.set(c.k, { type: c.type, slots: unpackSlots(c.slots, n), burn: c.burn || 0, burnMax: c.burnMax || 0, cook: c.cook || 0, x, y, z });
     }
     for (const k of data.saplings || []) S.saplings.set(k, 30 + Math.random() * 120);
-    G.day = data.day || 0;
-    G.nightsNoSleep = data.nightsNoSleep || 0;
-    G.time = data.time ?? 0.03;
+  }
+  if (g) {
+    G.day = g.day || 0;
+    G.nightsNoSleep = g.nightsNoSleep || 0;
+    G.time = g.time ?? 0.03;
   } else {
     G.time = 0.03;
     G.day = 0;
     G.nightsNoSleep = 0;
   }
-  // where new players appear
-  let sp = (data && data.worldSpawn) || (data && data.player && data.player.spawn);
-  if (!sp) { const f = w.findSpawn(); sp = { x: f.x, y: f.h + 1, z: f.z }; }
-  w.worldSpawn = sp;
-  // in an online world everyone's inventory is kept under their name
-  const pd = data && (meta.online ? playerRecord(w.guests, meta.me, meta.meName) : data.player);
+  // where new players appear (always somewhere in the overworld)
+  let sp = g && (g.worldSpawn || (g.player && g.player.spawn));
+  if (!sp && dim === 'overworld') { const f = w.findSpawn(); sp = { x: f.x, y: f.h + 1, z: f.z }; }
+  w.worldSpawn = sp || null;
+  // in an online world everyone's inventory is kept under their account
+  const pd = opts.player || (meta.online ? opts.me || playerRecord(w.guests, meta.me, meta.meName) : g && g.player);
   if (pd) applyPlayerData(p, pd);
   else {
     p.pos = { ...sp };
@@ -785,12 +980,13 @@ function startWorld(meta, data) {
     }
   }
   takeCarry(p, meta.online);
+  if (opts.arrival) S.arrival = opts.arrival;
   buildOffsets();
   G.state = 'loading';
   G.ui.showLoading(0);
 }
 
-function saveWorld() {
+function saveWorld(playerOverride) {
   if (!G.worldMeta || !G.world || !G.player) return;
   // a guest's world belongs to the host, who keeps their inventory too
   if (G.worldMeta.remote) { if (G.net) G.net.saveGuest(); return; }
@@ -799,30 +995,34 @@ function saveWorld() {
   const edits = packEdits(w);
   const containers = [];
   for (const [k, c] of w.containers) containers.push({ k, type: c.type, slots: packSlots(c.slots), burn: c.burn, burnMax: c.burnMax, cook: c.cook });
+  // this dimension's blocks and creatures
   const data = {
-    v: 1,
-    time: G.time,
-    player: playerData(p),
+    v: 2,
+    dim: G.dim,
     guests: w.guests || {},
-    worldSpawn: w.worldSpawn,
     entities: G.entities.savedEntities(),
     spawned: [...w.spawned],
-    day: G.day || 0, nightsNoSleep: G.nightsNoSleep || 0,
     villagers: Object.fromEntries(w.villagerTrades),
     deadMobs: [...w.deadMobs],
+    flags: w.flags || {},
     edits, containers, saplings: [...S.saplings.keys()],
+  };
+  // the time of day, the world spawn, and the player
+  const globals = {
+    time: G.time, day: G.day || 0, nightsNoSleep: G.nightsNoSleep || 0,
+    worldSpawn: w.worldSpawn, player: playerOverride || playerData(p), saved: Date.now(),
   };
   const meta = G.worldMeta;
   if (meta.online) {
-    // the server keeps online worlds; this browser keeps a spare copy
-    delete data.player;
-    w.guests[meta.me] = playerData(p);
+    // the server keeps online worlds (and each player's own record); this browser keeps a spare copy
+    const room = { ...data, time: globals.time, day: globals.day, nightsNoSleep: globals.nightsNoSleep, worldSpawn: globals.worldSpawn };
     S.saveVersion = (S.saveVersion || 0) + 1;
-    if (G.net) G.net.uploadSave(JSON.stringify(data), S.saveVersion);
-    store('online.' + meta.online, { v: S.saveVersion, meta: { id: meta.online, name: meta.name, seed: meta.seed, mode: meta.mode, created: meta.created }, data });
+    if (G.net) { G.net.uploadSave(JSON.stringify(room), S.saveVersion); G.net.sendMe(globals.player); }
+    store('online.' + dimKey(meta.online, G.dim), { v: S.saveVersion, meta: { id: meta.online, name: meta.name, seed: meta.seed, mode: meta.mode, created: meta.created }, data: room });
     return;
   }
-  const ok = store('world.' + G.worldMeta.id, data);
+  // singleplayer: each dimension has its own save; the overworld's also holds the globals (older saves read it)
+  const ok = store('world.' + dimKey(meta.id, G.dim), G.dim === 'overworld' ? { ...data, ...globals } : data) && store('world.' + meta.id + '@g', globals);
   const list = Game.listWorlds();
   const m = list.find((x) => x.id === G.worldMeta.id);
   if (m) { m.lastPlayed = Date.now(); store('worlds', list); }
@@ -850,6 +1050,7 @@ function frame(dt) {
       G.ui.startPlaying();
       G.ui.invChanged();
       if (!G.touchMode) requestLock();
+      if (S.arrival) { const a = S.arrival; S.arrival = null; arrive(a); }
       // an online world is on the server from the moment someone is in it
       if (G.worldMeta && G.worldMeta.online && !G.worldMeta.remote) saveWorld();
     }
@@ -905,7 +1106,7 @@ function frame(dt) {
   }
   updateChunks(paused ? 14 : 7);
   G.player.updateCamera(dt);
-  updateSky(G.time, paused ? 0 : dt, G.player.headInWater);
+  updateSky(G.time, paused ? 0 : dt, G.player.headInWater, G.player.headInLava);
   G.ui.update(dt);
   render();
   endFrame();

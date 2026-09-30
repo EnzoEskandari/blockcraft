@@ -589,6 +589,160 @@ Object.assign(PAINTERS, {
   },
 });
 
+// ---------------------------------------------------------------- the Nether and the End
+function netherrackBase(p) { PAINTERS.netherrack(p); }
+function oreOn(p, base, c, hi, n) {
+  base(p);
+  for (let k = 0; k < n; k++) {
+    const cx = 1 + Math.floor(p.r() * 12), cy = 1 + Math.floor(p.r() * 12);
+    for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1], [2, 1], [1, 2]]) if (p.r() < 0.72) p.set(cx + dx, cy + dy, jit(c, 12, p.r));
+    p.set(cx, cy, hi);
+  }
+}
+function stem(p, base, dark, glow) {
+  bark(p, base, dark);
+  for (let k = 0; k < 7; k++) p.set(Math.floor(p.r() * 16), Math.floor(p.r() * 16), glow);
+}
+function stemTop(p, inner, ring, barkC) { logTop(p, inner, ring, barkC); }
+function wart(p, base) {
+  const n = vnoise(p.r, 4);
+  p.each((x, y) => jit(sh(base, 0.75 + n(x, y) * 0.45), 10, p.r));
+}
+function nylium(p, top) { p.each(() => (p.r() < 0.2 ? sh(top, 0.7) : jit(top, 12, p.r))); }
+function nyliumSide(p, top) {
+  netherrackBase(p);
+  for (let x = 0; x < 16; x++) {
+    const depth = 2 + (p.r() < 0.5 ? 1 : 0) + (p.r() < 0.3 ? 2 : 0);
+    for (let y = 0; y < depth; y++) p.set(x, y, jit(top, 12, p.r));
+  }
+}
+function starfield(p, base, stars) {
+  p.each(() => jit(base, 6, p.r));
+  for (let k = 0; k < 22; k++) p.set(Math.floor(p.r() * 16), Math.floor(p.r() * 16), stars[Math.floor(p.r() * stars.length)]);
+}
+function plantCross(p, stemC, headC, head) {
+  p.clear();
+  for (let y = 8; y < 16; y++) p.set(7, y, stemC);
+  if (head) {
+    for (let y = 4; y < 8; y++) for (let x = 4; x < 12; x++) if (Math.abs(x - 7.5) + Math.abs(y - 6) < 4.5) p.set(x, y, jit(headC, 14, p.r));
+    p.set(6, 5, [250, 200, 120]); p.set(9, 6, [250, 200, 120]);
+  } else {
+    for (let k = 0; k < 9; k++) {
+      const x = 2 + Math.floor(p.r() * 12), h = 4 + Math.floor(p.r() * 8);
+      for (let i = 0; i < h; i++) p.set(x + (i > h * 0.6 ? (x < 8 ? -1 : 1) : 0), 15 - i, jit(headC, 14, p.r));
+    }
+  }
+}
+Object.assign(PAINTERS, {
+  lava: (p) => {
+    const n = vnoise(p.r, 4), n2 = vnoise(p.r, 8);
+    p.each((x, y) => {
+      const v = n(x, y) * 0.7 + n2(x, y) * 0.3;
+      return v > 0.66 ? [255, 214, 90] : v > 0.5 ? [248, 146, 30] : v > 0.32 ? [214, 92, 16] : [170, 52, 10];
+    });
+  },
+  nether_portal: (p) => {
+    const n = vnoise(p.r, 4);
+    p.each((x, y) => {
+      const v = (Math.sin((x + y) * 0.9 + n(x, y) * 6) + 1) / 2;
+      const c = mix([86, 20, 170], [190, 110, 255], v);
+      return [c[0], c[1], c[2], 190];
+    });
+  },
+  soul_sand: (p) => {
+    p.each(() => jit([84, 64, 50], 8, p.r));
+    for (let k = 0; k < 4; k++) {
+      const cx = 2 + Math.floor(p.r() * 11), cy = 2 + Math.floor(p.r() * 11);
+      p.set(cx, cy, [44, 32, 26]); p.set(cx + 2, cy, [44, 32, 26]); p.set(cx + 1, cy + 2, [44, 32, 26]); p.set(cx, cy + 2, [52, 38, 30]); p.set(cx + 2, cy + 2, [52, 38, 30]);
+    }
+  },
+  soul_soil: (p) => p.each(() => (p.r() < 0.15 ? [58, 44, 34] : jit([92, 72, 56], 8, p.r))),
+  nether_quartz_ore: (p) => oreOn(p, netherrackBase, [232, 226, 216], [255, 255, 250], 6),
+  nether_gold_ore: (p) => oreOn(p, netherrackBase, [248, 206, 60], [255, 246, 160], 7),
+  magma_block: (p) => {
+    const vor = voronoi(p.r, 10);
+    p.each((x, y) => { const c = vor(x, y); return c.d2 - c.d1 < 1.1 ? jit([255, 132, 20], 18, p.r) : jit([110, 40, 22], 10, p.r); });
+  },
+  basalt_side: (p) => p.each((x) => jit(x % 4 === 0 ? [60, 60, 66] : x % 4 === 2 ? [96, 96, 102] : [78, 78, 84], 8, p.r)),
+  basalt_top: (p) => p.each((x, y) => { const d = Math.max(Math.abs(x - 7.5), Math.abs(y - 7.5)); return jit(Math.floor(d) % 3 === 0 ? [64, 64, 70] : [88, 88, 94], 7, p.r); }),
+  blackstone: (p) => { const n = vnoise(p.r, 6); p.each((x, y) => jit(n(x, y) > 0.6 ? [58, 50, 60] : [36, 30, 38], 6, p.r)); },
+  gilded_blackstone: (p) => { PAINTERS.blackstone(p); for (let k = 0; k < 14; k++) p.set(Math.floor(p.r() * 16), Math.floor(p.r() * 16), p.r() < 0.5 ? [248, 200, 60] : [200, 140, 30]); },
+  crimson_nylium: (p) => nylium(p, [150, 26, 30]),
+  crimson_nylium_side: (p) => nyliumSide(p, [150, 26, 30]),
+  warped_nylium: (p) => nylium(p, [30, 118, 110]),
+  warped_nylium_side: (p) => nyliumSide(p, [30, 118, 110]),
+  crimson_stem: (p) => stem(p, [112, 40, 64], [72, 22, 40], [220, 80, 60]),
+  crimson_stem_top: (p) => stemTop(p, [150, 60, 80], [120, 40, 60], [112, 40, 64]),
+  warped_stem: (p) => stem(p, [52, 84, 96], [30, 56, 66], [60, 220, 190]),
+  warped_stem_top: (p) => stemTop(p, [56, 110, 110], [40, 88, 90], [52, 84, 96]),
+  crimson_planks: (p) => planks(p, [120, 50, 76]),
+  warped_planks: (p) => planks(p, [40, 118, 110]),
+  nether_wart_block: (p) => wart(p, [132, 20, 22]),
+  warped_wart_block: (p) => wart(p, [22, 128, 120]),
+  shroomlight: (p) => { const vor = voronoi(p.r, 9); p.each((x, y) => { const c = vor(x, y); return c.d2 - c.d1 < 0.8 ? [210, 110, 40] : jit(c.v > 0.5 ? [255, 190, 96] : [246, 150, 60], 10, p.r); }); },
+  nether_bricks: (p) => p.each((x, y) => {
+    const row = y >> 2, xx = (x + (row & 1) * 4) & 15;
+    if ((y & 3) === 3 || (xx & 7) === 7) return jit([30, 14, 18], 4, p.r);
+    return jit((row + (xx >> 3)) % 3 === 0 ? [78, 36, 44] : [62, 28, 36], 6, p.r);
+  }),
+  crimson_roots: (p) => plantCross(p, [150, 30, 40], [190, 40, 50], false),
+  warped_roots: (p) => plantCross(p, [30, 130, 120], [40, 170, 150], false),
+  crimson_fungus: (p) => plantCross(p, [180, 110, 90], [200, 40, 40], true),
+  warped_fungus: (p) => plantCross(p, [180, 110, 90], [30, 150, 130], true),
+  nether_wart: (p) => {
+    p.clear();
+    for (let k = 0; k < 5; k++) {
+      const x = 2 + k * 3, h = 5 + Math.floor(p.r() * 5);
+      for (let i = 0; i < h; i++) p.set(x, 15 - i, [110, 20, 24]);
+      p.set(x - 1, 15 - h, [170, 34, 40]); p.set(x, 15 - h, [190, 40, 46]); p.set(x + 1, 15 - h, [170, 34, 40]); p.set(x, 14 - h, [150, 30, 36]);
+    }
+  },
+  bone_block_side: (p) => p.each((x, y) => jit((y & 7) === 0 ? [196, 192, 170] : [228, 224, 206], 5, p.r)),
+  bone_block_top: (p) => p.each((x, y) => { const d = Math.hypot(x - 7.5, y - 7.5); return jit(d < 3 ? [180, 176, 156] : d > 6.6 ? [212, 208, 190] : [230, 226, 208], 5, p.r); }),
+  quartz_block: (p) => p.each((x, y) => jit(x === 0 || y === 0 || x === 15 || y === 15 ? [210, 202, 194] : [236, 230, 222], 3, p.r)),
+  end_stone: (p) => { const vor = voronoi(p.r, 12); p.each((x, y) => { const c = vor(x, y); return c.d2 - c.d1 < 0.7 ? [196, 196, 140] : jit(c.v > 0.5 ? [226, 228, 168] : [214, 216, 156], 6, p.r); }); },
+  end_stone_bricks: (p) => p.each((x, y) => {
+    const row = y >> 2, xx = (x + (row & 1) * 4) & 15;
+    if ((y & 3) === 3 || (xx & 7) === 7) return jit([180, 180, 128], 4, p.r);
+    return jit([226, 228, 170], 5, p.r);
+  }),
+  end_portal_frame_side: (p) => p.each((x, y) => {
+    if (y < 3) return jit([46, 92, 80], 6, p.r);
+    return jit(y === 3 ? [180, 184, 130] : [210, 212, 156], 6, p.r);
+  }),
+  end_portal_frame_top: (p) => p.each((x, y) => {
+    const e = x < 2 || y < 2 || x > 13 || y > 13;
+    const inner = x >= 4 && x <= 11 && y >= 4 && y <= 11;
+    return e ? jit([60, 118, 100], 6, p.r) : inner ? [30, 44, 40] : jit([46, 92, 80], 6, p.r);
+  }),
+  end_portal_frame_eye: (p) => {
+    PAINTERS.end_portal_frame_top(p);
+    for (let y = 4; y <= 11; y++) for (let x = 4; x <= 11; x++) {
+      const d = Math.hypot(x - 7.5, y - 7.5);
+      if (d < 3.8) p.set(x, y, d < 1.3 ? [10, 20, 18] : d < 2.6 ? [40, 170, 120] : [24, 110, 80]);
+    }
+  },
+  end_portal: (p) => starfield(p, [8, 14, 24], [[140, 220, 210], [80, 160, 200], [200, 250, 240], [60, 110, 170]]),
+  violetstone: (p) => p.each((x, y) => {
+    const lx = x & 7, ly = y & 7;
+    if (lx === 0 || ly === 0) return jit([150, 104, 150], 5, p.r);
+    if (lx === 7 || ly === 7) return jit([124, 80, 124], 5, p.r);
+    return jit([170, 124, 170], 6, p.r);
+  }),
+  violetstone_pillar: (p) => p.each((x) => jit(x === 0 || x === 15 ? [124, 80, 124] : x % 5 === 2 ? [150, 104, 150] : [172, 128, 172], 5, p.r)),
+  violetstone_pillar_top: (p) => p.each((x, y) => { const d = Math.max(Math.abs(x - 7.5), Math.abs(y - 7.5)); return jit(Math.floor(d) % 3 === 0 ? [140, 96, 140] : [172, 128, 172], 5, p.r); }),
+  end_rod: (p) => {
+    p.clear();
+    for (let y = 1; y < 15; y++) { p.set(7, y, [246, 240, 232]); p.set(8, y, [214, 204, 196]); }
+    for (let x = 6; x <= 9; x++) { p.set(x, 14, [160, 120, 170]); p.set(x, 15, [120, 86, 130]); }
+  },
+  dragon_egg: (p) => { p.each(() => jit([22, 12, 28], 5, p.r)); for (let k = 0; k < 16; k++) p.set(Math.floor(p.r() * 16), Math.floor(p.r() * 16), [120, 40, 150]); },
+  spawner: (p) => p.each((x, y) => {
+    if (x % 5 === 0 || y % 5 === 0 || x === 15 || y === 15) return jit([34, 42, 56], 6, p.r);
+    return [0, 0, 0, 0];
+  }),
+});
+
 // Block-breaking crack stages
 function crackPixels() {
   const r = mulberry32(4242);
@@ -792,6 +946,17 @@ const ART = {
 };
 
 Object.assign(ART, {
+  bucket: [
+    '................', '..OOOOOOOOOOOO..', '..OLFFFFFFFFhO..', '..OHFFFFFFFFhO..', '...OHHHHHHHhO...',
+    '...OHHHHHHHhO...', '....OHHHHHhO....', '....OHHHHHhO....', '.....OOOOOO.....',
+  ],
+  nugget: ['.....OOO........', '....OLHHO.......', '...OHHHHO.......', '...OHHHO........', '....OOO.........'],
+  tear: ['.......O........', '......OWO.......', '.....OWLWO......', '....OWLLLWO.....', '....OWWLWWO.....', '.....OWWWO......', '......OOO.......'],
+  shell: ['...OOOOOOOOOO...', '..OLLHHHHHHHhO..', '.OLHHHHHHHHHHhO.', '.OHHHHHHHHHHHhO.', '.OhhhhhhhhhhhhO.', '..OOOOOOOOOOOO..'],
+  skull: [
+    '...OOOOOOOOOO...', '..OHHHHHHHHHHO..', '..OHHHHHHHHHHO..', '..OHEEHHHHEEhO..', '..OHEEHHHHEEhO..',
+    '..OHHHHHHHHHhO..', '..OHHHHEEHHHhO..', '..OhHHHHHHHhhO..', '...OhEhEhEhhO...', '....OOOOOOOO....',
+  ],
   hoe: [
     '................', '......OOOOO.....', '.....OHHHHhO....', '......OOOSHO....',
     '........OSO.....', '.......OSO......', '......OSO.......', '.....OSO........',
@@ -929,6 +1094,19 @@ const ITEM_ART = {
   gloom_membrane: ['membrane', { O: [60, 64, 90], M: [150, 160, 190], L: [206, 214, 232] }],
   shade_pearl: ['pearl', { O: [16, 40, 40], T: [40, 120, 110], L: [130, 226, 206], d: [20, 70, 60] }],
   potion: ['potion', { O: [40, 40, 50], W: [200, 220, 232], P: [150, 40, 160], L: [232, 124, 242] }],
+  bucket: ['bucket', { O: [60, 60, 64], H: [206, 206, 210], h: [150, 150, 156], L: [240, 240, 244], F: [44, 44, 48] }],
+  water_bucket: ['bucket', { O: [60, 60, 64], H: [206, 206, 210], h: [150, 150, 156], L: [240, 240, 244], F: [52, 96, 220] }],
+  lava_bucket: ['bucket', { O: [60, 60, 64], H: [206, 206, 210], h: [150, 150, 156], L: [240, 240, 244], F: [240, 120, 20] }],
+  cinder_rod: ['stick', { O: [120, 60, 10], S: [255, 210, 70], s: [230, 140, 30] }],
+  cinder_powder: ['dust', pal3([250, 190, 50], [214, 120, 20], [255, 240, 150], { O: [120, 60, 10] })],
+  shade_eye: ['pearl', { O: [16, 40, 30], T: [60, 150, 90], L: [180, 240, 160], d: [10, 30, 20] }],
+  nether_quartz: ['gem', pal3([236, 228, 218], [196, 186, 176], [255, 255, 250], { O: [120, 110, 100] })],
+  gold_nugget: ['nugget', { O: [120, 80, 10], H: [250, 214, 60], L: [255, 250, 180] }],
+  nether_brick: ['ingot', pal3([86, 38, 46], [58, 24, 32], [120, 60, 70], { O: [30, 12, 16] })],
+  magma_cream: ['lump', pal3([214, 120, 30], [150, 60, 20], [255, 214, 90], { O: [60, 20, 10] })],
+  wailer_tear: ['tear', { O: [150, 180, 190], W: [240, 252, 255], L: [200, 230, 240] }],
+  clamper_shell: ['shell', { O: [60, 30, 70], H: [170, 110, 180], h: [120, 70, 130], L: [214, 170, 220] }],
+  charred_skull: ['skull', { O: [16, 16, 16], H: [52, 52, 54], h: [30, 30, 32], E: [8, 8, 8] }],
 };
 const TOOL_PAL = {
   wooden: [[150, 112, 60], [104, 76, 38], [190, 152, 96]],

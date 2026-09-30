@@ -8,6 +8,7 @@
 import { B, ID, BLOCKS, ITEMS } from './blocks.js';
 import { hash3, mulberry32 } from './noise.js';
 import { CS, CH, SEA, BIOME } from './constants.js';
+import { NB, NETHER_LAVA, strongholds } from './dims.js';
 
 const ckey = (cx, cz) => (cx + 32768) * 65536 + (cz + 32768);
 const DIRV = [[0, 1], [-1, 0], [0, -1], [1, 0]]; // facing meta -> (dx, dz)
@@ -91,6 +92,32 @@ const LOOT = {
       ['steak', 2, 5, 4], ['apple', 2, 5, 5], ['book', 1, 3, 5], ['emerald', 1, 3, 4], ['diamond', 1, 1, 2], ['leather_helmet', 1, 1, 3],
       ['chainmail_helmet', 1, 1, 3], ['chainmail_chestplate', 1, 1, 3], ['chainmail_leggings', 1, 1, 3], ['chainmail_boots', 1, 1, 3],
       ['iron_sword', 1, 1, 3], ['iron_axe', 1, 1, 3], ['iron_pickaxe', 1, 1, 3]],
+  },
+  stronghold_corridor: {
+    rolls: [3, 6], wear: [0, 0.4],
+    items: [['shade_pearl', 1, 2, 10], ['iron_ingot', 1, 5, 10], ['gold_ingot', 1, 3, 5], ['bread', 1, 3, 15], ['apple', 1, 3, 15], ['redstone', 4, 9, 5],
+      ['diamond', 1, 3, 3], ['iron_pickaxe', 1, 1, 5], ['iron_sword', 1, 1, 5], ['iron_chestplate', 1, 1, 5], ['iron_helmet', 1, 1, 5], ['iron_leggings', 1, 1, 5], ['iron_boots', 1, 1, 5]],
+  },
+  stronghold_library: {
+    rolls: [2, 8], wear: [0, 0],
+    items: [['book', 1, 3, 20], ['paper', 2, 7, 20], ['bookshelf', 1, 2, 4], ['shade_pearl', 1, 1, 2]],
+  },
+  fortress: {
+    rolls: [3, 6], wear: [0, 0.3], sure: [['gold_ingot', 1, 3]],
+    items: [['diamond', 1, 3, 5], ['iron_ingot', 1, 5, 5], ['gold_ingot', 1, 3, 15], ['golden_sword', 1, 1, 5], ['golden_chestplate', 1, 1, 5],
+      ['flint_and_steel', 1, 1, 5], ['nether_wart', 3, 7, 5], ['obsidian', 2, 4, 2], ['cinder_rod', 1, 2, 4], ['magma_cream', 1, 3, 4]],
+  },
+  bastion: {
+    rolls: [4, 8], wear: [0, 0.3], sure: [['gold_block', 1, 2]],
+    items: [['gold_ingot', 3, 9, 16], ['gold_nugget', 6, 17, 12], ['diamond', 1, 3, 6], ['golden_helmet', 1, 1, 5], ['golden_boots', 1, 1, 5], ['golden_leggings', 1, 1, 4],
+      ['golden_axe', 1, 1, 4], ['diamond_sword', 1, 1, 2], ['diamond_chestplate', 1, 1, 2], ['obsidian', 2, 6, 6], ['magma_cream', 2, 6, 6], ['cinder_rod', 1, 3, 3],
+      ['shade_pearl', 1, 2, 4], ['arrow', 5, 17, 6], ['gilded_blackstone', 2, 6, 5], ['string', 3, 8, 5]],
+  },
+  end_city: {
+    rolls: [4, 8], wear: [0, 0.15], sure: [['diamond', 1, 3]],
+    items: [['diamond', 2, 7, 10], ['iron_ingot', 4, 8, 10], ['gold_ingot', 2, 7, 15], ['emerald', 2, 6, 3], ['diamond_sword', 1, 1, 3], ['diamond_pickaxe', 1, 1, 3],
+      ['diamond_helmet', 1, 1, 3], ['diamond_chestplate', 1, 1, 3], ['diamond_leggings', 1, 1, 3], ['diamond_boots', 1, 1, 3], ['iron_sword', 1, 1, 3],
+      ['iron_chestplate', 1, 1, 3], ['shade_pearl', 1, 3, 5], ['clamper_shell', 1, 2, 3], ['end_rod', 2, 6, 4]],
   },
   shipwreck_treasure: {
     rolls: [5, 9], wear: [0, 0.15], sure: [['diamond', 2, 4], ['emerald', 3, 8], ['gold_ingot', 3, 8]],
@@ -822,6 +849,206 @@ function buildShipwreck(ctx, part) {
   L.chest(-7, 4, 0, 'shipwreck_treasure', 3);
 }
 
+// ---------------------------------------------------------------- the Nether
+// A fortress: bridges of nether brick over the lava, a cinder spawner platform, a nether wart garden, chest rooms
+function buildFortress(ctx, part) {
+  const { x, z, y } = part;
+  const N = B.nether_bricks, F = B.nether_brick_fence;
+  const arm = 34;
+  const deck = (x0, z0, x1, z1) => {
+    for (let zz = z0; zz <= z1; zz++) for (let xx = x0; xx <= x1; xx++) {
+      if (!ctx.inside(xx, zz)) continue;
+      ctx.set(xx, y, zz, N);
+      for (let k = 1; k <= 5; k++) ctx.set(xx, y + k, zz, 0);
+    }
+  };
+  const rails = (x0, z0, x1, z1) => {
+    for (let zz = z0; zz <= z1; zz++) for (let xx = x0; xx <= x1; xx++) {
+      const edge = xx === x0 || xx === x1 || zz === z0 || zz === z1;
+      if (edge && ctx.inside(xx, zz)) ctx.set(xx, y + 1, zz, F);
+    }
+  };
+  const pillar = (px, pz) => {
+    if (!ctx.inside(px, pz)) return;
+    for (let yy = y - 1; yy > NETHER_LAVA - 6; yy--) {
+      const cur = ctx.get(px, yy, pz);
+      if (cur !== 0 && cur !== B.lava && yy < y - 2) break;
+      ctx.set(px, yy, pz, N);
+    }
+  };
+  // crossing and four bridges
+  deck(x - 4, z - 4, x + 4, z + 4);
+  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const x0 = dx ? Math.min(x + 5 * dx, x + arm * dx) : x - 2, x1 = dx ? Math.max(x + 5 * dx, x + arm * dx) : x + 2;
+    const z0 = dz ? Math.min(z + 5 * dz, z + arm * dz) : z - 2, z1 = dz ? Math.max(z + 5 * dz, z + arm * dz) : z + 2;
+    deck(x0, z0, x1, z1);
+    rails(x0, z0, x1, z1);
+    for (let k = 5; k <= arm; k += 6) { pillar(x + k * dx + (dz ? -2 : 0), z + k * dz + (dx ? -2 : 0)); pillar(x + k * dx + (dz ? 2 : 0), z + k * dz + (dx ? 2 : 0)); }
+  }
+  for (const [px, pz] of [[-4, -4], [4, -4], [-4, 4], [4, 4]]) { pillar(x + px, z + pz); for (let k = 1; k <= 3; k++) ctx.set(x + px, y + k, z + pz, N); }
+  // room at each end
+  const room = (cx, cz, kind) => {
+    for (let zz = cz - 5; zz <= cz + 5; zz++) for (let xx = cx - 5; xx <= cx + 5; xx++) {
+      if (!ctx.inside(xx, zz)) continue;
+      const edge = Math.abs(xx - cx) === 5 || Math.abs(zz - cz) === 5;
+      ctx.set(xx, y, zz, N);
+      for (let k = 1; k <= 6; k++) ctx.set(xx, y + k, zz, edge ? (k === 3 && (xx + zz) % 3 === 0 ? F : N) : 0);
+      ctx.set(xx, y + 7, zz, N);
+      pillar(xx, zz);
+    }
+    // doorways towards the crossing
+    for (let k = 1; k <= 3; k++) for (let w = -1; w <= 1; w++) {
+      const dx = Math.sign(x - cx), dz = Math.sign(z - cz);
+      ctx.set(cx + dx * 5 + (dz ? w : 0), y + k, cz + dz * 5 + (dx ? w : 0), 0);
+    }
+    if (kind === 'spawner') {
+      for (let zz = cz - 1; zz <= cz + 1; zz++) for (let xx = cx - 1; xx <= cx + 1; xx++) ctx.set(xx, y + 1, zz, N);
+      ctx.set(cx, y + 2, cz, B.spawner, 0);
+    } else if (kind === 'garden') {
+      for (let zz = cz - 3; zz <= cz + 3; zz++) for (let xx = cx - 3; xx <= cx + 3; xx++) {
+        const edge = Math.abs(xx - cx) === 3 || Math.abs(zz - cz) === 3;
+        ctx.set(xx, y + 1, zz, edge ? N : B.soul_sand);
+        if (!edge) ctx.set(xx, y + 2, zz, B.nether_wart);
+      }
+    } else {
+      ctx.chest(cx + 3, y + 1, cz + 3, 'fortress', 2);
+      ctx.chest(cx - 3, y + 1, cz - 3, 'fortress', 0);
+      ctx.set(cx, y + 1, cz, B.spawner, 0);
+    }
+  };
+  room(x + arm + 5, z, 'spawner');
+  room(x - arm - 5, z, 'garden');
+  room(x, z + arm + 5, 'chests');
+  room(x, z - arm - 5, 'chests');
+}
+
+// A bastion: a blackstone keep with gold inside, guarded by snoutlings
+function buildBastion(ctx, part) {
+  const { x, z, y } = part;
+  const H = 8, R = 9;
+  const stone = (xx, yy, zz) => (ctx.h(xx, yy, zz, 41) < 0.12 ? B.gilded_blackstone : ctx.h(xx, yy, zz, 42) < 0.25 ? B.basalt : B.blackstone);
+  for (let zz = z - R; zz <= z + R; zz++) for (let xx = x - R; xx <= x + R; xx++) {
+    if (!ctx.inside(xx, zz)) continue;
+    const edge = Math.abs(xx - x) === R || Math.abs(zz - z) === R;
+    // foundation down into the lava
+    for (let yy = y - 1; yy > NETHER_LAVA - 4; yy--) {
+      const cur = ctx.get(xx, yy, zz);
+      if (cur !== 0 && cur !== B.lava && yy < y - 3) break;
+      ctx.set(xx, yy, zz, B.blackstone);
+    }
+    for (let k = 0; k <= H * 2 + 1; k++) {
+      const floor = k === 0 || k === H;
+      let id = floor ? B.blackstone : edge ? stone(xx, y + k, zz) : 0;
+      if (edge && (k === 3 || k === H + 3) && (xx + zz) % 4 === 0) id = 0;   // windows
+      if (k === H * 2 + 1) id = edge ? stone(xx, y + k, zz) : B.blackstone;
+      ctx.set(xx, y + k, zz, id);
+    }
+  }
+  // a hole in the upper floor with a ladder of blocks, a gold pile, and chests
+  for (let k = 1; k < H; k++) ctx.set(x + R - 2, y + k, z, k % 2 ? B.basalt : 0);
+  for (let k = 0; k <= 1; k++) for (let w = -1; w <= 1; w++) ctx.set(x + R - 2 + w, y + H, z + k, 0);
+  for (let w = -1; w <= 1; w++) for (let k = 1; k <= 3; k++) ctx.set(x + w, y + k, z - R, 0);   // gate
+  for (const [dx, dz] of [[0, 0], [1, 0], [0, 1], [-1, 0], [0, -1]]) ctx.set(x + dx, y + H + 1, z + dz, B.gold_block);
+  ctx.set(x, y + H + 2, z, B.gold_block);
+  ctx.chest(x - R + 2, y + 1, z + R - 2, 'bastion', 0);
+  ctx.chest(x + R - 2, y + H + 1, z + R - 2, 'bastion', 0);
+  ctx.chest(x - R + 2, y + H + 1, z - R + 2, 'bastion', 2);
+  ctx.set(x - 3, y + 1, z - 3, B.magma_block);
+  ctx.set(x + 3, y + 1, z + 3, B.magma_block);
+}
+
+// ---------------------------------------------------------------- the End
+// An end city tower of violetstone on an outer island, with a treasure room and clampers on the walls
+function buildEndCity(ctx, part) {
+  const { x, z, y } = part;
+  const P = B.violetstone, PP = B.violetstone_pillar, S = B.end_stone_bricks;
+  const levels = part.levels;
+  let base = y;
+  for (let lv = 0; lv < levels; lv++) {
+    const r = lv === levels - 1 ? 5 : 3 + (lv % 2);
+    const h = lv === levels - 1 ? 6 : 7;
+    for (let zz = z - r; zz <= z + r; zz++) for (let xx = x - r; xx <= x + r; xx++) {
+      if (!ctx.inside(xx, zz)) continue;
+      const edge = Math.abs(xx - x) === r || Math.abs(zz - z) === r;
+      const corner = Math.abs(xx - x) === r && Math.abs(zz - z) === r;
+      for (let k = 0; k <= h; k++) {
+        let id = k === 0 || k === h ? P : edge ? (corner ? PP : P) : 0;
+        if (edge && !corner && k >= 2 && k <= 4 && ((xx - x) % 2 === 0 && (zz - z) % 2 === 0)) id = 0;
+        ctx.set(xx, base + k, zz, id);
+      }
+      if (lv === 0) for (let yy = base - 1; yy > base - 8; yy--) { if (ctx.get(xx, yy, zz) === B.end_stone) break; ctx.set(xx, yy, zz, S); }
+    }
+    // stairs up through the middle
+    if (lv < levels - 1) for (let k = 1; k <= h; k++) { ctx.set(x + (k % 2), base + k, z, 0); ctx.set(x, base + k, z + 1, P); }
+    ctx.set(x - r + 1, base + h - 1, z - r + 1, B.end_rod);
+    ctx.set(x + r - 1, base + h - 1, z + r - 1, B.end_rod);
+    base += h;
+  }
+  // doorway at the bottom, treasure at the top
+  for (let k = 1; k <= 3; k++) ctx.set(x, y + k, z - 3, 0);
+  const top = base - 6;
+  ctx.chest(x - 3, top + 1, z + 3, 'end_city', 2);
+  ctx.chest(x + 3, top + 1, z + 3, 'end_city', 2);
+  ctx.set(x, top + 1, z, B.end_rod);
+}
+
+// ---------------------------------------------------------------- strongholds (overworld, underground)
+function buildStronghold(ctx, part) {
+  const { x, z, y } = part;
+  const brick = (xx, yy, zz) => { const r = ctx.h(xx, yy, zz, 51); return r < 0.18 ? B.mossy_stone_bricks : r < 0.3 ? B.cracked_stone_bricks : B.stone_bricks; };
+  const box = (x0, y0, z0, x1, y1, z1) => {
+    for (let yy = y0; yy <= y1; yy++) for (let zz = z0; zz <= z1; zz++) for (let xx = x0; xx <= x1; xx++) {
+      if (!ctx.inside(xx, zz)) continue;
+      const shell = xx === x0 || xx === x1 || yy === y0 || yy === y1 || zz === z0 || zz === z1;
+      ctx.set(xx, yy, zz, shell ? brick(xx, yy, zz) : 0);
+    }
+  };
+  // the portal room
+  box(x - 6, y - 1, z - 8, x + 6, y + 7, z + 8);
+  for (let zz = z + 1; zz <= z + 7; zz++) for (let xx = x - 3; xx <= x + 3; xx++) ctx.set(xx, y, zz, B.stone_bricks);   // raised floor
+  for (let zz = z + 3; zz <= z + 5; zz++) for (let xx = x - 1; xx <= x + 1; xx++) { ctx.set(xx, y, zz, B.lava); ctx.set(xx, y - 1, zz, B.stone_bricks); }
+  const cz = z + 4;
+  const ring = [];
+  for (let d = -1; d <= 1; d++) ring.push([x + d, cz - 2], [x + d, cz + 2], [x - 2, cz + d], [x + 2, cz + d]);
+  for (const [fx, fz] of ring) ctx.set(fx, y + 1, fz, ctx.h(fx, y, fz, 52) < 0.1 ? B.end_portal_frame_filled : B.end_portal_frame);
+  for (let k = 0; k <= 2; k++) ctx.set(x, y + k - 0, z - 1 + k, B.stone_bricks);   // steps up
+  ctx.set(x, y + 1, z - 3, B.spawner, 1);
+  ctx.set(x - 5, y + 3, z, B.torch); ctx.set(x + 5, y + 3, z, B.torch);
+  // corridors out to side rooms
+  box(x - 3, y - 1, z - 26, x + 3, y + 4, z - 8);
+  for (let k = 0; k <= 2; k++) for (let w = -1; w <= 1; w++) ctx.set(x + w, y + k, z - 8, 0);
+  box(x - 26, y - 1, z - 3, x - 6, y + 4, z + 3);
+  for (let k = 0; k <= 2; k++) for (let w = -1; w <= 1; w++) ctx.set(x - 6, y + k, z + w, 0);
+  box(x + 6, y - 1, z - 3, x + 26, y + 4, z + 3);
+  for (let k = 0; k <= 2; k++) for (let w = -1; w <= 1; w++) ctx.set(x + 6, y + k, z + w, 0);
+  for (const [tx, tz] of [[x, z - 17], [x - 16, z], [x + 16, z]]) ctx.set(tx, y + 2, tz + (tz === z ? 2 : 0) + (tx === x ? 0 : 0), B.torch);
+  // a library at one end and store rooms at the others
+  box(x - 36, y - 1, z - 6, x - 26, y + 7, z + 6);
+  for (let k = 0; k <= 2; k++) for (let w = -1; w <= 1; w++) ctx.set(x - 26, y + k, z + w, 0);
+  for (let zz = z - 5; zz <= z + 5; zz++) for (let k = 0; k <= 4; k++) { ctx.set(x - 35, y + k, zz, B.bookshelf); if (Math.abs(zz - z) > 1) ctx.set(x - 31, y + k, zz, B.bookshelf); }
+  ctx.chest(x - 33, y, z - 4, 'stronghold_library', 1);
+  ctx.set(x - 28, y + 2, z + 4, B.torch);
+  box(x + 26, y - 1, z - 4, x + 34, y + 5, z + 4);
+  for (let k = 0; k <= 2; k++) for (let w = -1; w <= 1; w++) ctx.set(x + 26, y + k, z + w, 0);
+  ctx.chest(x + 32, y, z + 2, 'stronghold_corridor', 3);
+  ctx.chest(x + 32, y, z - 2, 'stronghold_corridor', 3);
+  box(x - 5, y - 1, z - 36, x + 5, y + 5, z - 26);
+  for (let k = 0; k <= 2; k++) for (let w = -1; w <= 1; w++) ctx.set(x + w, y + k, z - 26, 0);
+  ctx.chest(x - 3, y, z - 33, 'stronghold_corridor', 0);
+  ctx.set(x + 3, y + 2, z - 33, B.torch);
+}
+
+function strongholdPlans(world) {
+  if (world._strongholdPlans) return world._strongholdPlans;
+  world._strongholdPlans = strongholds(world).map((s) => ({
+    type: 'stronghold', key: `stronghold:${s.i}`, x: s.x, z: s.z, mobs: [],
+    minX: s.x - 37, maxX: s.x + 35, minZ: s.z - 37, maxZ: s.z + 9,
+    ground: () => s.y,
+    parts: [{ minX: s.x - 37, maxX: s.x + 35, minZ: s.z - 37, maxZ: s.z + 9, x: s.x, z: s.z, y: s.y, build: buildStronghold }],
+  }));
+  return world._strongholdPlans;
+}
+
 // ---------------------------------------------------------------- structure types
 const isLand = (c) => c.h > SEA + 1;
 const TYPES = [
@@ -879,6 +1106,37 @@ const TYPES = [
       return true;
     } },
 ];
+TYPES.push(
+  { name: 'fortress', dim: 'nether', spacing: 13, sep: 4, chance: 0.75, radius: 46, ok: () => true,
+    plan: (world, plan, x, z, c, rng) => {
+      const y = 62 + Math.floor(rng() * 10);
+      plan.add({ minX: x - 45, maxX: x + 45, minZ: z - 45, maxZ: z + 45, x, z, y, build: buildFortress });
+      plan.fortress = { minX: x - 45, maxX: x + 45, minZ: z - 45, maxZ: z + 45, y };
+      return true;
+    } },
+  { name: 'bastion', dim: 'nether', spacing: 15, sep: 4, chance: 0.6, radius: 11, ok: (c) => c.biome !== NB.BASALT,
+    plan: (world, plan, x, z, c, rng) => {
+      if (nearStructure(world, 'fortress', x, z, 90)) return false;
+      const y = 40 + Math.floor(rng() * 16);
+      plan.add({ minX: x - 10, maxX: x + 10, minZ: z - 10, maxZ: z + 10, x, z, y, build: buildBastion });
+      for (let k = 0; k < 4; k++) plan.mobs.push({ type: 'snoutling', x: x + 0.5 + (k % 2 ? 3 : -3), y: y + 1 + (k > 1 ? 8 : 0), z: z + 0.5 + (k < 2 ? 3 : -3), key: `${plan.key}:s${k}` });
+      plan.mobs.push({ type: 'snoutling_brute', x: x + 0.5, y: y + 9, z: z + 3.5, key: `${plan.key}:brute` });
+      return true;
+    } },
+  { name: 'end_city', dim: 'end', spacing: 20, sep: 5, chance: 0.9, radius: 6, ok: (c) => c.h > 50,
+    plan: (world, plan, x, z, c, rng) => {
+      if (Math.hypot(x, z) < 1000) return false;
+      const levels = 3 + Math.floor(rng() * 3);
+      const y = c.h + 1;
+      plan.add({ minX: x - 6, maxX: x + 6, minZ: z - 6, maxZ: z + 6, x, z, y, levels, build: buildEndCity });
+      for (let k = 0; k < levels; k++) {
+        const side = k % 2 ? 1 : -1;
+        plan.mobs.push({ type: 'clamper', x: x + 0.5 + side * 4.5, y: y + 2 + k * 7, z: z + 0.5, key: `${plan.key}:c${k}` });
+      }
+      return true;
+    } },
+);
+const dimOf = (T) => T.dim || 'overworld';
 const TYPE_BY_NAME = Object.fromEntries(TYPES.map((t, i) => [t.name, { ...t, index: i }]));
 TYPES.forEach((t, i) => { t.index = i; });
 
@@ -935,7 +1193,15 @@ export function stampStructures(world, chunk) {
   const cx = chunk.cx, cz = chunk.cz;
   const cminX = cx * CS, cmaxX = cminX + CS - 1, cminZ = cz * CS, cmaxZ = cminZ + CS - 1;
   const cbox = { minX: cminX, maxX: cmaxX, minZ: cminZ, maxZ: cmaxZ };
+  if (world.dim === 'overworld') {
+    for (const plan of strongholdPlans(world)) {
+      if (!overlaps(plan, cbox)) continue;
+      const ctx = makeCtx(world, chunk, plan);
+      for (const p of plan.parts) if (overlaps(p, cbox)) p.build(ctx, p);
+    }
+  }
   for (const T of TYPES) {
+    if (dimOf(T) !== world.dim) continue;
     const rc = Math.ceil(T.radius / CS) + 1;
     const r0x = Math.floor((cx - rc) / T.spacing), r1x = Math.floor((cx + rc) / T.spacing);
     const r0z = Math.floor((cz - rc) / T.spacing), r1z = Math.floor((cz + rc) / T.spacing);
@@ -960,6 +1226,7 @@ export function structurePartsNear(world, cx, cz, margin) {
   const box = { minX: cx * CS - margin, maxX: cx * CS + CS - 1 + margin, minZ: cz * CS - margin, maxZ: cz * CS + CS - 1 + margin };
   const out = [];
   for (const T of TYPES) {
+    if (dimOf(T) !== world.dim) continue;
     const rc = Math.ceil((T.radius + margin) / CS) + 1;
     const r0x = Math.floor((cx - rc) / T.spacing), r1x = Math.floor((cx + rc) / T.spacing);
     const r0z = Math.floor((cz - rc) / T.spacing), r1z = Math.floor((cz + rc) / T.spacing);
@@ -976,11 +1243,12 @@ export function structurePartsNear(world, cx, cz, margin) {
 export function structuresNear(world, x, z, radius) {
   const out = [];
   for (const T of TYPES) {
+    if (dimOf(T) !== world.dim) continue;
     const S = T.spacing * CS;
     for (let rx = Math.floor((x - radius) / S); rx <= Math.floor((x + radius) / S); rx++) {
       for (let rz = Math.floor((z - radius) / S); rz <= Math.floor((z + radius) / S); rz++) {
         const p = regionPlan(world, T, rx, rz);
-        if (p) out.push({ type: T.name, x: p.x, z: p.z, dist: Math.hypot(p.x - x, p.z - z) });
+        if (p) out.push({ type: T.name, x: p.x, z: p.z, dist: Math.hypot(p.x - x, p.z - z), plan: p });
       }
     }
   }

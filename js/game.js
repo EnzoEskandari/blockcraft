@@ -6,6 +6,7 @@ export const G = {
   state: 'title',        // title | loading | playing
   screen: null,          // name of the open overlay screen, or null
   world: null,
+  dim: 'overworld',      // overworld | nether | end
   player: null,
   entities: null,
   time: 0.03,            // fraction of the day; 0 = sunrise, 0.25 = noon, 0.5 = sunset, 0.75 = midnight

@@ -85,6 +85,14 @@
     background: rgba(0, 0, 0, 0.45); text-shadow: 2px 2px 0 var(--shadow); font-variant-numeric: tabular-nums;
   }
   #sleep { position: absolute; inset: 0; background: #05060c; opacity: 0; }
+  #portal-overlay { position: absolute; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, rgba(150, 60, 230, 0.25), rgba(90, 20, 170, 0.85)); }
+  #mob-bar.boss #mob-fill { background: #d05ce0; }
+  #s-credits { background: #000; justify-content: flex-start; overflow: hidden; padding: 0; }
+  #credits-scroll { width: min(640px, 92vw); text-align: center; font-size: 24px; line-height: 1.5; color: #e8e8e8; text-shadow: 2px 2px 0 #222; will-change: transform; padding-bottom: 60vh; }
+  #credits-scroll h3 { font: 400 clamp(16px, 3.6vw, 24px) var(--title-font); color: var(--accent); margin: 48px 0 18px; }
+  #credits-scroll p { margin: 0 0 18px; }
+  #credits-scroll .quiet { color: #9a9a9a; }
+  #b-credits-skip { position: fixed; right: calc(16px + env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); width: auto; padding: 0 22px; z-index: 12; }
   #mob-bar { position: absolute; left: 50%; top: calc(12px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); width: min(360px, 70vw); text-align: center; }
   #mob-name { font-size: 22px; text-shadow: 2px 2px 0 var(--shadow); margin-bottom: 3px; font-variant-numeric: tabular-nums; }
   #mob-track { height: 8px; background: rgba(0, 0, 0, 0.55); border: 2px solid #111; }
@@ -382,6 +390,7 @@
   <div id="chat-log"></div>
   <div id="effects" hidden></div>
   <div id="sleep" hidden></div>
+  <div id="portal-overlay"></div>
   <div id="burning" hidden></div>
   <div id="mob-bar" hidden><div id="mob-name"></div><div id="mob-track"><i id="mob-fill"></i></div></div>
   <div id="bottom">
@@ -565,6 +574,23 @@
     <div class="panel recipe-book" id="recipe-panel" hidden></div>
     <div class="panel" id="container-panel"></div>
   </div>
+</section>
+
+<section class="screen" id="s-credits" hidden>
+  <div id="credits-scroll">
+    <h3>The End</h3>
+    <p>The dragon falls, and the void goes quiet.</p>
+    <p>You came from a world of dirt and trees. You punched wood with bare hands, hid from the dark, and learned which things bite back.</p>
+    <p>You built a portal of black glass and walked into fire. You crossed the lava sea, climbed the fortress, and carried home the cinder's rods.</p>
+    <p>You followed the eyes across the land and dug down to where the old frames waited. And then you jumped.</p>
+    <p>Out here, past the edge of everything, you won.</p>
+    <p>But the world you left is still out there: the villages, the caves, the unfinished house by the river. It is yours. It always was.</p>
+    <p>So go back. Build something. The sun is coming up.</p>
+    <h3>Blockcraft</h3>
+    <p class="quiet">An original block game made with Claude</p>
+    <p class="quiet">Thanks for playing</p>
+  </div>
+  <button class="btn" id="b-credits-skip" type="button">Skip</button>
 </section>
 
 <section class="screen menu-bg" id="s-loading" hidden>

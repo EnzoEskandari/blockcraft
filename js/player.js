@@ -1,7 +1,9 @@
 // The player: movement, mining, placing, eating, combat, hunger and health.
 import * as THREE from 'three';
 import { G } from './game.js';
-import { BLOCKS, ITEMS, ID, B } from './blocks.js';
+import { BLOCKS, ITEMS, ID, B, canHarvest } from './blocks.js';
+import { throwEye } from './dimmobs.js';
+import { activateEndPortal } from './dims.js';
 import { Inventory } from './inventory.js';
 import { moveBox, raycast, boxBlocked } from './physics.js';
 import { R, showHighlight, swingHand, setHeldItem, updateHand, brightness } from './render.js';
@@ -65,8 +67,10 @@ export class Player {
     this.lastJumpTap = 0;
     this.hintCd = 0;
     this.armor = [null, null, null, null];   // helmet, chestplate, leggings, boots
-    this.effects = { poison: 0, slow: 0 };
+    this.effects = { poison: 0, slow: 0, wither: 0, levitation: 0 };
     this.poisonTick = 0;
+    this.portalT = 0;
+    this.portalCooldown = true;   // step out of a portal before it can take you anywhere
     this.bedSpawn = null;                     // {x, y, z} of the bed you last slept in
     this.burning = 0;
     this.fireTick = 0;
@@ -99,6 +103,7 @@ export class Player {
   addEffect(name, secs) {
     if (this.creative || this.dead) return;
     if (name === 'hunger') { this.hungerEffect = Math.max(this.hungerEffect, secs); return; }
+    if (name === 'burn') { this.burning = Math.max(this.burning, secs); return; }
     this.effects[name] = Math.max(this.effects[name] || 0, secs);
     G.ui.invChanged();
   }
@@ -177,6 +182,7 @@ export class Player {
       return;
     }
     if (!this.frozen) this.move(dt, input);
+    if (!this.frozen) this.portals(dt);
     this.interact(dt, input);
     if (!this.creative) this.survival(dt);
   }
@@ -188,6 +194,8 @@ export class Player {
     this.inWater = w.getBlock(bx, Math.floor(this.pos.y + 0.1), bz) === B.water ||
       w.getBlock(bx, Math.floor(this.pos.y + 0.8), bz) === B.water;
     this.headInWater = w.getBlock(bx, Math.floor(this.eyeY), bz) === B.water;
+    this.inLava = w.getBlock(bx, Math.floor(this.pos.y + 0.1), bz) === B.lava || w.getBlock(bx, Math.floor(this.pos.y + 0.8), bz) === B.lava;
+    this.headInLava = w.getBlock(bx, Math.floor(this.eyeY), bz) === B.lava;
     if (this.inWater) this.waterExit = 0; else this.waterExit += dt;
     if (this.inWater && !wasInWater && this.vel.y < -6) sfx('splash', this.pos);
 
@@ -214,6 +222,7 @@ export class Player {
     if (inWeb && !this.flying) { speed *= inWeb; this.vel.y = Math.max(this.vel.y, -1.5); }
     if (this.eating && !this.flying) speed *= 0.35;
     if (this.inWater && !this.flying) speed *= this.sprinting ? 0.8 : 0.55;
+    if (this.inLava && !this.flying) speed *= 0.35;
     const sy = Math.sin(this.yaw), cy = Math.cos(this.yaw);
     const wx = (-sy * fwd + cy * str) * speed;
     const wz = (-cy * fwd - sy * str) * speed;
@@ -225,6 +234,12 @@ export class Player {
     if (this.flying) {
       const vy = ((input.jump ? 1 : 0) - (input.sneak ? 1 : 0)) * speed * 0.75;
       this.vel.y += (vy - this.vel.y) * Math.min(1, 10 * dt);
+    } else if (this.effects.levitation > 0) {
+      this.vel.y += (1.6 - this.vel.y) * Math.min(1, dt * 4);
+    } else if (this.inLava) {
+      this.vel.y -= 10 * dt;
+      if (input.jump) this.vel.y = this.onGround ? JUMP_V * 0.7 : Math.min(this.vel.y + 30 * dt, 2.4);
+      this.vel.y = Math.max(this.vel.y, -3);
     } else if (this.inWater) {
       // Water: slow sinking, swim up while jump is held, jump normally off the bottom
       this.vel.y -= 14 * dt;
@@ -278,7 +293,7 @@ export class Player {
     // Falling
     const fell = oyPos - this.pos.y;
     if (!this.onGround && fell > 0 && !this.flying && !this.inWater) this.fallDist += fell;
-    if (this.inWater || this.flying) this.fallDist = 0;
+    if (this.inWater || this.inLava || this.flying || this.effects.levitation > 0) this.fallDist = 0;
     if (this.onGround && !wasGround) {
       if (this.fallDist > 3 && !this.creative) {
         this.hurt(Math.floor(this.fallDist - 3), null, null, 'fall');
@@ -301,6 +316,33 @@ export class Player {
     this.fovKick += ((this.sprinting ? 1 : 0) - this.fovKick) * Math.min(1, dt * 8);
 
     if (this.pos.y < -30) this.hurt(4, null, null, 'void');
+  }
+
+  // Standing in a nether portal for a few seconds takes you through; end portals and gateways work at once
+  portals(dt) {
+    const w = G.world;
+    const bx = Math.floor(this.pos.x), bz = Math.floor(this.pos.z);
+    const at = (dy) => w.getBlock(bx, Math.floor(this.pos.y + dy), bz);
+    const has = (id) => at(0.2) === id || at(1) === id;
+    const nether = has(B.nether_portal), end = has(B.end_portal), gate = has(B.end_gateway);
+    if (!nether && !end && !gate) {
+      this.portalCooldown = false;
+      if (this.portalT) { this.portalT = 0; G.ui.portalOverlay(0); }
+      return;
+    }
+    if (this.portalCooldown || G.sleeping) return;
+    if (end) { this.portalCooldown = true; if (G.dim === 'end') G.game.finishEnd(); else G.game.travel('end', 'end'); return; }
+    if (gate) { this.portalCooldown = true; G.game.gateway(); return; }
+    if (!this.portalT) sfx('portal', null, { vol: 0.5 });
+    this.portalT += dt;
+    const need = this.creative ? 1 : 4;
+    G.ui.portalOverlay(Math.min(1, this.portalT / need));
+    if (this.portalT >= need) {
+      this.portalCooldown = true;
+      this.portalT = 0;
+      G.ui.portalOverlay(0);
+      G.game.travel(G.dim === 'nether' ? 'overworld' : 'nether', 'portal');
+    }
   }
 
   // How far up the player must rise to stand on the column at (ax, az); Infinity if it can't be climbed
@@ -343,7 +385,7 @@ export class Player {
     if (!fingerAim || input.aim) {
       const r = this.pickRay(input);
       const reach = this.creative ? 6 : 5;
-      const hit = raycast(w, r.ox, r.oy, r.oz, r.dx, r.dy, r.dz, reach, (id) => id !== B.water);
+      const hit = raycast(w, r.ox, r.oy, r.oz, r.dx, r.dy, r.dz, reach, (id) => id !== B.water && id !== B.lava && id !== B.nether_portal && id !== B.end_portal);
       let mobHit = G.entities.pickMob(r.ox, r.oy, r.oz, r.dx, r.dy, r.dz, reach - 1.5);
       // other players can always be hit
       const pl = G.net ? G.net.pickPlayer(r.ox, r.oy, r.oz, r.dx, r.dy, r.dz, reach - 1.5) : null;
@@ -374,9 +416,12 @@ export class Player {
       this.eating = null;
     }
 
-    // Attack mobs (left click)
+    // Attack mobs (left click); a fireball in front can be hit back
     if (input.attackPressed) {
-      if (target && target.mob) this.attack(target.mob);
+      const r = this.pickRay(input);
+      const fb = G.entities.pickFireball && G.entities.pickFireball(r.ox, r.oy, r.oz, r.dx, r.dy, r.dz, 4);
+      if (fb && (!target || !target.mob)) { fb.reflect(this.lookDir()); this.swing(); }
+      else if (target && target.mob) this.attack(target.mob);
       else this.swing();
       this.mining = null;
     }
@@ -484,7 +529,8 @@ export class Player {
     if (toolOf(it) === 'sword' && def.cutout && def.atten) speed = 1.5;
     if (this.headInWater) speed /= 5;
     if (!this.onGround && !this.flying && !this.inWater) speed /= 5;
-    return def.hardness * 1.5 / speed;
+    // without a good enough pickaxe, stone and ores take much longer (and drop nothing)
+    return def.hardness * (canHarvest(def, held) ? 1.5 : 5) / speed;
   }
 
   breakBlock(t) {
@@ -566,6 +612,16 @@ export class Player {
     }
     if (!held) return false;
     if (held.id === ID.flint_and_steel) return this.ignite(t);
+    if (held.id === ID.bucket || held.id === ID.water_bucket || held.id === ID.lava_bucket) return this.useBucket(held);
+    if (held.id === ID.shade_eye) {
+      if (t && t.id === B.end_portal_frame) return this.fillFrame(t);
+      if (G.dim !== 'overworld') { this.hint('The eye has nowhere to fly here'); return true; }
+      throwEye(this);
+      if (!this.creative) { this.inv.consumeHeld(); G.ui.invChanged(); }
+      swingHand();
+      this.useCd = 0.5;
+      return true;
+    }
     if (it.armor) return this.equipHeld();
     // Hoes till grass and dirt into farmland; shovels flatten grass into paths
     if (t && (toolOf(it) === 'hoe' || toolOf(it) === 'shovel') && (t.id === B.grass || t.id === B.dirt || t.id === B.snowy_grass) && t.ny === 1) {
@@ -667,6 +723,56 @@ export class Player {
     return true;
   }
 
+  // Buckets scoop up water and lava sources and pour them out again (water boils away in the Nether)
+  useBucket(held) {
+    const w = G.world;
+    const r = this.pickRay(this.lastInput || {});
+    const hit = raycast(w, r.ox, r.oy, r.oz, r.dx, r.dy, r.dz, 5, (id) => id === B.water || id === B.lava || BLOCKS[id].solid || !BLOCKS[id].replaceable);
+    if (!hit) return false;
+    if (held.id === ID.bucket) {
+      if ((hit.id !== B.water && hit.id !== B.lava) || (w.getMeta(hit.x, hit.y, hit.z) & 7) !== 0) return false;
+      w.setBlock(hit.x, hit.y, hit.z, 0);
+      if (!this.creative) {
+        const full = hit.id === B.water ? ID.water_bucket : ID.lava_bucket;
+        this.inv.consumeHeld();
+        const left = this.inv.add(full, 1);
+        if (left) G.entities.dropItem(full, 1, this.pos.x, this.pos.y + 1, this.pos.z);
+      }
+      sfx('bucket', hit);
+      swingHand();
+      G.ui.invChanged();
+      return true;
+    }
+    let x = hit.x, y = hit.y, z = hit.z;
+    if (!BLOCKS[hit.id].replaceable) { x += hit.nx; y += hit.ny; z += hit.nz; }
+    const cur = w.getBlock(x, y, z);
+    if (cur !== 0 && !BLOCKS[cur].replaceable) return false;
+    const liquid = held.id === ID.water_bucket ? B.water : B.lava;
+    if (liquid === B.water && G.dim === 'nether') {
+      sfx('extinguish', { x: x + 0.5, y: y + 0.5, z: z + 0.5 });
+      for (let i = 0; i < 12; i++) G.entities.particles.spawn(x + Math.random(), y + Math.random(), z + Math.random(), 0, 1, 0, 0.8, 0.8, 0.8, 0.18, 1, -0.08);
+    } else {
+      if (cur && cur !== B.water && cur !== B.lava) G.game.removeBlock(x, y, z, true);
+      w.setBlock(x, y, z, liquid, 0);
+    }
+    if (!this.creative) this.inv.slots[this.inv.selected] = { id: ID.bucket, count: 1, dmg: 0 };
+    sfx('bucket', { x: x + 0.5, y: y + 0.5, z: z + 0.5 });
+    swingHand();
+    G.ui.invChanged();
+    return true;
+  }
+
+  // An eye in an empty end portal frame; the twelfth one opens the portal
+  fillFrame(t) {
+    const w = G.world;
+    w.setBlock(t.x, t.y, t.z, B.end_portal_frame_filled);
+    if (!this.creative) { this.inv.consumeHeld(); G.ui.invChanged(); }
+    sfx('frame', t);
+    swingHand();
+    if (activateEndPortal(w, t.x, t.y, t.z)) { sfx('portal_open', t, { vol: 1.2 }); G.ui.toast('The End portal is open'); }
+    return true;
+  }
+
   dropHeld(all) {
     const s = this.inv.held;
     if (!s) return;
@@ -684,14 +790,26 @@ export class Player {
     const w = G.world, bx = Math.floor(this.pos.x), bz = Math.floor(this.pos.z);
     const inFire = w.getBlock(bx, Math.floor(this.pos.y + 0.1), bz) === B.fire || w.getBlock(bx, Math.floor(this.pos.y + 1.2), bz) === B.fire;
     if (this.inWater) this.burning = 0;
+    else if (this.inLava) this.burning = Math.max(this.burning, 15);
     else if (inFire) this.burning = Math.max(this.burning, 4);
     if (this.burning > 0) {
       this.burning -= dt;
       this.fireTick += dt;
-      if (this.fireTick >= (inFire ? 0.5 : 1)) { this.fireTick = 0; this.invul = 0; this.hurt(1, null, null, 'fire'); }
+      if (this.fireTick >= (this.inLava || inFire ? 0.5 : 1)) { this.fireTick = 0; this.invul = 0; this.hurt(this.inLava ? 4 : 1, null, null, this.inLava ? 'lava' : 'fire'); }
       if (Math.random() < dt * 10) G.entities.particles.spawn(this.pos.x + (Math.random() - 0.5) * 0.6, this.pos.y + Math.random() * 1.6, this.pos.z + (Math.random() - 0.5) * 0.6, 0, 1, 0, 1, 0.6, 0.15, 0.12, 0.4, -0.05);
     }
     if (this.hungerEffect > 0) { this.hungerEffect -= dt; this.exhaustion += 0.1 * dt; }
+    // magma blocks burn your feet unless you sneak
+    if (this.onGround && !this.sneaking && w.getBlock(bx, Math.floor(this.pos.y - 0.1), bz) === B.magma_block) {
+      this.magmaTick = (this.magmaTick || 0) + dt;
+      if (this.magmaTick >= 1) { this.magmaTick = 0; this.hurt(1, null, null, 'fire'); }
+    }
+    if (this.effects.levitation > 0) this.effects.levitation = Math.max(0, this.effects.levitation - dt);
+    if (this.effects.wither > 0) {
+      this.effects.wither = Math.max(0, this.effects.wither - dt);
+      this.witherTick = (this.witherTick || 0) + dt;
+      if (this.witherTick >= 2) { this.witherTick = 0; this.invul = 0; this.hurt(1, null, null, 'wither'); }
+    }
     if (this.effects.slow > 0) this.effects.slow = Math.max(0, this.effects.slow - dt);
     if (this.effects.poison > 0) {
       this.effects.poison = Math.max(0, this.effects.poison - dt);
@@ -738,7 +856,7 @@ export class Player {
     if (this.dead) return;
     if (this.creative && kind !== 'void') return;
     if (this.invul > 0 && kind !== 'void') return;
-    const bypass = ['fall', 'drown', 'starve', 'void', 'poison', 'magic', 'pearl'].includes(kind);
+    const bypass = ['fall', 'drown', 'starve', 'void', 'poison', 'magic', 'pearl', 'wither'].includes(kind);
     if (!bypass) {
       const { pts, tough } = this.armorPoints();
       if (pts > 0) {
@@ -788,11 +906,11 @@ export class Player {
       this.inv.clear();
       this.armor = [null, null, null, null];
     }
-    const msgs = { fall: 'You hit the ground too hard', drown: 'You drowned', starve: 'You starved to death', void: 'You fell out of the world', explosion: 'You blew up', fire: 'You burned to death', magic: 'You were killed by magic', arrow: 'You were shot', pearl: 'You hit the ground too hard' };
+    const msgs = { lava: 'You tried to swim in lava', fireball: 'You were fireballed', wither: 'You withered away', fall: 'You hit the ground too hard', drown: 'You drowned', starve: 'You starved to death', void: 'You fell out of the world', explosion: 'You blew up', fire: 'You burned to death', magic: 'You were killed by magic', arrow: 'You were shot', pearl: 'You hit the ground too hard' };
     if (kind === 'player' && this.lastAttacker) msgs.player = `You were slain by ${this.lastAttacker}`;
     G.ui.showDeath(msgs[kind] || 'You were slain');
     if (G.net) {
-      const told = { fall: 'hit the ground too hard', drown: 'drowned', starve: 'starved to death', void: 'fell out of the world', explosion: 'blew up', fire: 'burned to death', magic: 'was killed by magic', arrow: 'was shot', pearl: 'hit the ground too hard' };
+      const told = { lava: 'tried to swim in lava', fireball: 'was fireballed', wither: 'withered away', fall: 'hit the ground too hard', drown: 'drowned', starve: 'starved to death', void: 'fell out of the world', explosion: 'blew up', fire: 'burned to death', magic: 'was killed by magic', arrow: 'was shot', pearl: 'hit the ground too hard' };
       if (kind === 'player' && this.lastAttacker) told.player = `was slain by ${this.lastAttacker}`;
       G.net.announce(`${G.net.name} ${told[kind] || 'was slain'}`);
     }
@@ -805,7 +923,7 @@ export class Player {
     this.saturation = 5;
     this.exhaustion = 0;
     this.hungerEffect = 0;
-    this.effects = { poison: 0, slow: 0 };
+    this.effects = { poison: 0, slow: 0, wither: 0, levitation: 0 };
     this.burning = 0;
     this.air = 15;
     this.fallDist = 0;

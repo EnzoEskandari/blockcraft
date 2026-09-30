@@ -116,6 +116,7 @@ export class Avatar {
     this.sneaking = !!(f & 2);
     this.sleeping = !!(f & 4);
     this.burning = !!(f & 16);
+    this.gold = !!(f & 32);
     if (s[7] !== this.swings) { if (!first) this.swingT = 0; this.swings = s[7]; }
     if (s[8] < this.hp) this.hurtTime = 0.35;
     this.hp = s[8];
@@ -220,7 +221,7 @@ export class Net {
   // ------------------------------------------------------------ connecting
   // Enter an online world. If nobody is in it, this player runs it (resolves { net, host }),
   // otherwise they join whoever does (resolves { net, snap }).
-  static connect(worldId, account, have, onStatus = () => {}) {
+  static connect(worldId, account, haves, onStatus = () => {}, dim = null) {
     const url = serverURL();
     if (!url) return Promise.reject(new Error('Multiplayer only works on the Blockcraft website.'));
     if (!account) return Promise.reject(new Error('Sign in to play online.'));
@@ -236,7 +237,7 @@ export class Net {
       const timer = setTimeout(() => fail('The multiplayer server did not answer. Check your connection and try again.'), 25000);
       ws.onopen = () => {
         onStatus('Joining…');
-        ws.send(JSON.stringify({ t: 'world', id: worldId, token: account.token, have }));
+        ws.send(JSON.stringify({ t: 'world', id: worldId, dim, token: account.token, haves }));
       };
       ws.onerror = () => {};
       ws.onclose = () => {
@@ -252,14 +253,14 @@ export class Net {
           clearTimeout(timer);
           net.role = 'host'; net.id = 0; net.hostName = name;
           settled = true;
-          resolve({ net, host: m });
+          resolve({ net, host: m, dim: m.dim, me: m.me || null });
           return;
         }
         if (m.t === 'joined') {
           net.role = 'client'; net.id = m.id;
           onStatus('Downloading the world…');
           net.send({ k: 'hello', name });
-          net.onWorld = (snap) => { clearTimeout(timer); settled = true; resolve({ net, snap }); };
+          net.onWorld = (snap) => { clearTimeout(timer); settled = true; resolve({ net, snap, dim: m.dim, me: m.me || null }); };
           net.onKick = (msg) => { clearTimeout(timer); fail(msg); };
           return;
         }
@@ -270,6 +271,8 @@ export class Net {
 
   // The host sends the whole world to the server so it is kept even when everyone leaves
   uploadSave(data, v) { this.raw({ t: 'save', data, v }); }
+  // Every player keeps their own record (inventory, position, dimension) on the server
+  sendMe(data) { this.raw({ t: 'me', data }); }
 
   raw(m) { if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(m)); }
   // Guests talk to the host; the host talks to everyone
@@ -374,7 +377,8 @@ export class Net {
   localState() {
     const p = G.player;
     const held = p.inv.held;
-    const flags = (p.dead ? 1 : 0) | (p.sneaking && !p.flying ? 2 : 0) | (G.sleeping ? 4 : 0) | (p.flying ? 8 : 0) | (p.burning > 0 ? 16 : 0);
+    const gold = p.armor.some((a) => a && ITEMS[a.id] && ITEMS[a.id].material === 'golden');
+    const flags = (p.dead ? 1 : 0) | (p.sneaking && !p.flying ? 2 : 0) | (G.sleeping ? 4 : 0) | (p.flying ? 8 : 0) | (p.burning > 0 ? 16 : 0) | (gold ? 32 : 0);
     return [r2(p.pos.x), r2(p.pos.y), r2(p.pos.z), r2(p.yaw), r2(p.pitch), held ? held.id : 0, flags, this.swings, Math.ceil(p.health), p.creative ? 1 : 0];
   }
 
@@ -394,8 +398,8 @@ export class Net {
   }
 
   saveGuest() {
-    if (this.role !== 'client' || !G.player || !G.world) return;
-    this.send({ k: 'save', d: G.game.playerData(G.player) });
+    if (!G.player || !G.world) return;
+    this.sendMe(G.game.playerData(G.player));
   }
 
   // ------------------------------------------------------------ hooks called by the game
@@ -696,6 +700,7 @@ export class Net {
       case 'boom': explosionFx(d.x, d.y, d.z, d.pw); break;
       case 'ar': { const a = d.a; G.entities.spawnArrow(a[0], a[1], a[2], a[3], a[4], a[5], 'fx', { effect: a[6] ? 'slow' : null }); break; }
       case 'th': { const a = d.a; G.entities.spawnPotion(a[0], a[1], a[2], a[3], a[4], a[5], a[6], true); break; }
+      case 'fb': case 'ac': case 'cb': G.entities.projectileFx(d.k, d.a); break;
       default: break;
     }
   }
@@ -707,6 +712,8 @@ export class Net {
   // ------------------------------------------------------------ every frame
   update(dt) {
     if (this.closed || !G.world || !G.player) return;
+    this.saveT -= dt;
+    if (this.saveT <= 0) { this.saveT = 5; this.saveGuest(); }
     for (const a of this.players.values()) a.update(dt);
     // count this player's arm swings so others see them
     if (R.swing > this.lastSwing + 0.2) this.swings = (this.swings + 1) % 1000;
@@ -829,7 +836,5 @@ export class Net {
       if (v && this.tradeSig && tsig !== this.tradeSig && this.tradeSig.startsWith(v.netId + ':')) this.send({ k: 'tu', id: v.netId, u: v.trades.map((t) => t.uses) });
       this.tradeSig = tsig;
     }
-    this.saveT -= dt;
-    if (this.saveT <= 0) { this.saveT = 5; this.saveGuest(); }
   }
 }

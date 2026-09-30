@@ -15,6 +15,7 @@ attribute vec4 aColor;
 attribute vec2 aLight;
 uniform float uTime;
 uniform float uWaterLayer;
+uniform float uLavaLayer;
 varying vec3 vUv;
 varying vec3 vCol;
 varying vec2 vLight;
@@ -23,7 +24,7 @@ void main() {
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   gl_Position = projectionMatrix * mv;
   vDist = length(mv.xyz);
-  float scroll = abs(aTex.z - uWaterLayer) < 0.5 ? uTime * 0.35 : 0.0;
+  float scroll = abs(aTex.z - uWaterLayer) < 0.5 ? uTime * 0.35 : abs(aTex.z - uLavaLayer) < 0.5 ? uTime * 0.08 : 0.0;
   vUv = vec3(aTex.x / 16.0, aTex.y / 16.0 - scroll, aTex.z);
   vCol = aColor.rgb;
   vLight = aLight;
@@ -37,6 +38,7 @@ uniform float uFogNear;
 uniform float uFogFar;
 uniform float uAlphaTest;
 uniform float uGamma;
+uniform float uAmbient;
 varying vec3 vUv;
 varying vec3 vCol;
 varying vec2 vLight;
@@ -48,7 +50,7 @@ void main() {
   float blk = vLight.y;
   float l = max(sky, blk);
   float b = mix(l / (4.0 - 3.0 * l), l, uGamma);
-  b = 0.045 + 0.955 * b;
+  b = uAmbient + (1.0 - uAmbient) * b;
   vec3 lc = vec3(b) * mix(vec3(1.0), vec3(1.1, 0.96, 0.8), clamp((blk - sky) * 1.5, 0.0, 1.0));
   vec3 col = c.rgb * vCol * lc;
   float f = smoothstep(uFogNear, uFogFar, vDist);
@@ -63,7 +65,8 @@ export function brightness(sky, blk) {
   const l = Math.max(sky / 15 * G.daylight, blk / 15);
   const g = G.settings.gamma;
   const b = (l / (4 - 3 * l)) * (1 - g) + l * g;
-  return 0.045 + 0.955 * b;
+  const amb = DIM_LOOK[G.dim || 'overworld'].ambient;
+  return amb + (1 - amb) * b;
 }
 
 export function initRenderer(container) {
@@ -99,6 +102,8 @@ export function initRenderer(container) {
     uGamma: { value: G.settings.gamma },
     uTime: { value: 0 },
     uWaterLayer: { value: TEX.water },
+    uLavaLayer: { value: TEX.lava },
+    uAmbient: { value: 0.045 },
   };
   R.shared = shared;
   R.opaqueMat = new THREE.ShaderMaterial({
@@ -450,7 +455,42 @@ const DAY_HOR = new THREE.Color(0.72, 0.84, 1.0), NIGHT_HOR = new THREE.Color(0.
 const SUNSET = new THREE.Color(1.0, 0.55, 0.28);
 const fogCol = new THREE.Color();
 
-export function updateSky(time, dt, underwater) {
+// How each dimension looks: the Nether is a red haze lit by lava, the End a dark violet void
+const DIM_LOOK = {
+  overworld: { ambient: 0.045 },
+  nether: { ambient: 0.32, fog: new THREE.Color(0.2, 0.03, 0.02), near: 0.25, far: 0.75 },
+  end: { ambient: 0.28, fog: new THREE.Color(0.06, 0.04, 0.09), near: 0.4, far: 0.95, sky: new THREE.Color(0.05, 0.03, 0.08) },
+};
+
+export function updateSky(time, dt, underwater, inLava) {
+  const look = DIM_LOOK[G.dim || 'overworld'];
+  R.shared.uAmbient.value = look.ambient;
+  if (G.dim === 'nether' || G.dim === 'end') {
+    // no sun, moon or weather; a fixed dim light and thick coloured fog
+    G.daylight = G.dim === 'end' ? 0.55 : 0;
+    const su = R.skyUniforms;
+    const skyCol = look.sky || look.fog;
+    su.uTop.value.copy(skyCol); su.uHorizon.value.copy(look.fog); su.uSunset.value = 0;
+    const cam = R.camera.position;
+    R.sky.position.copy(cam);
+    R.sun.visible = R.moon.visible = R.clouds.visible = false;
+    R.stars.visible = G.dim === 'end';
+    R.stars.position.copy(cam);
+    R.stars.material.opacity = 0.5;
+    const rd = G.settings.renderDist;
+    let near = rd * 16 * look.near, far = rd * 16 * look.far;
+    fogCol.copy(look.fog);
+    if (inLava) { fogCol.setRGB(0.6, 0.15, 0.02); near = 0.2; far = 2.5; }
+    else if (underwater) { fogCol.setRGB(0.05, 0.12, 0.35).multiplyScalar(0.4); near = 1; far = 18; }
+    R.scene.fog.color.copy(fogCol); R.scene.fog.near = near; R.scene.fog.far = far;
+    const sh = R.shared;
+    sh.uFogColor.value.copy(fogCol); sh.uFogNear.value = near; sh.uFogFar.value = far;
+    sh.uDaylight.value = G.daylight; sh.uGamma.value = G.settings.gamma;
+    sh.uTime.value = (sh.uTime.value + dt) % 1000;
+    R.sky.visible = true;
+    return;
+  }
+  R.sun.visible = R.moon.visible = R.clouds.visible = R.stars.visible = true;
   const a = time * Math.PI * 2;
   const sunDir = tmpV.set(Math.cos(a), Math.sin(a), 0.22).normalize();
   const s = sunDir.y;
@@ -484,7 +524,8 @@ export function updateSky(time, dt, underwater) {
   fogCol.copy(su.uHorizon.value).lerp(SUNSET, sunset * 0.35);
   const rd = G.settings.renderDist;
   let near = rd * 16 * 0.55, far = rd * 16 - 6;
-  if (underwater) { fogCol.setRGB(0.05, 0.12, 0.35).multiplyScalar(0.3 + 0.7 * G.daylight); near = 1; far = 18; }
+  if (inLava) { fogCol.setRGB(0.6, 0.15, 0.02); near = 0.2; far = 2.5; }
+  else if (underwater) { fogCol.setRGB(0.05, 0.12, 0.35).multiplyScalar(0.3 + 0.7 * G.daylight); near = 1; far = 18; }
   R.scene.fog.color.copy(fogCol);
   R.scene.fog.near = near;
   R.scene.fog.far = far;
