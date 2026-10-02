@@ -61,13 +61,33 @@ How it works:
 
 ### Make online worlds permanent (free database)
 
-A free Render server loses its files whenever it restarts, which happens after about 15 minutes with nobody on. Until you add a database, online worlds are also backed up in the browser of whoever last ran them, and restored from there. For worlds that are truly permanent, add a free Postgres database from [Neon](https://neon.tech):
+**Add a database before you rely on online worlds.** A free Render server forgets its files every time it restarts: after about 15 minutes with nobody on, and every time the game is updated. Without a database, accounts, online worlds and everyone's items go with them. (Each player's browser keeps a copy of the world and of their own items, so they usually come back after you make your account again, but that's only a safety net.)
+
+Add a free Postgres database from [Neon](https://neon.tech):
 
 1. Sign up at https://console.neon.tech/signup and create a project (any name, any region).
 2. On the project dashboard, click **Connect** and copy the connection string. It starts with `postgresql://`.
 3. In Render, open the Blockcraft service, go to **Environment**, and add a variable:
    - key: `DATABASE_URL`
    - value: the string you copied
-4. Save. Render redeploys, and from then on every online world and every account is stored in the database.
+4. Save. Render redeploys, and from then on every online world, account and inventory is stored in the database.
 
-Without a database, accounts are kept in the server's files. On a free Render server those are wiped when it restarts, so add the database before you rely on accounts.
+To check it worked, open **Multiplayer** in the game. Under the list it says *"Online worlds, accounts and items are saved in the database, with daily backups."* If it shows a red warning instead, the database isn't set up.
+
+## Keeping worlds safe through updates
+
+Updating the game never deletes worlds:
+
+- **Old saves keep loading.** Every block and item keeps its number forever (`tools/ids.json`), and worlds saved by every earlier version are checked against each new one before it ships (`tools/check-saves.html`).
+- **Updates don't interrupt players.** When Render restarts the server for an update, whoever is running each world sends one last save first. Everyone reconnects by themselves a few seconds later, with the same items. If the page is out of date, the game says to reload it.
+- **The database is never skipped.** If the database can't be reached, the server waits for it instead of saving anywhere temporary. The game still loads, and online worlds open again as soon as the database answers.
+- **Daily backups.** Before each online world's first save of the day, the server keeps a copy of it and of everyone's items, for the last 7 days. To roll a world back, run `node tools/restore.mjs` with your `DATABASE_URL` (instructions at the top of that file).
+- **Singleplayer worlds** are kept in your browser, and updates don't touch them. For extra safety, use **Save Backup File** on the Select World screen to download a world as a file, and **Open Backup File** to bring it back on any device. On iPad, add Blockcraft to your Home Screen (Share → Add to Home Screen). Safari can clear a website's data after a week without a visit, but not a Home Screen app's.
+
+Before each update:
+
+```bash
+node tools/check-ids.mjs
+```
+
+Then serve the folder (for example `python3 -m http.server`) and open `/tools/check-saves.html`, which should say *All old saves load with nothing lost.*

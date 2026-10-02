@@ -3,7 +3,7 @@
 // they send the save here every few seconds, and if they leave the next player takes over.
 import http from 'node:http';
 import crypto from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
@@ -15,36 +15,90 @@ const MAX_PLAYERS = 8;
 const ID_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';   // no 0/O or 1/I look-alikes
 const ID_RE = /^[A-HJ-NP-Z2-9]{6}$/;
 
-const store = await openStore(ROOT);
+const BOOT = Date.now();
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // online worlds, and the saves of their Nether and End ("ID~nether", "ID~end")
 const DIMS = ['overworld', 'nether', 'end'];
 const roomKey = (id, dim) => (dim === 'overworld' ? id : `${id}~${dim}`);
-const all = await store.list();
-const worlds = new Map(all.filter((m) => !m.id.includes('~')).map((m) => [m.id, m]));
-const dimMetas = new Map(all.filter((m) => m.id.includes('~')).map((m) => [m.id, m]));
-console.log(`Online worlds: ${worlds.size} (${store.kind}${store.permanent ? '' : ', not permanent'})`);
+const worlds = new Map();
+const dimMetas = new Map();
+const accounts = new Map();
+const byName = new Map();
+const sessions = new Map();   // hashed token -> session
+const restored = new Set();   // worlds this server had lost and got back from a player's browser
+
+// The database (or data folder). With a database set the server never falls back to files that a
+// restart would wipe: until it answers, the game still loads and online worlds say to try again soon.
+let store = null;
+let storeError = '';
+async function openAll() {
+  for (let wait = 2000; ; wait = Math.min(wait * 2, 30000)) {
+    let s = null;
+    try {
+      s = await openStore(ROOT);
+      for (const m of await s.list()) (m.id.includes('~') ? dimMetas : worlds).set(m.id, m);
+      for (const a of await s.loadAccounts()) addAccount(a);
+      for (const x of await s.loadSessions()) sessions.set(x.token, x);
+      store = s;
+      console.log(`Online worlds: ${worlds.size} (${s.kind}${s.permanent ? '' : ', not permanent: add a database to keep them'})`);
+      return;
+    } catch (err) {
+      if (s) s.close().catch(() => {});
+      storeError = String(err.message).replace(/postgres(ql)?:\/\/\S+/gi, '(the address)');
+      console.error(`Could not open the ${process.env.DATABASE_URL ? 'database' : 'data folder'}, trying again in ${wait / 1000}s:`, err.message);
+      await sleep(wait);
+    }
+  }
+}
+openAll();
+// What to tell players while the worlds aren't open yet (after half a minute, why)
+const notReady = () => (Date.now() - BOOT < 30000 || !storeError ? 'Online worlds are starting up. Try again in a few seconds.'
+  : `Online worlds can't reach the database right now (${storeError}). If this keeps happening, check DATABASE_URL on Render.`);
+
+// A fingerprint of the game's files, so players still on an older page can be told to reload
+const BUILD = crypto.createHash('sha256').update(
+  [await readFile(join(ROOT, 'index.html')), ...(await Promise.all((await readdir(join(ROOT, 'js'))).sort().map((f) => readFile(join(ROOT, 'js', f)))))].map(String).join('\n'),
+).digest('hex').slice(0, 10);
 
 // ---------------------------------------------------------------- accounts
 // A username and password make you the same player everywhere; your items are saved under your account.
-const accounts = new Map((await store.loadAccounts()).map((a) => [a.id, a]));
-const byName = new Map([...accounts.values()].map((a) => [a.name.toLowerCase(), a]));
-const sessions = new Map((await store.loadSessions()).map((x) => [x.token, x]));   // hashed token -> session
 const NAME_RE = /^[A-Za-z0-9_]{3,16}$/;
 const sha = (t) => crypto.createHash('sha256').update(t).digest('hex');
 const scrypt = (pw, salt) => new Promise((res, rej) => crypto.scrypt(pw, salt, 64, (e, k) => (e ? rej(e) : res(k))));
 const pub = (a) => ({ id: a.id, name: a.name });
+function addAccount(a) { accounts.set(a.id, a); byName.set(a.name.toLowerCase(), a); }
+// During an update two copies of the server run for a moment: anything new on the other one is looked up.
+// If the database can't answer these throw, so nobody is signed out or given a fresh world by mistake.
+async function accountNamed(name) {
+  const k = name.toLowerCase();
+  if (byName.has(k)) return byName.get(k);
+  const a = await store.findAccount(k);
+  if (a) addAccount(a);
+  return a;
+}
+async function worldMeta(id) {
+  if (worlds.has(id)) return worlds.get(id);
+  const m = ID_RE.test(id) ? await store.getMeta(id) : null;
+  if (m) worlds.set(id, m);
+  return m;
+}
 
 async function newSession(a) {
   const token = crypto.randomBytes(24).toString('base64url');
   const x = { token: sha(token), account: a.id, created: Date.now() };
-  sessions.set(x.token, x);
   await store.putSession(x);
+  sessions.set(x.token, x);
   return token;
 }
-function accountFrom(token) {
-  if (typeof token !== 'string' || token.length > 100) return null;
-  const x = sessions.get(sha(token));
-  return x ? accounts.get(x.account) || null : null;
+async function accountFrom(token) {
+  if (typeof token !== 'string' || !token || token.length > 100) return null;
+  const h = sha(token);
+  let x = sessions.get(h);
+  if (!x) { x = await store.getSession(h); if (x) sessions.set(h, x); }
+  if (!x) return null;
+  let a = accounts.get(x.account);
+  if (!a) { a = await store.getAccount(x.account); if (a) addAccount(a); }
+  return a || null;
 }
 const bearer = (req) => { const m = String(req.headers.authorization || '').match(/^Bearer (.+)$/); return m ? m[1] : null; };
 
@@ -96,49 +150,52 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   const p = url.pathname;
   try {
-    if (p === '/healthz') { res.writeHead(200, { 'content-type': 'text/plain' }); res.end('ok'); return; }
+    // Healthy once the worlds are open (or after a while anyway, so the game itself still loads if the database is down)
+    if (p === '/healthz') { const ok = store || Date.now() - BOOT > 90000; res.writeHead(ok ? 200 : 503, { 'content-type': 'text/plain' }); res.end(ok ? 'ok' : 'starting'); return; }
+    if (p === '/api/build') { json(res, 200, { build: BUILD }); return; }
+    if (p.startsWith('/api/') && !store) { json(res, 503, { error: notReady() }); return; }
     if (p === '/api/signup' && req.method === 'POST') {
       if (tooMany(req)) { json(res, 429, { error: 'Too many tries. Wait a few minutes.' }); return; }
       const b = await readBody(req);
       const name = String(b.name || '').trim(), pw = String(b.password || '');
       if (!NAME_RE.test(name)) { json(res, 400, { error: 'Usernames are 3 to 16 letters, numbers or _.' }); return; }
       if (pw.length < 6 || pw.length > 100) { json(res, 400, { error: 'Passwords need at least 6 characters.' }); return; }
-      if (byName.has(name.toLowerCase())) { json(res, 409, { error: 'That username is taken.' }); return; }
+      if (await accountNamed(name)) { json(res, 409, { error: 'That username is taken.' }); return; }
       const salt = crypto.randomBytes(16).toString('hex');
       const a = { id: 'u_' + crypto.randomBytes(9).toString('base64url'), name, salt, hash: (await scrypt(pw, salt)).toString('hex'), created: Date.now() };
-      accounts.set(a.id, a);
-      byName.set(name.toLowerCase(), a);
       await store.putAccount(a);
+      addAccount(a);
       json(res, 201, { token: await newSession(a), account: pub(a) });
       return;
     }
     if (p === '/api/login' && req.method === 'POST') {
       if (tooMany(req)) { json(res, 429, { error: 'Too many tries. Wait a few minutes.' }); return; }
       const b = await readBody(req);
-      const a = byName.get(String(b.name || '').trim().toLowerCase());
+      const a = await accountNamed(String(b.name || '').trim());
       const key = await scrypt(String(b.password || ''), a ? a.salt : 'no-such-account');
       if (!a || !crypto.timingSafeEqual(key, Buffer.from(a.hash, 'hex'))) { json(res, 401, { error: 'Wrong username or password.' }); return; }
       json(res, 200, { token: await newSession(a), account: pub(a) });
       return;
     }
     if (p === '/api/me' && req.method === 'GET') {
-      const a = accountFrom(bearer(req));
+      const a = await accountFrom(bearer(req));
       json(res, a ? 200 : 401, a ? { account: pub(a) } : { error: 'Not signed in' });
       return;
     }
     if (p === '/api/logout' && req.method === 'POST') {
       const t = bearer(req);
-      if (t && sessions.has(sha(t))) { sessions.delete(sha(t)); await store.delSession(sha(t)); }
+      if (t && t.length <= 100) { sessions.delete(sha(t)); await store.delSession(sha(t)); }
       json(res, 200, { ok: true });
       return;
     }
     if (p === '/api/worlds' && req.method === 'GET') {
+      for (const m of await store.list().catch(() => [])) if (!m.id.includes('~') && !worlds.has(m.id)) worlds.set(m.id, m);   // made on the other copy during an update
       const list = [...worlds.values()].map((m) => ({ ...m, players: playersIn(m.id) })).sort((a, b) => (b.updated || 0) - (a.updated || 0));
-      json(res, 200, { permanent: store.permanent, storage: store.kind, dbError: store.dbError ? 'The database could not be reached. Check DATABASE_URL on Render.' : undefined, worlds: list });
+      json(res, 200, { permanent: store.permanent, storage: store.kind, build: BUILD, worlds: list });
       return;
     }
     if (p === '/api/worlds' && req.method === 'POST') {
-      const who = accountFrom(bearer(req));
+      const who = await accountFrom(bearer(req));
       if (!who) { json(res, 401, { error: 'Sign in first.' }); return; }
       const b = await readBody(req);
       const name = cleanName(b.name, 32) || 'Online World';
@@ -153,15 +210,16 @@ const server = http.createServer(async (req, res) => {
     const del = p.match(/^\/api\/worlds\/([A-Z0-9]{6})$/);
     if (del && req.method === 'DELETE') {
       const id = del[1];
-      const who = accountFrom(bearer(req));
+      const who = await accountFrom(bearer(req));
       if (!who) { json(res, 401, { error: 'Sign in first.' }); return; }
-      if (!worlds.has(id)) { json(res, 404, { error: 'No such world' }); return; }
-      const owner = worlds.get(id).owner;
-      if (owner && owner !== who.id) { json(res, 403, { error: `Only ${worlds.get(id).ownerName || 'its creator'} can delete this world.` }); return; }
+      const wm = await worldMeta(id);
+      if (!wm) { json(res, 404, { error: 'No such world' }); return; }
+      if (wm.owner && wm.owner !== who.id) { json(res, 403, { error: `Only ${wm.ownerName || 'its creator'} can delete this world.` }); return; }
       if (playersIn(id)) { json(res, 409, { error: 'Someone is playing in that world right now' }); return; }
       for (const d of DIMS) { const k = roomKey(id, d); await store.del(k); saves.delete(k); dimMetas.delete(k); }
       await store.delPlayers(id);
       worlds.delete(id);
+      for (const k of [...records.keys()]) if (k.startsWith(id + '|')) records.delete(k);
       json(res, 200, { ok: true });
       return;
     }
@@ -171,7 +229,9 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { 'content-type': TYPES[extname(file)] || 'application/octet-stream', 'cache-control': 'no-cache', 'x-content-type-options': 'nosniff' });
     res.end(body);
   } catch (err) {
-    if (!res.headersSent) { res.writeHead(err && err.code === 'ENOENT' ? 404 : 500); res.end(); }
+    if (res.headersSent) return;
+    if (p.startsWith('/api/')) { console.error('api error', p, err && err.message); json(res, 500, { error: 'The server could not do that just now. Try again in a moment.' }); return; }
+    res.writeHead(err && err.code === 'ENOENT' ? 404 : 500); res.end();
   }
 });
 
@@ -192,8 +252,28 @@ async function writeSave(id) {
   if (!s || !meta || !s.dirty) return;
   s.dirty = false;
   clearTimeout(s.timer); s.timer = null;
-  try { await store.putSave(meta, s.data); } catch (err) { s.dirty = true; console.error('save failed', id, err.message); return; }
+  try {
+    if (meta.backupDay !== today()) await backupFirst(id, meta);
+    await store.putSave(meta, s.data);
+  } catch (err) {
+    // keep it and try again (it is also still in the host's browser)
+    s.dirty = true;
+    console.error('save failed', id, err.message);
+    if (!s.timer) s.timer = setTimeout(() => writeSave(id), 15000);
+    return;
+  }
   if (!rooms.has(id) && !s.dirty) saves.delete(id);
+}
+
+// Once a day, before a world's first save of the day, keep a copy of how it was (and its players' items)
+const today = () => new Date().toISOString().slice(0, 10);
+async function backupFirst(id, meta) {
+  const day = today();
+  try {
+    const old = await store.getSave(id);
+    if (old) await store.backup(id, day, old, id.includes('~') ? null : await store.getPlayers(id));
+    meta.backupDay = day;
+  } catch (err) { console.error('backup failed', id, err.message); }
 }
 
 function queueSave(id, data, v) {
@@ -203,7 +283,7 @@ function queueSave(id, data, v) {
   meta.v = Math.max(meta.v || 0, v || 0);
   let s = saves.get(id);
   if (!s) { s = { data, dirty: true, timer: null }; saves.set(id, s); }
-  s.data = data; s.dirty = true;
+  s.data = data; s.dirty = true; s.at = Date.now();
   if (!s.timer) s.timer = setTimeout(() => writeSave(id), 4000);
 }
 
@@ -218,9 +298,10 @@ const records = new Map();   // "world|account" -> { data, dirty, timer }
 async function getRecord(world, account) {
   const k = world + '|' + account;
   if (records.has(k)) return records.get(k).data;
-  const data = await store.getPlayer(world, account).catch(() => null);
-  records.set(k, { data, dirty: false, timer: null });
-  return data;
+  // if the database can't be read this throws: better than starting someone with nothing over their items
+  const data = await store.getPlayer(world, account);
+  if (!records.has(k)) records.set(k, { data, dirty: false, timer: null });
+  return records.get(k).data;
 }
 function putRecord(world, account, data) {
   const k = world + '|' + account;
@@ -234,12 +315,83 @@ async function flushRecord(world, account) {
   const r = records.get(world + '|' + account);
   if (!r || !r.dirty) return;
   clearTimeout(r.timer); r.timer = null; r.dirty = false;
-  try { await store.putPlayer(world, account, r.data); } catch (err) { r.dirty = true; console.error('player save failed', err.message); }
+  try { await store.putPlayer(world, account, r.data); } catch (err) {
+    r.dirty = true;
+    console.error('player save failed', err.message);
+    if (!r.timer) r.timer = setTimeout(() => flushRecord(world, account), 15000);
+  }
 }
 
 // ---------------------------------------------------------------- rooms
 const rooms = new Map();   // world id -> { host, peers: Map(id -> ws), next }
 const send = (ws, msg) => { if (ws && ws.readyState === 1) ws.send(typeof msg === 'string' ? msg : JSON.stringify(msg)); };
+
+// Someone opening an online world: they run it if nobody is in that dimension yet, otherwise they join whoever does
+async function enterWorld(ws, m) {
+  if (!store || stopping) { send(ws, { t: 'error', msg: stopping ? 'Blockcraft is updating. Reconnecting…' : notReady(), retry: true }); return; }
+  const acc = await accountFrom(m.token);
+  if (!acc) { send(ws, { t: 'error', msg: 'Sign in to play online.' }); return; }
+  ws.account = acc.id;
+  const id = String(m.id || '').toUpperCase();
+  ws.world = id;
+  // already in this world (any dimension) from another tab or device: that one steps aside
+  let old = null;
+  for (const d of DIMS) {
+    const r0 = rooms.get(roomKey(id, d));
+    const q = r0 && [r0.host, ...r0.peers.values()].find((x) => x.account === acc.id && x.readyState === 1 && x !== ws);
+    if (q) old = q;
+  }
+  if (old) {
+    // it saves and leaves by itself; give it a moment before letting this one in
+    send(old, { t: 'replaced' });
+    await new Promise((r) => {
+      const timer = setTimeout(() => { old.terminate(); r(); }, 4000);
+      old.once('close', () => { clearTimeout(timer); r(); });
+    });
+    await sleep(300);
+    await flushRecord(id, acc.id);
+  }
+  const haves = m.haves && typeof m.haves === 'object' ? m.haves : {};
+  let meta = await worldMeta(id);
+  let useLocal = false;
+  if (!meta) {
+    // The server forgot this world (it restarted without a database): bring it back from a player's copy
+    const hm = Object.values(haves).map((h) => h && typeof h === 'object' && h.meta).find((x) => x && x.id === id);
+    if (!ID_RE.test(id) || !hm) { send(ws, { t: 'error', msg: 'That world does not exist. It may have been deleted.' }); return; }
+    meta = { id, name: cleanName(hm.name, 32) || 'Online World', seed: Number(hm.seed) >>> 0, mode: hm.mode === 'creative' ? 'creative' : 'survival', created: hm.created || Date.now(), updated: Date.now(), v: 0 };
+    worlds.set(id, meta);
+    await store.putMeta(meta);
+    restored.add(id);
+    useLocal = true;
+  }
+  // your own record in this world; if the server lost it too, the copy your browser kept
+  let me = await getRecord(id, acc.id);
+  const mine = m.mine && typeof m.mine === 'object' && !Array.isArray(m.mine) && JSON.stringify(m.mine).length < 65536 ? m.mine : null;
+  if (!me && mine && (restored.has(id) || !store.permanent)) { me = mine; putRecord(id, acc.id, me); }
+  // which dimension: where you are travelling to, or wherever you last were
+  const dim = DIMS.includes(m.dim) ? m.dim : me && DIMS.includes(me.dim) ? me.dim : 'overworld';
+  const key = roomKey(id, dim);
+  const have = haves[dim] && typeof haves[dim] === 'object' ? haves[dim] : null;
+  ws.name = acc.name;
+  const r = rooms.get(key);
+  if (r && r.host.readyState === 1) {
+    if (playersIn(id) >= MAX_PLAYERS) { send(ws, { t: 'error', msg: 'That world is full.' }); return; }
+    const pid = r.next++;
+    r.peers.set(pid, ws);
+    ws.room = key; ws.pid = pid;
+    send(ws, { t: 'joined', id: pid, code: id, dim, me, build: BUILD });
+    send(r.host, { t: 'peer', id: pid, name: ws.name, account: acc.id });
+    return;
+  }
+  // Nobody is running this dimension: this player runs it
+  rooms.set(key, { host: ws, peers: new Map(), next: 1 });
+  ws.room = key; ws.pid = 0;
+  const rm = metaOf(key);
+  if (have && (have.v || 0) > (rm.v || 0)) useLocal = true;   // their copy is newer than the server's
+  else if (dim !== 'overworld' && have && !saves.has(key) && !(await store.getSave(key))) useLocal = true;
+  const save = useLocal ? null : await latestSave(key);
+  send(ws, { t: 'hostworld', meta, dim, v: rm.v || 0, save, useLocal, me, build: BUILD });
+}
 
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 32 * 1024 * 1024 });
 
@@ -257,64 +409,15 @@ wss.on('connection', (ws) => {
 
     if (m.t === 'world' && !ws.room && !ws.joining) {
       ws.joining = true;
-      const acc = accountFrom(m.token);
-      if (!acc) { send(ws, { t: 'error', msg: 'Sign in to play online.' }); ws.joining = false; return; }
-      ws.account = acc.id;
-      const id = String(m.id || '').toUpperCase();
-      ws.world = id;
-      // already in this world (any dimension) from another tab or device: that one steps aside
-      let old = null;
-      for (const d of DIMS) {
-        const r0 = rooms.get(roomKey(id, d));
-        const q = r0 && [r0.host, ...r0.peers.values()].find((x) => x.account === acc.id && x.readyState === 1 && x !== ws);
-        if (q) old = q;
+      try { await enterWorld(ws, m); } catch (err) {
+        // the database didn't answer: nobody starts with an empty world or empty pockets, they try again
+        console.error('join failed', err && err.message);
+        const r = ws.room && rooms.get(ws.room);
+        if (r && r.host === ws) rooms.delete(ws.room); else if (r) r.peers.delete(ws.pid);
+        ws.room = null;
+        send(ws, { t: 'error', msg: 'Could not open the world just now. Trying again…', retry: true });
       }
-      if (old) {
-        // it saves and leaves by itself; give it a moment before letting this one in
-        send(old, { t: 'replaced' });
-        await new Promise((r) => {
-          const timer = setTimeout(() => { old.terminate(); r(); }, 4000);
-          old.once('close', () => { clearTimeout(timer); r(); });
-        });
-        await new Promise((r) => setTimeout(r, 300));
-        await flushRecord(id, acc.id);
-      }
-      // your own record in this world, then which dimension: where you are travelling to, or wherever you last were
-      const me = await getRecord(id, acc.id);
-      const dim = DIMS.includes(m.dim) ? m.dim : me && DIMS.includes(me.dim) ? me.dim : 'overworld';
-      const key = roomKey(id, dim);
-      let meta = worlds.get(id);
-      const haves = m.haves && typeof m.haves === 'object' ? m.haves : {};
-      const have = haves[dim] && typeof haves[dim] === 'object' ? haves[dim] : null;
-      let useLocal = false;
-      if (!meta) {
-        // The server forgot this world (it restarted without a database): bring it back from a player's copy
-        const hm = (have && have.meta) || Object.values(haves).map((h) => h && h.meta).find(Boolean);
-        if (!ID_RE.test(id) || !hm || hm.id !== id) { send(ws, { t: 'error', msg: 'That world does not exist. It may have been deleted.' }); ws.joining = false; return; }
-        meta = { id, name: cleanName(hm.name, 32) || 'Online World', seed: Number(hm.seed) >>> 0, mode: hm.mode === 'creative' ? 'creative' : 'survival', created: hm.created || Date.now(), updated: Date.now(), v: 0 };
-        worlds.set(id, meta);
-        await store.putMeta(meta);
-        useLocal = true;
-      }
-      ws.name = acc.name;
-      const r = rooms.get(key);
-      if (r && r.host.readyState === 1) {
-        if (playersIn(id) >= MAX_PLAYERS) { send(ws, { t: 'error', msg: 'That world is full.' }); ws.joining = false; return; }
-        const pid = r.next++;
-        r.peers.set(pid, ws);
-        ws.room = key; ws.pid = pid;
-        send(ws, { t: 'joined', id: pid, code: id, dim, me });
-        send(r.host, { t: 'peer', id: pid, name: ws.name, account: acc.id });
-        return;
-      }
-      // Nobody is running this dimension: this player runs it
-      rooms.set(key, { host: ws, peers: new Map(), next: 1 });
-      ws.room = key; ws.pid = 0;
-      const rm = metaOf(key);
-      if (have && (have.v || 0) > (rm.v || 0)) useLocal = true;   // their copy is newer than the server's
-      else if (dim !== 'overworld' && have && !saves.has(key) && !(await store.getSave(key))) useLocal = true;
-      const save = useLocal ? null : await latestSave(key);
-      send(ws, { t: 'hostworld', meta, dim, v: rm.v || 0, save, useLocal, me });
+      ws.joining = false;
       return;
     }
     if (m.t === 'me' && ws.world && ws.account && m.data && typeof m.data === 'object') { putRecord(ws.world, ws.account, m.data); return; }
@@ -337,6 +440,7 @@ wss.on('connection', (ws) => {
     if (r.host === ws) {
       rooms.delete(id);
       await writeSave(id);
+      if (stopping) return;
       // Hand the world to whoever is left: they reconnect one after another and the first one hosts
       let i = 0;
       for (const q of [...r.peers.entries()].sort((a, b) => a[0] - b[0]).map((e) => e[1])) {
@@ -360,10 +464,21 @@ setInterval(() => {
   }
 }, 25000);
 
-// Write pending saves before the server stops (Render sends SIGTERM on restarts and deploys)
+// Before the server stops (Render sends SIGTERM when it updates or restarts the game): everyone sends a
+// last save (the world from whoever runs it, everyone their own items), it is all written, then it stops.
+// Players reconnect by themselves to the new server a moment later.
+let stopping = false;
 async function shutdown() {
-  for (const id of saves.keys()) await writeSave(id);
-  for (const k of records.keys()) { const [w, a] = k.split('|'); await flushRecord(w, a); }
+  if (stopping) return;
+  stopping = true;
+  const asked = Date.now();
+  for (const ws of wss.clients) send(ws, { t: 'restart' });
+  await sleep(600);
+  for (let i = 0; i < 30 && [...rooms.keys()].some((k) => !(saves.get(k) && saves.get(k).at > asked)); i++) await sleep(100);
+  for (const id of [...saves.keys()]) await writeSave(id);
+  for (const k of [...records.keys()]) { const [w, a] = k.split('|'); await flushRecord(w, a); }
+  for (const ws of wss.clients) ws.close(1012, 'restarting');
+  if (store) await store.close().catch(() => {});
   process.exit(0);
 }
 process.on('SIGTERM', shutdown);

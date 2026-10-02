@@ -154,6 +154,8 @@
   .mp-code { font: 400 clamp(22px, 6vw, 34px) var(--title-font); letter-spacing: 0.12em; color: var(--accent); text-align: center; text-shadow: 3px 3px 0 var(--shadow); margin: 2px 0; user-select: all; -webkit-user-select: all; }
   .mp-players { font-size: 20px; color: var(--text-dim); text-align: center; margin: 0; }
   .mp-status { max-width: 560px; overflow-wrap: anywhere; min-height: 1.2em; }
+  #mp-storage { font-size: 17px; min-height: 0; }
+  #mp-storage.warn { color: #ff8a80; }
   .linkbtn { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); text-decoration: underline; cursor: pointer; }
   #s-mp.signed-out #online-list, #s-mp.signed-out .mp-world-buttons { display: none; }
   #click-to-play {
@@ -439,9 +441,15 @@
       <button class="btn" id="b-new-world" type="button">Create New World</button>
     </div>
     <div class="row2">
+      <button class="btn" id="b-backup-world" type="button">Save Backup File</button>
+      <button class="btn" id="b-import-world" type="button">Open Backup File</button>
+    </div>
+    <div class="row2">
       <button class="btn" id="b-delete-world" type="button">Delete</button>
       <button class="btn" id="b-worlds-back" type="button">Back</button>
     </div>
+    <p class="note" id="worlds-status"></p>
+    <input type="file" id="import-file" accept=".json,application/json" hidden>
   </div>
 </section>
 
@@ -466,6 +474,7 @@
     </div>
   </div>
   <p class="note mp-status" id="mp-status"></p>
+  <p class="note mp-status" id="mp-storage"></p>
   <div class="col" style="width:min(560px,100%)">
     <div class="row2 mp-world-buttons">
       <button class="btn" id="b-join" type="button">Play Selected World</button>
@@ -598,6 +607,7 @@
     <h2 id="load-title">Generating world</h2>
     <p class="sub" id="load-sub">Building terrain</p>
     <div class="load-track"><div id="load-bar"></div></div>
+    <button class="btn" id="b-busy-cancel" type="button" hidden>Back to Title Screen</button>
   </div>
 </section>
 

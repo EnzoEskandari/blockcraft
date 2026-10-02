@@ -135,7 +135,11 @@ export class UI {
     on('b-play-world', () => this.playSelected());
     on('b-new-world', () => { this.createOnline = false; this.openScreen('create'); });
     on('b-delete-world', () => this.askDelete());
+    on('b-backup-world', () => this.backupSelected());
+    on('b-import-world', () => $('import-file').click());
+    $('import-file').addEventListener('change', (e) => this.importFile(e.target.files && e.target.files[0]));
     on('b-worlds-back', () => this.back());
+    on('b-busy-cancel', () => { if (this.onBusyCancel) this.onBusyCancel(); });
     on('b-confirm-delete', () => this.confirmDelete());
     on('b-cancel-delete', () => { $('delete-confirm').hidden = true; });
     on('b-mode', () => {
@@ -252,6 +256,7 @@ export class UI {
 
   showLoading(p) {
     this.section('loading');
+    $('b-busy-cancel').hidden = true;
     const online = G.worldMeta && G.worldMeta.online;
     $('load-title').textContent = online ? 'Loading world' : 'Generating world';
     $('load-sub').textContent = online ? G.worldMeta.name : 'Building terrain';
@@ -341,6 +346,7 @@ export class UI {
     $('online-delete-confirm').hidden = true;
     list.innerHTML = '';
     list.appendChild(h('p', 'empty', 'Loading online worlds…'));
+    $('mp-storage').textContent = '';
     this.online = [];
     this.syncOnlineButtons();
     let res;
@@ -351,6 +357,9 @@ export class UI {
     }
     if (G.screen !== 'mp') return;
     this.online = res.worlds || [];
+    // online worlds this browser keeps a copy of that the server doesn't have (it lost them): opening one puts it back
+    const known = new Set(this.online.map((w) => w.id));
+    for (const w of G.game.localOnlineWorlds()) if (!known.has(w.id)) this.online.push({ ...w, local: true });
     list.innerHTML = '';
     if (!this.online.some((w) => w.id === this.selectedOnline)) this.selectedOnline = this.online.length ? this.online[0].id : null;
     if (!this.online.length) list.appendChild(h('p', 'empty', 'No online worlds yet. Create one, then send your friends its link.'));
@@ -359,7 +368,7 @@ export class UI {
       row.type = 'button';
       row.appendChild(h('strong', null, w.name));
       const d = new Date(w.updated || w.created);
-      const who = w.players ? `${w.players} playing now` : `last played ${d.toLocaleDateString()}`;
+      const who = w.local ? 'only saved in this browser, open it to put it back online' : w.players ? `${w.players} playing now` : `last played ${d.toLocaleDateString()}`;
       row.appendChild(h('span', null, `${w.mode === 'creative' ? 'Creative' : 'Survival'} · ${who} · link …?world=${w.id}`));
       if (w.id === this.selectedOnline) row.classList.add('sel');
       row.addEventListener('click', () => {
@@ -372,10 +381,12 @@ export class UI {
       });
       list.appendChild(row);
     }
-    if (res.dbError && !$('mp-status').textContent) this.mpStatus(res.dbError + ' Online worlds are kept in players’ browsers until it works.');
-    else if (!res.permanent && !$('mp-status').textContent) {
-      this.mpStatus('Note: this server has no database yet, so online worlds are also kept in the browsers of the people who play them. Add a database to make them fully permanent (see the README).');
-    }
+    // where online worlds are kept, so it is easy to check they are safe
+    const st = $('mp-storage');
+    st.classList.toggle('warn', !res.permanent);
+    st.textContent = res.storage === 'database' ? 'Online worlds, accounts and items are saved in the database, with daily backups.'
+      : res.permanent ? 'Online worlds are saved on this computer.'
+        : 'Warning: this server has no database, so online worlds, accounts and items are wiped every time the game updates or the server goes to sleep. Add a database to keep them (see the README).';
     this.syncOnlineButtons();
   }
 
@@ -487,16 +498,18 @@ export class UI {
     b.disabled = false;
   }
 
-  // Shown while getting (back) into an online world
-  showBusy(msg) {
+  // Shown while getting (back) into an online world; with onCancel, a button to stop trying
+  showBusy(msg, sub = '', onCancel = null) {
     this.stack.length = 0;
     if (CONTAINERS.includes(G.screen)) this.closeContainer();
     G.screen = 'busy';
     this.section('loading');
     $('hud').hidden = true;
     $('load-title').textContent = msg;
-    $('load-sub').textContent = '';
+    $('load-sub').textContent = sub;
     $('load-bar').style.width = '0%';
+    $('b-busy-cancel').hidden = !onCancel;
+    this.onBusyCancel = onCancel;
     this.updateTouchVisibility();
   }
 
@@ -554,7 +567,37 @@ export class UI {
     }
     $('b-play-world').disabled = !worlds.length;
     $('b-delete-world').disabled = !worlds.length;
+    $('b-backup-world').disabled = !worlds.length;
     $('delete-confirm').hidden = true;
+    $('worlds-status').textContent = '';
+  }
+
+  // Download the selected world as a file (every dimension, inventory and all)
+  backupSelected() {
+    const data = this.selectedWorld && G.game.exportWorld(this.selectedWorld);
+    if (!data) return;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: 'application/json' }));
+    a.download = `${data.meta.name.replace(/[^\w -]/g, '').trim() || 'world'}.blockcraft.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+    $('worlds-status').textContent = `Saved “${data.meta.name}” as a file. Open Backup File brings it back on any device.`;
+  }
+
+  async importFile(f) {
+    $('import-file').value = '';
+    if (!f) return;
+    let msg;
+    try {
+      const meta = G.game.importWorld(JSON.parse(await f.text()));
+      this.buildWorldList();
+      msg = `Added “${meta.name}”.`;
+    } catch (err) {
+      msg = err instanceof SyntaxError ? 'That is not a Blockcraft world backup.' : err.message;
+    }
+    $('worlds-status').textContent = msg;
   }
 
   playSelected() { if (this.selectedWorld) G.game.loadWorld(this.selectedWorld); }

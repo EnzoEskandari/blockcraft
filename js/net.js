@@ -2,7 +2,7 @@
 // and the others join as guests. Guests send what they do to the host and draw what the host tells them.
 // Messages travel through the Blockcraft server (server.js), which only relays them within a room code.
 import * as THREE from 'three';
-import { G } from './game.js';
+import { G, store } from './game.js';
 import { R, itemModel, tintModel } from './render.js';
 import { buildModel, lightAt, explosionFx, explosionDamage, spawnBlockParticles } from './entities.js';
 import { BLOCKS, B, ITEMS } from './blocks.js';
@@ -221,7 +221,9 @@ export class Net {
   // ------------------------------------------------------------ connecting
   // Enter an online world. If nobody is in it, this player runs it (resolves { net, host }),
   // otherwise they join whoever does (resolves { net, snap }).
-  static connect(worldId, account, haves, onStatus = () => {}, dim = null) {
+  // `mine` is this browser's copy of the player's own record, used only if the server lost theirs.
+  // A failure worth trying again (server restarting or unreachable) rejects with err.retry set.
+  static connect(worldId, account, haves, onStatus = () => {}, dim = null, mine = null) {
     const url = serverURL();
     if (!url) return Promise.reject(new Error('Multiplayer only works on the Blockcraft website.'));
     if (!account) return Promise.reject(new Error('Sign in to play online.'));
@@ -230,37 +232,37 @@ export class Net {
     net.code = worldId;
     return new Promise((resolve, reject) => {
       let settled = false;
-      const fail = (msg) => { if (!settled) { settled = true; reject(new Error(msg)); } net.shutdown(); };
+      const fail = (msg, retry = false) => { if (!settled) { settled = true; reject(Object.assign(new Error(msg), { retry })); } net.shutdown(); };
       let ws;
-      try { ws = new WebSocket(url); } catch { fail('Could not reach the multiplayer server.'); return; }
+      try { ws = new WebSocket(url); } catch { fail('Could not reach the multiplayer server.', true); return; }
       net.ws = ws;
-      const timer = setTimeout(() => fail('The multiplayer server did not answer. Check your connection and try again.'), 25000);
+      const timer = setTimeout(() => fail('The multiplayer server did not answer. Check your connection and try again.', true), 25000);
       ws.onopen = () => {
         onStatus('Joining…');
-        ws.send(JSON.stringify({ t: 'world', id: worldId, dim, token: account.token, haves }));
+        ws.send(JSON.stringify({ t: 'world', id: worldId, dim, token: account.token, haves, mine }));
       };
       ws.onerror = () => {};
       ws.onclose = () => {
         clearTimeout(timer);
-        if (!settled) fail('Could not reach the multiplayer server. It only runs on the Blockcraft website.');
+        if (!settled) fail('Could not reach the multiplayer server. It only runs on the Blockcraft website.', true);
         else net.lost();
       };
       ws.onmessage = (ev) => {
         let m;
         try { m = JSON.parse(ev.data); } catch { return; }
-        if (m.t === 'error') { clearTimeout(timer); fail(m.msg); return; }
+        if (m.t === 'error') { clearTimeout(timer); fail(m.msg, !!m.retry); return; }
         if (m.t === 'hostworld') {
           clearTimeout(timer);
           net.role = 'host'; net.id = 0; net.hostName = name;
           settled = true;
-          resolve({ net, host: m, dim: m.dim, me: m.me || null });
+          resolve({ net, host: m, dim: m.dim, me: m.me || null, build: m.build });
           return;
         }
         if (m.t === 'joined') {
           net.role = 'client'; net.id = m.id;
           onStatus('Downloading the world…');
           net.send({ k: 'hello', name });
-          net.onWorld = (snap) => { clearTimeout(timer); settled = true; resolve({ net, snap, dim: m.dim, me: m.me || null }); };
+          net.onWorld = (snap) => { clearTimeout(timer); settled = true; resolve({ net, snap, dim: m.dim, me: m.me || null, build: m.build }); };
           net.onKick = (msg) => { clearTimeout(timer); fail(msg); };
           return;
         }
@@ -271,8 +273,12 @@ export class Net {
 
   // The host sends the whole world to the server so it is kept even when everyone leaves
   uploadSave(data, v) { this.raw({ t: 'save', data, v }); }
-  // Every player keeps their own record (inventory, position, dimension) on the server
-  sendMe(data) { this.raw({ t: 'me', data }); }
+  // Every player keeps their own record (inventory, position, dimension) on the server, and a copy here
+  // in case the server ever loses it
+  sendMe(data) {
+    this.raw({ t: 'me', data });
+    if (this.code && G.account) store('online.' + this.code + '@me', { name: G.account.name, data });
+  }
 
   raw(m) { if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(m)); }
   // Guests talk to the host; the host talks to everyone
@@ -302,12 +308,14 @@ export class Net {
     if (G.net === this) G.net = null;
   }
 
-  // The connection dropped by itself: try to get back in
+  // The connection dropped by itself (or the server is restarting for an update): get back in. Whoever ran
+  // the world goes first so they keep running it with their newest copy; everyone else follows.
   lost() {
     if (this.closed) return;
     this.shutdown();
     if (G.net === this) G.net = null;
-    G.game.rejoin(this.code, 1500, 'Lost connection. Reconnecting…');
+    const wait = this.role === 'host' ? 700 : 2500 + Math.min(this.id, 8) * 400;
+    G.game.rejoin(this.code, wait, this.restarting ? 'Blockcraft is updating' : 'Lost connection', 'Your world is saved. Reconnecting…');
   }
 
   onRaw(m) {
@@ -320,6 +328,13 @@ export class Net {
       this.shutdown();
       if (G.net === this) G.net = null;
       G.game.leaveOnline('You joined this world from another tab or device, so you left it here.');
+      return;
+    }
+    if (m.t === 'restart') {
+      // the server is about to restart (an update): send everything now
+      this.restarting = true;
+      if (this.role === 'host') G.game.saveNow();
+      else this.saveGuest();
       return;
     }
     if (m.t === 'left') { this.removePlayer(m.id); return; }

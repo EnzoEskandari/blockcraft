@@ -518,6 +518,7 @@ export const Game = {
   },
 
   createWorld(name, seedText, mode) {
+    keepSaves();
     const seed = makeSeed(seedText);
     const meta = { id: Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36), name, seed, mode: mode === 'creative' ? 'creative' : 'survival', created: Date.now(), lastPlayed: Date.now() };
     const list = this.listWorlds();
@@ -529,11 +530,47 @@ export const Game = {
   loadWorld(id) {
     const meta = this.listWorlds().find((w) => w.id === id);
     if (!meta) return;
+    keepSaves();
     // you come back in whichever dimension you left in
     const g = loadGlobals(id);
     const dim = (g && g.player && g.player.dim) || 'overworld';
     const data = load('world.' + dimKey(id, dim));
     startWorld({ ...meta, dim }, data, { globals: g });
+  },
+
+  // A whole world (every dimension, the player, the time) as one file to keep somewhere safe
+  exportWorld(id) {
+    const meta = this.listWorlds().find((w) => w.id === id);
+    if (!meta) return null;
+    const parts = {};
+    for (const d of DIMS) { const v = load('world.' + dimKey(id, d)); if (v) parts[d] = v; }
+    const g = load('world.' + id + '@g');
+    if (g) parts.globals = g;
+    return { blockcraft: 'world', version: 1, exported: Date.now(), meta, parts };
+  },
+
+  // Adds a world from a backup file as a new world (it never replaces one); returns its meta
+  importWorld(file) {
+    if (!file || file.blockcraft !== 'world' || !file.meta || !file.parts || typeof file.parts !== 'object') throw new Error('That is not a Blockcraft world backup.');
+    const m = file.meta;
+    const list = this.listWorlds();
+    const id = Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
+    const taken = new Set(list.map((w) => w.name));
+    let name = String(m.name || 'Imported World').slice(0, 32);
+    if (taken.has(name)) { let n = 2; while (taken.has(`${name} (${n})`)) n++; name = `${name} (${n})`; }
+    const meta = { id, name, seed: Number(m.seed) >>> 0, mode: m.mode === 'creative' ? 'creative' : 'survival', created: m.created || Date.now(), lastPlayed: Date.now() };
+    const written = [];
+    const put = (key, v) => { if (!store(key, v)) throw new Error('Not enough room in this browser to add that world.'); written.push(key); };
+    try {
+      for (const d of DIMS) if (file.parts[d]) put('world.' + dimKey(id, d), file.parts[d]);
+      if (file.parts.globals) put('world.' + id + '@g', file.parts.globals);
+      list.unshift(meta);
+      put('worlds', list);
+    } catch (err) {
+      for (const k of written) if (k !== 'worlds') remove(k);
+      throw err;
+    }
+    return meta;
   },
 
   deleteWorld(id) {
@@ -650,8 +687,11 @@ export const Game = {
     if (!serverURL()) throw new Error(away);
     let r;
     try { r = await fetch('/api/worlds', { cache: 'no-store' }); } catch { throw new Error('Could not reach the server. Check your connection.'); }
-    if (!r.ok || !(r.headers.get('content-type') || '').includes('json')) throw new Error(away);
-    return r.json();
+    if (!(r.headers.get('content-type') || '').includes('json')) throw new Error(away);
+    const b = await r.json();
+    if (!r.ok) throw new Error(b.error || away);
+    noteBuild(b.build);
+    return b;
   },
 
   // ------------------------------------------------------------ accounts
@@ -699,8 +739,23 @@ export const Game = {
 
   async deleteOnline(id) {
     const r = await fetch('/api/worlds/' + id, { method: 'DELETE', headers: authHeader(G.account) });
-    if (!r.ok) { const b = await r.json().catch(() => ({})); throw new Error(b.error || 'Could not delete that world.'); }
-    remove('online.' + id);
+    // (a world only this browser still had is just forgotten here)
+    if (!r.ok && r.status !== 404) { const b = await r.json().catch(() => ({})); throw new Error(b.error || 'Could not delete that world.'); }
+    for (const d of DIMS) remove('online.' + dimKey(id, d));
+    remove('online.' + id + '@me');
+  },
+
+  // Online worlds this browser keeps a copy of (in case the server ever loses one)
+  localOnlineWorlds() {
+    const out = [];
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const m = (localStorage.key(i) || '').match(/^blockcraft\.online\.([A-Z2-9]{6})$/);
+        const b = m && load('online.' + m[1]);
+        if (b && b.meta && b.meta.id === m[1]) out.push({ id: b.meta.id, name: b.meta.name, mode: b.meta.mode, seed: b.meta.seed, created: b.meta.created });
+      }
+    } catch { /* storage unavailable */ }
+    return out;
   },
 
   // Each dimension of an online world runs on its own: the first player in it runs it. Without `dim`
@@ -710,7 +765,11 @@ export const Game = {
     // this browser's copies of the world, in case the server has lost them or has older ones
     const haves = {};
     for (const d of DIMS) { const b = load('online.' + dimKey(id, d)); if (b && b.meta) haves[d] = { v: b.v || 0, meta: b.meta }; }
-    const res = await Net.connect(id, acc, haves, onStatus, dim);
+    // and of this player's own items there, in case the server lost them
+    const rec = load('online.' + id + '@me');
+    const mine = rec && rec.data && String(rec.name).toLowerCase() === String(acc.name).toLowerCase() ? rec.data : null;
+    const res = await Net.connect(id, acc, haves, onStatus, dim, mine);
+    noteBuild(res.build);
     G.net = res.net;
     const room = DIMS.includes(res.dim) ? res.dim : 'overworld';
     if (res.snap) { startRemoteWorld(res.snap, id, room, res.me); return; }
@@ -724,7 +783,7 @@ export const Game = {
   },
 
   // Back into the same online world after the connection dropped or the player running it left
-  rejoin(id, wait, msg) {
+  rejoin(id, wait, msg, sub = '') {
     if (G.worldMeta && G.worldMeta.online && !G.worldMeta.remote) saveWorld();   // keeps a copy in this browser
     const carry = G.player && !G.player.dead ? playerData(G.player) : null;
     const dim = G.dim;
@@ -733,16 +792,33 @@ export const Game = {
     teardown();
     G.state = 'title';
     exitLock();
-    G.ui.showBusy(msg);
-    setTimeout(async () => {
+    // keep trying for a few minutes while the server restarts (an update takes about a minute)
+    const run = (S.rejoinRun || 0) + 1;
+    S.rejoinRun = run;
+    const giveUp = (text) => {
+      S.rejoinRun = run + 1;
+      S.carry = null;
+      G.ui.showTitle();
+      G.ui.openScreen('mp');
+      G.ui.mpStatus(text);
+    };
+    const cancel = () => giveUp('Stopped reconnecting. Your world is saved; open it again whenever you like.');
+    G.ui.showBusy(msg, sub, cancel);
+    let tries = 0;
+    const attempt = async () => {
+      if (S.rejoinRun !== run) return;
       S.carry = carry ? { id, d: carry } : null;
       try { await Game.joinWorld(id, (t) => G.ui.showBusy(t), dim); } catch (err) {
-        S.carry = null;
-        G.ui.showTitle();
-        G.ui.openScreen('mp');
-        G.ui.mpStatus(err && err.message ? err.message : 'Could not get back into the world.');
+        if (S.rejoinRun !== run) return;
+        if (err && err.retry && ++tries < 40) {
+          G.ui.showBusy(msg, `Your world is saved. Waiting for the server to come back… (try ${tries + 1})`, cancel);
+          setTimeout(attempt, Math.min(1500 + tries * 1000, 8000));
+          return;
+        }
+        giveUp(err && err.message ? err.message : 'Could not get back into the world.');
       }
-    }, wait);
+    };
+    setTimeout(attempt, wait);
   },
 
   // Sent to a guest when they join: everything they need to build the same world
@@ -773,6 +849,19 @@ const dimKey = (id, dim) => (dim && dim !== 'overworld' ? `${id}~${dim}` : id);
 
 // Time of day and the player (singleplayer), kept apart from each dimension's blocks
 function loadGlobals(id) { return load('world.' + id + '@g') || load('world.' + id); }
+
+// The server says which version of the game it runs. If that changed since this page loaded, the game
+// was updated while it was open: worlds are saved, but reloading gets the new version.
+function noteBuild(b) {
+  if (!b) return;
+  if (!S.build) S.build = b;
+  else if (S.build !== b) S.outdated = true;
+}
+
+// Ask the browser to keep this site's saves even when it is short of space (where browsers allow it)
+function keepSaves() {
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); } catch { /* not supported */ }
+}
 
 // Where you come back to life: your bed, or the world spawn (always in the overworld)
 function respawnPoint(p) {
@@ -1053,6 +1142,11 @@ function frame(dt) {
       if (S.arrival) { const a = S.arrival; S.arrival = null; arrive(a); }
       // an online world is on the server from the moment someone is in it
       if (G.worldMeta && G.worldMeta.online && !G.worldMeta.remote) saveWorld();
+      if (S.outdated && !S.toldOutdated) {
+        S.toldOutdated = true;
+        G.ui.toast('Blockcraft was updated! Your world is saved. Reload the page to get the new version.');
+        G.ui.toastTimer = 8;
+      }
     }
     return;
   }
@@ -1143,6 +1237,8 @@ function boot(hotData) {
   } catch { /* hot reload unavailable */ }
   if (hotData && hotData.worldId) Game.loadWorld(hotData.worldId);
   G.account = load('account');
+  // which version of the game this page is (to notice later if the server gets updated)
+  if (serverURL()) fetch('/api/build', { cache: 'no-store' }).then((r) => r.json()).then((b) => noteBuild(b.build)).catch(() => {});
   // a world link (…?world=ID) goes straight into that online world
   const link = new URLSearchParams(location.search).get('world');
   if (link && !(hotData && hotData.worldId)) G.ui.openOnline(link.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6));
