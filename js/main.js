@@ -798,7 +798,7 @@ export const Game = {
     const away = 'Online worlds only work on the Blockcraft website (your onrender.com link).';
     if (!serverURL()) throw new Error(away);
     let r;
-    try { r = await fetch('/api/worlds', { cache: 'no-store' }); } catch { throw new Error('Could not reach the server. Check your connection.'); }
+    try { r = await fetch('/api/worlds', { cache: 'no-store', headers: authHeader(G.account) }); } catch { throw new Error('Could not reach the server. Check your connection.'); }
     if (!(r.headers.get('content-type') || '').includes('json')) throw new Error(away);
     const b = await r.json();
     if (!r.ok) throw new Error(b.error || away);
@@ -849,12 +849,15 @@ export const Game = {
     return r.json();
   },
 
+  // Deletes your own world for everyone; someone else's just leaves your list (resolves { removed: true })
   async deleteOnline(id) {
     const r = await fetch('/api/worlds/' + id, { method: 'DELETE', headers: authHeader(G.account) });
+    const b = await r.json().catch(() => ({}));
     // (a world only this browser still had is just forgotten here)
-    if (!r.ok && r.status !== 404) { const b = await r.json().catch(() => ({})); throw new Error(b.error || 'Could not delete that world.'); }
+    if (!r.ok && r.status !== 404) throw new Error(b.error || 'Could not delete that world.');
     for (const d of DIMS) remove('online.' + dimKey(id, d));
     remove('online.' + id + '@me');
+    return b;
   },
 
   // Online worlds this browser keeps a copy of (in case the server ever loses one)

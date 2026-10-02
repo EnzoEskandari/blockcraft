@@ -36,14 +36,15 @@ Online worlds are separate from your singleplayer worlds. They live on the serve
 
 1. On the title screen choose **Multiplayer** and sign in, or create an account with a username and password. Then click **Create Online World**.
 2. Click **Copy Link** and send it to your friends. The link never changes.
-3. Anyone who opens the link (or picks the world in the Multiplayer list) joins that world.
+3. Anyone who opens the link joins that world, and from then on it is in their own Multiplayer list so they can come back any time. Nobody else sees your world in their list until you give them the link.
 
 How it works:
 
 - The first player in runs the world in their browser: mobs, water, fire, furnaces and the time of day. Everyone else joins them.
 - The world is sent to the server every 10 seconds and when that player leaves. If they leave while others are playing, the next player takes over automatically after a short "Taking over the world…" screen.
 - Everyone has their own inventory, health, hunger and position, saved under their account, so nobody else can ever be you. Sign in with the same account on any device. Passwords are stored as salted scrypt hashes, never as text.
-- Only the player who created a world can delete it.
+- Only the player who created a world can delete it. Anyone else can remove it from their own list (the link still works).
+- You can see what other players are wearing and holding.
 - The time of day is the same for everyone. The night is skipped only when everyone is in bed.
 - You can always hit other players, with fists, weapons or arrows.
 - Dropped items are the same for everyone, and only one player can pick each one up.

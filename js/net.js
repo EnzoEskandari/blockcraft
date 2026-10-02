@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { G, store } from './game.js';
 import { R, itemModel, tintModel } from './render.js';
-import { buildModel, lightAt, explosionFx, explosionDamage, spawnBlockParticles } from './entities.js';
+import { buildModel, holdInHand, lightAt, explosionFx, explosionDamage, spawnBlockParticles } from './entities.js';
 import { BLOCKS, B, ITEMS } from './blocks.js';
 import { packSlots, unpackSlots } from './inventory.js';
 import { rayBox } from './physics.js';
@@ -86,7 +86,24 @@ export class Avatar {
     R.scene.add(this.tag);
     this.heldShown = -1;
     this.heldMesh = null;
+    this.worn = '';
     this.model.root.visible = this.tag.visible = false;
+  }
+
+  // Armour shows on the model: it is rebuilt with whatever is worn now
+  wear(worn) {
+    this.worn = worn;
+    const old = this.model;
+    if (this.heldMesh) { this.heldMesh.parent.remove(this.heldMesh); this.heldMesh = null; }
+    this.model = buildModel('player', worn ? `${this.slot}|${worn}` : this.slot);
+    const root = this.model.root;
+    root.position.copy(old.root.position);
+    root.rotation.copy(old.root.rotation);
+    root.visible = old.root.visible;
+    R.scene.remove(old.root);
+    old.mat.dispose();
+    R.scene.add(root);
+    this.heldShown = -1;
   }
 
   get eyeY() { return this.pos.y + 1.62 - (this.sneaking ? 0.12 : 0); }
@@ -103,7 +120,7 @@ export class Avatar {
   }
   addEffect(n, t) { G.net.sendTo(this.id, { k: 'fx', n, t }); }
 
-  // [x, y, z, yaw, pitch, held, flags, swings, hp, creative]
+  // [x, y, z, yaw, pitch, held, flags, swings, hp, creative, [helmet, chestplate, leggings, boots]]
   applyState(s) {
     const first = !this.state;
     this.state = s;
@@ -121,6 +138,8 @@ export class Avatar {
     if (s[8] < this.hp) this.hurtTime = 0.35;
     this.hp = s[8];
     this.mode = s[9] ? 'creative' : 'survival';
+    const worn = Array.isArray(s[10]) && s[10].some((v) => v) ? s[10].slice(0, 4).map((v) => v | 0).join(',') : '';
+    if (worn !== this.worn) this.wear(worn);
     if (first || Math.hypot(s[0] - this.pos.x, s[1] - this.pos.y, s[2] - this.pos.z) > 8) { this.pos.x = s[0]; this.pos.y = s[1]; this.pos.z = s[2]; }
     this.ready = true;
   }
@@ -149,11 +168,12 @@ export class Avatar {
     root.rotation.x = this.sleeping ? -Math.PI / 2 : 0;
     root.rotation.z = this.dead ? Math.min(1, this.deathTime * 3) * Math.PI / 2 : 0;
     P.leg0.rotation.x = sw; P.leg1.rotation.x = -sw;
-    P.arm0.rotation.x = -sw * 0.8;
+    P.arm1.rotation.x = -sw * 0.8;
+    // the right arm swings and holds things
     if (this.swingT < 1) {
       this.swingT = Math.min(1, this.swingT + dt / 0.3);
-      P.arm1.rotation.x = -Math.sin(this.swingT * Math.PI) * 1.7 - 0.3;
-    } else P.arm1.rotation.x = sw * 0.8 - (this.held ? 0.3 : 0);
+      P.arm0.rotation.x = -Math.sin(this.swingT * Math.PI) * 1.7 - 0.3;
+    } else P.arm0.rotation.x = sw * 0.8 - (this.held ? 0.3 : 0);
     P.body.rotation.x = this.sneaking ? 0.45 : 0;
     m.inner.position.y = this.sneaking ? -0.15 : 0;
     P.head.rotation.x = Math.max(-1.4, Math.min(1.4, -this.pitch));
@@ -169,13 +189,7 @@ export class Avatar {
     this.heldShown = this.held;
     if (this.heldMesh) { this.heldMesh.parent.remove(this.heldMesh); this.heldMesh = null; }
     if (!this.held) return;
-    let it;
-    try { it = itemModel(this.held); } catch { return; }
-    it.scale.setScalar(it.userData.cube ? 6 : 10);
-    it.position.set(0, -10, 2);
-    it.rotation.set(0, Math.PI / 2, Math.PI / 4);
-    this.model.parts.arm1.add(it);
-    this.heldMesh = it;
+    try { this.heldMesh = holdInHand(this.model, this.held); } catch { /* not something that can be drawn */ }
   }
 
   dispose() {
@@ -394,7 +408,8 @@ export class Net {
     const held = p.inv.held;
     const gold = p.armor.some((a) => a && ITEMS[a.id] && ITEMS[a.id].material === 'golden');
     const flags = (p.dead ? 1 : 0) | (p.sneaking && !p.flying ? 2 : 0) | (G.sleeping ? 4 : 0) | (p.flying ? 8 : 0) | (p.burning > 0 ? 16 : 0) | (gold ? 32 : 0);
-    return [r2(p.pos.x), r2(p.pos.y), r2(p.pos.z), r2(p.yaw), r2(p.pitch), held ? held.id : 0, flags, this.swings, Math.ceil(p.health), p.creative ? 1 : 0];
+    return [r2(p.pos.x), r2(p.pos.y), r2(p.pos.z), r2(p.yaw), r2(p.pitch), held ? held.id : 0, flags, this.swings, Math.ceil(p.health), p.creative ? 1 : 0,
+      p.armor.map((a) => (a ? a.id : 0))];
   }
 
   chat(from, text) { G.ui.chatLine(from ? `<${from}> ${text}` : text, !from); }

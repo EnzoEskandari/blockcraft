@@ -36,6 +36,12 @@ async function openDatabase(url, pg) {
     await pool.query('create table if not exists blockcraft_players (world text not null, account text not null, data jsonb not null, primary key (world, account))');
     await pool.query(`create table if not exists blockcraft_backups (
       id text not null, day text not null, save text not null, players jsonb, created bigint not null, primary key (id, day))`);
+    // who has each online world in their list (its creator, and everyone who has opened its link)
+    await pool.query(`create table if not exists blockcraft_members (
+      world text not null, account text not null, joined bigint not null, hidden boolean not null default false, primary key (world, account))`);
+    // everyone who played a world before this list existed keeps it
+    await pool.query(`insert into blockcraft_members (world, account, joined)
+      select world, account, 0 from blockcraft_players on conflict do nothing`);
   } catch (err) {
     pool.end().catch(() => {});
     throw err;
@@ -77,7 +83,18 @@ async function openDatabase(url, pg) {
     async putPlayer(world, account, data) {
       await pool.query('insert into blockcraft_players (world, account, data) values ($1, $2, $3) on conflict (world, account) do update set data = excluded.data', [world, account, data]);
     },
-    async delPlayers(world) { await pool.query('delete from blockcraft_players where world = $1', [world]); },
+    async delPlayers(world) {
+      await pool.query('delete from blockcraft_players where world = $1', [world]);
+      await pool.query('delete from blockcraft_members where world = $1', [world]);
+    },
+    // which worlds are in each player's list ({ world: hidden })
+    async memberWorlds(account) {
+      return Object.fromEntries((await pool.query('select world, hidden from blockcraft_members where account = $1', [account])).rows.map((r) => [r.world, r.hidden]));
+    },
+    async setMember(world, account, hidden) {
+      await pool.query(`insert into blockcraft_members (world, account, joined, hidden) values ($1, $2, $3, $4)
+        on conflict (world, account) do update set hidden = excluded.hidden`, [world, account, Date.now(), hidden]);
+    },
     // daily copies
     async backup(id, day, save, players) {
       await pool.query(`insert into blockcraft_backups (id, day, save, players, created) values ($1, $2, $3, $4, $5)
@@ -101,6 +118,16 @@ async function openFiles(root) {
   const readJson = async (name) => { try { return JSON.parse(await readFile(join(dir, name), 'utf8')); } catch { return {}; } };
   const accounts = await readJson('accounts.json');
   const sessions = await readJson('sessions.json');
+  // account -> { world: hidden }; everyone who played a world before this list existed keeps it
+  const members = await readJson('members.json');
+  for (const f of await readdir(dir)) {
+    if (!f.endsWith('.players.json')) continue;
+    const world = f.slice(0, -'.players.json'.length);
+    for (const account of Object.keys(await readJson(f))) {
+      members[account] = members[account] || {};
+      if (!(world in members[account])) members[account][world] = false;
+    }
+  }
   const flush = (name, obj) => writeFile(join(dir, name), JSON.stringify(obj));
   const backups = (id) => join(dir, 'backups', id.replace('~', '_'));
   return {
@@ -144,7 +171,17 @@ async function openFiles(root) {
       all[account] = data;
       await flush(`${world}.players.json`, all);
     },
-    async delPlayers(world) { await rm(join(dir, `${world}.players.json`), { force: true }); },
+    async delPlayers(world) {
+      await rm(join(dir, `${world}.players.json`), { force: true });
+      for (const m of Object.values(members)) delete m[world];
+      await flush('members.json', members);
+    },
+    async memberWorlds(account) { return { ...(members[account] || {}) }; },
+    async setMember(world, account, hidden) {
+      members[account] = members[account] || {};
+      members[account][world] = hidden;
+      await flush('members.json', members);
+    },
     async backup(id, day, save, players) {
       const d = backups(id);
       await mkdir(d, { recursive: true });

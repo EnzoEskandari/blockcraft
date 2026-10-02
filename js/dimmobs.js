@@ -7,6 +7,7 @@ import { B, BLOCKS, ID } from './blocks.js';
 import { moveBox, raycast, rayBox, boxBlocked } from './physics.js';
 import { sfx } from './audio.js';
 import {
+  holdInHand,
   MOB_TYPES, MODELS, humanoid, rect, px, eyes, quadLegs, players, dist3, lightAt, smoke, flame, explode, Entities,
 } from './entities.js';
 import { CH } from './constants.js';
@@ -134,13 +135,7 @@ Object.assign(MODELS, {
 });
 
 // ---------------------------------------------------------------- shared helpers
-function holdItem(m, key, scale = 12) {
-  const it = itemModel(ID[key]);
-  it.scale.setScalar(scale);
-  it.position.set(0, -10, 2);
-  it.rotation.set(0, Math.PI / 2, Math.PI / 4);
-  m.model.parts.arm1.add(it);
-}
+const holdItem = (m, key, scale = 12) => holdInHand(m.model, ID[key], scale);
 const scaled = (s) => (m) => { m.model.inner.scale.setScalar(s / 16); m.baseScale = s / 16; };
 
 // Common start of a custom-AI update; false once the mob is dead (and its death is handled)

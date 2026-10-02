@@ -76,6 +76,18 @@ async function accountNamed(name) {
   if (a) addAccount(a);
   return a;
 }
+// Which worlds are in an account's list ({ world: hidden }), kept in memory once read
+const members = new Map();
+async function memberList(account) {
+  if (!members.has(account)) members.set(account, await store.memberWorlds(account));
+  return members.get(account);
+}
+async function setMember(world, account, hidden) {
+  const mine = await memberList(account);
+  if (mine[world] === hidden) return;
+  await store.setMember(world, account, hidden);
+  mine[world] = hidden;
+}
 async function worldMeta(id) {
   if (worlds.has(id)) return worlds.get(id);
   const m = ID_RE.test(id) ? await store.getMeta(id) : null;
@@ -188,9 +200,17 @@ const server = http.createServer(async (req, res) => {
       json(res, 200, { ok: true });
       return;
     }
+    // Your online worlds: the ones you made, and the ones whose link you have opened (nobody else's)
     if (p === '/api/worlds' && req.method === 'GET') {
-      for (const m of await store.list().catch(() => [])) if (!m.id.includes('~') && !worlds.has(m.id)) worlds.set(m.id, m);   // made on the other copy during an update
-      const list = [...worlds.values()].map((m) => ({ ...m, players: playersIn(m.id) })).sort((a, b) => (b.updated || 0) - (a.updated || 0));
+      const who = await accountFrom(bearer(req));
+      let list = [];
+      if (who) {
+        for (const m of await store.list().catch(() => [])) if (!m.id.includes('~') && !worlds.has(m.id)) worlds.set(m.id, m);   // made on the other copy during an update
+        const mine = await store.memberWorlds(who.id);   // fresh, in case another copy of the server changed it
+        members.set(who.id, mine);
+        list = [...worlds.values()].filter((m) => m.owner === who.id || mine[m.id] === false)
+          .map((m) => ({ ...m, players: playersIn(m.id), mine: m.owner === who.id || !m.owner })).sort((a, b) => (b.updated || 0) - (a.updated || 0));
+      }
       json(res, 200, { permanent: store.permanent, storage: store.kind, build: BUILD, worlds: list });
       return;
     }
@@ -204,6 +224,7 @@ const server = http.createServer(async (req, res) => {
       const meta = { id: newId(), name, seed, mode, created: Date.now(), updated: Date.now(), v: 0, owner: who.id, ownerName: who.name };
       await store.putMeta(meta);
       worlds.set(meta.id, meta);
+      await setMember(meta.id, who.id, false);
       json(res, 201, meta);
       return;
     }
@@ -214,12 +235,18 @@ const server = http.createServer(async (req, res) => {
       if (!who) { json(res, 401, { error: 'Sign in first.' }); return; }
       const wm = await worldMeta(id);
       if (!wm) { json(res, 404, { error: 'No such world' }); return; }
-      if (wm.owner && wm.owner !== who.id) { json(res, 403, { error: `Only ${wm.ownerName || 'its creator'} can delete this world.` }); return; }
+      if (wm.owner && wm.owner !== who.id) {
+        // someone else's world just leaves your list (its link still works)
+        await setMember(id, who.id, true);
+        json(res, 200, { ok: true, removed: true });
+        return;
+      }
       if (playersIn(id)) { json(res, 409, { error: 'Someone is playing in that world right now' }); return; }
       for (const d of DIMS) { const k = roomKey(id, d); await store.del(k); saves.delete(k); dimMetas.delete(k); }
       await store.delPlayers(id);
       worlds.delete(id);
       for (const k of [...records.keys()]) if (k.startsWith(id + '|')) records.delete(k);
+      for (const m of members.values()) delete m[id];
       json(res, 200, { ok: true });
       return;
     }
@@ -364,6 +391,8 @@ async function enterWorld(ws, m) {
     restored.add(id);
     useLocal = true;
   }
+  // opening a world (its link) puts it in your list
+  await setMember(id, acc.id, false);
   // your own record in this world; if the server lost it too, the copy your browser kept
   let me = await getRecord(id, acc.id);
   const mine = m.mine && typeof m.mine === 'object' && !Array.isArray(m.mine) && JSON.stringify(m.mine).length < 65536 ? m.mine : null;

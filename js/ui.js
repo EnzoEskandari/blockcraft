@@ -362,7 +362,7 @@ export class UI {
     for (const w of G.game.localOnlineWorlds()) if (!known.has(w.id)) this.online.push({ ...w, local: true });
     list.innerHTML = '';
     if (!this.online.some((w) => w.id === this.selectedOnline)) this.selectedOnline = this.online.length ? this.online[0].id : null;
-    if (!this.online.length) list.appendChild(h('p', 'empty', 'No online worlds yet. Create one, then send your friends its link.'));
+    if (!this.online.length) list.appendChild(h('p', 'empty', 'No online worlds yet. Create one, or open a friend’s link to add theirs here.'));
     for (const w of this.online) {
       const row = h('button', 'world-row');
       row.type = 'button';
@@ -393,6 +393,8 @@ export class UI {
   syncOnlineButtons() {
     const off = !this.selectedOnline || !!this.busy;
     for (const id of ['b-join', 'b-copy-link', 'b-delete-online']) $(id).disabled = off;
+    const w = (this.online || []).find((x) => x.id === this.selectedOnline);
+    $('b-delete-online').textContent = w && !w.mine && !w.local ? 'Remove' : 'Delete';
     $('b-new-online').disabled = !!this.busy;
   }
 
@@ -469,16 +471,23 @@ export class UI {
     }
   }
 
+  // Your own worlds can be deleted for everyone; anyone else's only leave your list
   askDeleteOnline() {
     const w = (this.online || []).find((x) => x.id === this.selectedOnline);
     if (!w) return;
-    $('online-delete-name').textContent = w.name;
+    $('online-delete-text').textContent = w.local ? `Forget “${w.name}”? It is only saved in this browser.`
+      : w.mine ? `Delete “${w.name}” for everyone? It will be gone for good.`
+        : `Remove “${w.name}” from your list? Its link will still work if you want to come back.`;
+    $('b-confirm-delete-online').textContent = w.local ? 'Forget' : w.mine ? 'Delete' : 'Remove';
     $('online-delete-confirm').hidden = false;
   }
 
   async confirmDeleteOnline() {
     $('online-delete-confirm').hidden = true;
-    try { await G.game.deleteOnline(this.selectedOnline); this.mpStatus('World deleted.'); } catch (err) { this.mpStatus(err.message); }
+    try {
+      const r = await G.game.deleteOnline(this.selectedOnline);
+      this.mpStatus(r && r.removed ? 'Removed from your list.' : 'World deleted.');
+    } catch (err) { this.mpStatus(err.message); }
     this.buildOnlineList();
   }
 

@@ -223,6 +223,23 @@ const MODELS = {
   ],
 };
 
+// An item in a humanoid model's right hand: the grip in the fist and the blade pointing forward, its
+// flat side seen from the side as in Minecraft (blocks are held as small cubes)
+export function holdInHand(model, id, scale = 10) {
+  const it = itemModel(id);
+  if (it.userData.cube) {
+    it.scale.setScalar(scale * 0.6);
+    it.position.set(0, -10, 1.5);
+    it.rotation.set(0, Math.PI / 4, 0);
+  } else {
+    it.scale.setScalar(scale);
+    it.position.set(0, -10, scale * 0.42);
+    it.rotation.set(0, -Math.PI / 2, -Math.PI / 4);
+  }
+  model.parts.arm0.add(it);
+  return it;
+}
+
 function humanoid(limb, skin, shirt, pants, headPaint, extra = {}) {
   const [lw] = limb;
   const armX = 4 + lw / 2;
