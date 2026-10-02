@@ -208,16 +208,18 @@ const MODELS = {
     });
     return parts;
   },
+  // tall and narrow: four stubby legs, a long body and a big square head with a dark scowl
   boomer: () => [
-    { name: 'body', size: [10, 12, 8], pos: [0, 10, 0], color: MOSS, spots: MOSS2, paint: { front: (g, x, y) => {
-      rect(g, x + 2, y + 3, 2, 2, [255, 150, 30]); rect(g, x + 6, y + 3, 2, 2, [255, 150, 30]);
-      px(g, x + 2, y + 3, [255, 230, 120]); px(g, x + 6, y + 3, [255, 230, 120]);
-      rect(g, x + 2, y + 7, 6, 2, [28, 38, 24]);
-      for (let i = 2; i < 8; i += 2) px(g, x + i, y + 6, [28, 38, 24]);
-      px(g, x + 3, y + 9, [28, 38, 24]); px(g, x + 6, y + 9, [28, 38, 24]);
+    ...quadLegs([4, 6, 4], [-2, 2], 6, [-4, 4], [80, 120, 60], { all: (g, x, y, w, h) => rect(g, x, y + h - 1, w, 1, [52, 80, 40]) }),
+    { name: 'body', size: [8, 12, 4], pos: [0, 12, 0], color: MOSS, spots: MOSS2 },
+    { name: 'head', size: [8, 8, 8], pos: [0, 18, 0], off: [0, 4, 0], color: MOSS, spots: MOSS2, paint: { front: (g, x, y) => {
+      const dark = [24, 34, 20];
+      rect(g, x + 1, y + 2, 2, 2, dark); rect(g, x + 5, y + 2, 2, 2, dark);
+      px(g, x + 1, y + 2, [255, 150, 30]); px(g, x + 6, y + 2, [255, 150, 30]);
+      rect(g, x + 3, y + 4, 2, 2, dark);
+      rect(g, x + 2, y + 5, 4, 2, dark);
+      px(g, x + 2, y + 7, dark); px(g, x + 5, y + 7, dark);
     } } },
-    { name: 'tuft', size: [4, 3, 4], pos: [0, 17.5, 0], color: [62, 102, 46] },
-    ...quadLegs([4, 4, 4], [-3, 3], 4, [-2, 2], [80, 110, 60]),
   ],
 };
 
@@ -235,6 +237,35 @@ function humanoid(limb, skin, shirt, pants, headPaint, extra = {}) {
 }
 
 const modelCache = new Map();
+// Armour worn over a player model: [helmet, chestplate, leggings, boots] item ids (0 for none)
+const ARMOR_COLORS = { leather: [150, 94, 58], chainmail: [134, 136, 142], iron: [214, 214, 218], golden: [238, 202, 64], diamond: [92, 220, 212] };
+function armorParts(ids) {
+  const out = [];
+  ids.forEach((id, slot) => {
+    const it = id && ITEMS[id];
+    if (!it || !it.armor) return;
+    const c = ARMOR_COLORS[it.key.split('_')[0]] || ARMOR_COLORS.iron;
+    const dark = c.map((v) => v * 0.68);
+    const trim = { all: (g, x, y, w, h) => { rect(g, x, y + h - 1, w, 1, dark); if (it.key.startsWith('chainmail')) for (let i = 0; i < w; i += 2) rect(g, x + i, y, 1, h, dark); } };
+    const part = (name, parent, size, pos) => out.push({ name, parent, size, pos, color: c, paint: trim, noise: 0.05 });
+    if (slot === 0) {
+      part('helmet', 'head', [9, 4.4, 9], [0, 6.4, 0]);
+    } else if (slot === 1) {
+      part('chest', 'body', [9, 12.6, 5], [0, 0, 0]);
+      part('pad0', 'arm0', [5, 5, 5], [0, -0.4, 0]);
+      part('pad1', 'arm1', [5, 5, 5], [0, -0.4, 0]);
+    } else if (slot === 2) {
+      part('belt', 'body', [8.8, 3, 4.8], [0, -4.6, 0]);
+      part('pants0', 'leg0', [4.8, 9, 4.8], [0, -4.5, 0]);
+      part('pants1', 'leg1', [4.8, 9, 4.8], [0, -4.5, 0]);
+    } else {
+      part('boot0', 'leg0', [5, 4, 5], [0, -10.2, 0]);
+      part('boot1', 'leg1', [5, 4, 5], [0, -10.2, 0]);
+    }
+  });
+  return out;
+}
+
 function modelTemplate(type, variant) {
   const key = type + ':' + (variant || 0);
   if (modelCache.has(key)) return modelCache.get(key);
@@ -257,7 +288,7 @@ function modelTemplate(type, variant) {
   const canvas = document.createElement('canvas');
   canvas.width = W; canvas.height = H;
   const g = canvas.getContext('2d');
-  const r = mulberry32(key.length * 977 + (variant || 0));
+  const r = mulberry32(key.length * 977 + (parseInt(variant, 10) || 0));
   for (const p of parts) {
     p.rects.forEach(([x, y, w, h], f) => {
       const nz = p.noise ?? 0.07;
@@ -408,11 +439,12 @@ Object.assign(MODELS, {
     { name: 'wing1b', parent: 'wing1', size: [6, 1, 7], pos: [6, 0, 0], off: [3, 0, -1], color: [42, 50, 88] },
     { name: 'tail', size: [3, 2, 6], pos: [0, 4, -4.5], off: [0, 0, -3], color: [52, 62, 102] },
   ],
-  // Other players in multiplayer; the variant picks the shirt colour
+  // Other players in multiplayer. The variant is "shirt colour|worn armour item ids", e.g. "2|0,301,0,0".
   player: (v) => {
     const shirts = [[38, 138, 150], [178, 60, 52], [70, 150, 60], [206, 160, 40], [120, 70, 160], [220, 110, 40], [60, 90, 180], [200, 90, 150]];
     const hair = [70, 46, 30];
-    return humanoid([4, 12, 4], [198, 146, 112], shirts[(v || 0) % shirts.length], [52, 58, 132], {
+    const [shirt, worn] = String(v ?? 0).split('|');
+    return humanoid([4, 12, 4], [198, 146, 112], shirts[(+shirt || 0) % shirts.length], [52, 58, 132], {
       front: (g, x, y) => {
         rect(g, x, y, 8, 2, hair); px(g, x, y + 2, hair); px(g, x + 7, y + 2, hair);
         px(g, x + 1, y + 4, [240, 240, 240]); px(g, x + 2, y + 4, [60, 80, 160]); px(g, x + 5, y + 4, [60, 80, 160]); px(g, x + 6, y + 4, [240, 240, 240]);
@@ -422,7 +454,7 @@ Object.assign(MODELS, {
       back: (g, x, y, w, h) => rect(g, x, y, w, h - 2, hair),
       px: (g, x, y, w) => rect(g, x, y, w, 3, hair),
       nx: (g, x, y, w) => rect(g, x, y, w, 3, hair),
-    });
+    }).concat(armorParts(worn ? worn.split(',').map(Number) : []));
   },
   iron_golem: () => [
     { name: 'head', size: [8, 10, 8], pos: [0, 33, -2], off: [0, 5, 0], color: [204, 198, 188], paint: { front: (g, x, y) => {
@@ -452,13 +484,13 @@ export const MOB_TYPES = {
   skeleton: { name: 'Skeleton', hp: 20, w: 0.6, h: 1.99, speed: 2.5, hostile: true, ranged: 'bow', burns: true, sound: 'skeleton', pitch: 1.3, drops: [drop('bone', 0, 2), drop('arrow', 0, 2)], anim: 'human' },
   stray: { name: 'Stray', hp: 20, w: 0.6, h: 1.99, speed: 2.5, hostile: true, ranged: 'bow', slowArrows: true, burns: true, sound: 'skeleton', pitch: 1.1, drops: [drop('bone', 0, 2), drop('arrow', 0, 2)], anim: 'human' },
   spider: { name: 'Spider', hp: 16, w: 1.3, h: 0.9, speed: 3.2, hostile: true, damage: 2, climbs: true, sound: 'spider', pitch: 1.0, drops: [drop('string', 0, 2)], anim: 'spider' },
-  boomer: { name: 'Boomer', hp: 20, w: 0.7, h: 1.2, speed: 2.3, hostile: true, explodes: true, sound: 'boomer', pitch: 0.9, drops: [drop('gunpowder', 0, 2)], anim: 'quad' },
+  boomer: { name: 'Boomer', hp: 20, w: 0.6, h: 1.7, speed: 2.3, hostile: true, explodes: true, sound: 'boomer', pitch: 0.9, drops: [drop('gunpowder', 0, 2)], anim: 'quad' },
   witch: { name: 'Witch', hp: 26, w: 0.6, h: 1.95, speed: 1.9, hostile: true, potions: true, sound: 'witch', pitch: 1.2, drops: [drop('redstone', 0, 2), drop('gunpowder', 0, 2), drop('stick', 0, 2)], anim: 'villager' },
   slime: { name: 'Slime', hp: 16, w: 2, h: 2, speed: 2.2, hostile: true, slime: true, sound: 'slime', pitch: 1, drops: [], anim: 'slime' },
-  shade: { name: 'Shade', hp: 40, w: 0.6, h: 2.6, speed: 3.4, hostile: true, neutral: true, damage: 7, teleports: true, sound: 'shade', pitch: 0.8, drops: [drop('shade_pearl', 0, 1)], anim: 'shade' },
-  gloomwing: { name: 'Gloomwing', hp: 20, w: 0.9, h: 0.5, speed: 7, hostile: true, flies: true, burns: true, damage: 2, sound: 'gloomwing', pitch: 1, drops: [drop('gloom_membrane', 0, 1)], anim: 'wing' },
+  shade: { name: 'Shade', hp: 40, w: 0.6, h: 2.6, speed: 3.4, hostile: true, neutral: true, damage: 6, teleports: true, sound: 'shade', pitch: 0.8, drops: [drop('shade_pearl', 0, 1)], anim: 'shade' },
+  gloomwing: { name: 'Gloomwing', hp: 20, w: 0.9, h: 0.5, speed: 7, hostile: true, flies: true, sight: 32, burns: true, damage: 2, sound: 'gloomwing', pitch: 1, drops: [drop('gloom_membrane', 0, 1)], anim: 'wing' },
   pillager: { name: 'Pillager', hp: 24, w: 0.6, h: 1.95, speed: 2.3, hostile: true, always: true, ranged: 'crossbow', persistent: true, sound: 'illager', pitch: 1, drops: [drop('arrow', 0, 2)], anim: 'illager' },
-  vindicator: { name: 'Vindicator', hp: 24, w: 0.6, h: 1.95, speed: 2.7, hostile: true, always: true, damage: 11, huntsVillagers: true, persistent: true, sound: 'illager', pitch: 0.85, drops: [drop('emerald', 0, 1)], anim: 'illager' },
+  vindicator: { name: 'Vindicator', hp: 24, w: 0.6, h: 1.95, speed: 2.7, hostile: true, always: true, damage: 8, huntsVillagers: true, persistent: true, sound: 'illager', pitch: 0.85, drops: [drop('emerald', 0, 1)], anim: 'illager' },
   iron_golem: { name: 'Iron Golem', hp: 100, w: 1.4, h: 2.7, speed: 1.5, golem: true, damage: 12, persistent: true, sound: 'golem', pitch: 0.5, drops: [drop('iron_ingot', 3, 5), drop('poppy', 0, 2)], anim: 'golem' },
   villager: { name: 'Villager', hp: 20, w: 0.6, h: 1.95, speed: 1.5, villager: true, persistent: true, sound: 'villager', pitch: 1, drops: [], anim: 'villager' },
 };
@@ -637,15 +669,21 @@ class Mob {
     if (def.neutral && !this.angry) return null;
     if (this.type === 'spider' && G.daylight >= 0.55 && !this.provoked) return null;
     const night = G.time > 0.52 && G.time < 0.98;
+    // Monsters notice players they can see nearby, and keep after one they are chasing a little further
+    const range = def.sight || (def.flies ? 32 : def.always ? 16 : 12);
+    const notice = (q, r) => {
+      if (q === this.target) consider(q, r * 1.6);
+      else if (dist3(this, q) < r && this.canSee(q)) consider(q, r);
+    };
     for (const p of ps) {
       if (def.swims) {
         const wet = G.world.getBlock(Math.floor(p.pos.x), Math.floor(p.pos.y + 0.5), Math.floor(p.pos.z)) === B.water;
-        if (wet || night) consider(p, 12);
-      } else consider(p, def.flies ? 64 : def.always ? 24 : 20);
+        if (wet || night) notice(p, 10);
+      } else notice(p, range);
     }
     if (def.zombieLike || def.huntsVillagers) for (const m of mobs) if (!m.dead && m.def.villager) consider(m, 16);
     const a = this.attacker;
-    if (a && !a.dead && !a.removed && !a.gone && (a.def || (a.isPlayer && a.mode === 'survival'))) consider(a, 24);
+    if (a && !a.dead && !a.removed && !a.gone && (a.def || (a.isPlayer && a.mode === 'survival'))) consider(a, 20);
     return best;
   }
 
@@ -826,11 +864,11 @@ class Mob {
         const reach = this.hw + (t.hw || 0.3) + 0.6;
         if (dist < reach && Math.abs(dy) < 1.8 && this.attackCd <= 0) {
           this.attackCd = def.golem ? 1.2 : 1;
-          const dmg = def.golem ? 7 + Math.floor(rand() * 14) : def.damage;
+          const dmg = def.golem ? (t.isPlayer ? 4 + Math.floor(rand() * 8) : 7 + Math.floor(rand() * 14)) : def.damage;
           this.hit(t, dmg);
           if (def.golem) { if (t.isPlayer) t.vel.y = 9; else t.vel.y = 10; sfx('golem', this.pos); }
           if (def.launch) t.vel.y = def.launch;
-          if (def.witherHit && t.isPlayer) t.addEffect('wither', 10);
+          if (def.witherHit && t.isPlayer) t.addEffect('wither', 6);
           if (def.zombieLike && this.model.parts.arm0) this.model.parts.arm0.rotation.x = this.model.parts.arm1.rotation.x = -2.1;
           if (this.type === 'vindicator') this.model.parts.arm1.rotation.x = -2.6;
         }

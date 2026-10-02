@@ -730,7 +730,7 @@ export class Player {
     const hit = raycast(w, r.ox, r.oy, r.oz, r.dx, r.dy, r.dz, 5, (id) => id === B.water || id === B.lava || BLOCKS[id].solid || !BLOCKS[id].replaceable);
     if (!hit) return false;
     if (held.id === ID.bucket) {
-      if ((hit.id !== B.water && hit.id !== B.lava) || (w.getMeta(hit.x, hit.y, hit.z) & 7) !== 0) return false;
+      if ((hit.id !== B.water && hit.id !== B.lava) || w.getMeta(hit.x, hit.y, hit.z) !== 0) return false;   // only a source fills a bucket
       w.setBlock(hit.x, hit.y, hit.z, 0);
       if (!this.creative) {
         const full = hit.id === B.water ? ID.water_bucket : ID.lava_bucket;
@@ -795,6 +795,7 @@ export class Player {
     if (this.burning > 0) {
       this.burning -= dt;
       this.fireTick += dt;
+      if (Math.random() < dt * 4) sfx('burn', null, { vol: 0.7 });
       if (this.fireTick >= (this.inLava || inFire ? 0.5 : 1)) { this.fireTick = 0; this.invul = 0; this.hurt(this.inLava ? 4 : 1, null, null, this.inLava ? 'lava' : 'fire'); }
       if (Math.random() < dt * 10) G.entities.particles.spawn(this.pos.x + (Math.random() - 0.5) * 0.6, this.pos.y + Math.random() * 1.6, this.pos.z + (Math.random() - 0.5) * 0.6, 0, 1, 0, 1, 0.6, 0.15, 0.12, 0.4, -0.05);
     }
@@ -856,6 +857,8 @@ export class Player {
     if (this.dead) return;
     if (this.creative && kind !== 'void') return;
     if (this.invul > 0 && kind !== 'void') return;
+    // monsters hit softer than in Minecraft's normal difficulty (its "easy" amounts)
+    if (kind === 'mob' || kind === 'arrow' || kind === 'fireball' || kind === 'explosion') amount = Math.min(amount, amount / 2 + 1);
     const bypass = ['fall', 'drown', 'starve', 'void', 'poison', 'magic', 'pearl', 'wither'].includes(kind);
     if (!bypass) {
       const { pts, tough } = this.armorPoints();

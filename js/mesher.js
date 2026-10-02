@@ -7,6 +7,7 @@ import { BLOCKS, RENDER, B } from './blocks.js';
 const RW = 48, RA = RW * RW, RH = CH + 2;   // region: 48x48 columns, one pad layer below and above
 const RSIZE = RA * RH;
 const rB = new Uint8Array(RSIZE);
+const rM = new Uint8Array(RSIZE);   // block meta (liquid levels)
 const rS = new Uint8Array(RSIZE);
 const rL = new Uint8Array(RSIZE);
 const Q = new Int32Array(RSIZE);
@@ -14,7 +15,7 @@ const topL = new Int16Array(RA);
 
 const OPAQUE = new Uint8Array(256), SKYPASS = new Uint8Array(256), ATTEN = new Uint8Array(256);
 const EMIT = new Uint8Array(256), RTYPE = new Uint8Array(256), CULLSAME = new Uint8Array(256);
-const TRANS = new Uint8Array(256), TINT = new Uint8Array(256), FACING = new Uint8Array(256);
+const TRANS = new Uint8Array(256), TINT = new Uint8Array(256), FACING = new Uint8Array(256), SOLID = new Uint8Array(256);
 const FACE = new Uint8Array(256 * 6), FRONT = new Uint8Array(256);
 
 const BIOME_TINT = [
@@ -55,6 +56,7 @@ export function initMesher() {
     if (!b) continue;
     const i = b.id;
     OPAQUE[i] = b.opaque ? 1 : 0;
+    SOLID[i] = b.solid ? 1 : 0;
     ATTEN[i] = b.atten;
     SKYPASS[i] = !b.opaque && !b.atten ? 1 : 0;
     EMIT[i] = b.light;
@@ -203,12 +205,14 @@ export function computeLight(world, chunk) {
       for (let y = 0; y <= yTop; y++) for (let z = 0; z < 16; z++) rB.fill(B.stone, (y + 1) * RA + (oz + z) * RW + ox, (y + 1) * RA + (oz + z) * RW + ox + 16);
       continue;
     }
-    const src = ch.blocks;
+    const src = ch.blocks, msrc = ch.meta;
     for (let y = 0; y <= yTop; y++) {
       const base = (y + 1) * RA + oz * RW + ox;
       for (let z = 0; z < 16; z++) {
         const s = (y << 8) | (z << 4), d = base + z * RW;
         for (let x = 0; x < 16; x++) rB[d + x] = src[s + x];
+        if (msrc) for (let x = 0; x < 16; x++) rM[d + x] = msrc[s + x];
+        else rM.fill(0, d, d + 16);
       }
     }
   }
@@ -293,6 +297,32 @@ function cubeFace(buf, x, y, z, f, layer, ri, tr, tg, tb) {
 }
 
 const WATER = B.water;
+
+// Liquid surface height (in 1/16 block) of a region cell for the corner averaging: full under more of the
+// same liquid, 8/9 for a source or falling block, less the further it has flowed; 0 for open space and -1
+// for a solid block (left out)
+function liquidH(i, id) {
+  const b = rB[i];
+  if (b === id) {
+    if (rB[i + RA] === id) return 16;
+    const m = rM[i];
+    return (m === 0 || m & 8 ? 8 : 8 - (m & 7)) * 16 / 9;
+  }
+  return SOLID[b] ? -1 : 0;
+}
+// Minecraft's corner height: deep (source-like) neighbours weigh ten times as much as shallow ones
+function cornerH(hc, ha, hb, diag, id) {
+  if (ha >= 16 || hb >= 16) return 16;
+  let sum = 0, wt = 0;
+  const add = (h) => { if (h >= 12.8) { sum += h * 10; wt += 10; } else if (h >= 0) { sum += h; wt += 1; } };
+  if (ha > 0 || hb > 0) {
+    const hd = liquidH(diag, id);
+    if (hd >= 16) return 16;
+    add(hd);
+  }
+  add(hc); add(ha); add(hb);
+  return wt ? sum / wt : hc;
+}
 
 export function buildChunkMesh(world, chunk) {
   computeLight(world, chunk);
@@ -387,12 +417,22 @@ export function buildChunkMesh(world, chunk) {
           // water is see-through and drawn with the transparent pass; lava is opaque
           const buf = TRANS[id] || id === WATER ? TB : OB;
           const layer = FACE[id * 6];
-          const level = meta ? meta[(y << 8) | (z << 4) | x] & 7 : 0;
-          const h = rB[ri + RA] === id ? 16 : Math.max(3, 14 - level * 2);
+          // The surface height at each corner is shared by the four blocks around it (as in Minecraft),
+          // so neighbouring water meets with no gaps and slopes down the way it flows.
+          let h00 = 16, h10 = 16, h01 = 16, h11 = 16;
+          if (rB[ri + RA] !== id) {
+            const hc = liquidH(ri, id);
+            const hxm = liquidH(ri - 1, id), hxp = liquidH(ri + 1, id), hzm = liquidH(ri - RW, id), hzp = liquidH(ri + RW, id);
+            h00 = cornerH(hc, hxm, hzm, ri - 1 - RW, id);
+            h10 = cornerH(hc, hxp, hzm, ri + 1 - RW, id);
+            h01 = cornerH(hc, hxm, hzp, ri - 1 + RW, id);
+            h11 = cornerH(hc, hxp, hzp, ri + 1 + RW, id);
+          }
           for (let f = 0; f < 6; f++) {
             const nb = rB[ri + N_OFF[f]];
-            if (nb === id || OPAQUE[nb]) continue;
+            if (nb === id || (OPAQUE[nb] && f !== 2)) continue;
             if (f === 3 && y === 0) continue;
+            if (f === 2 && OPAQUE[nb] && h00 + h10 + h01 + h11 >= 64) continue;
             const bi = ri + N_OFF[f];
             const sky = Math.max(rS[bi], rS[ri]) * 17, blk = Math.max(rL[bi], rL[ri]) * 17;
             const m = FACES[f].shade * 255;
@@ -400,8 +440,8 @@ export function buildChunkMesh(world, chunk) {
             buf.ensure(4);
             for (let k = 0; k < 4; k++) {
               const c = cs[k];
-              const py = c[1] ? h : 0;
-              buf.vert((x + c[0]) * 16, y * 16 + py, (z + c[2]) * 16, UV[k][0], f === 2 || f === 3 ? UV[k][1] : (UV[k][1] ? h : 0), layer, m, m, m, sky, blk);
+              const py = c[1] ? (c[0] ? (c[2] ? h11 : h10) : (c[2] ? h01 : h00)) : 0;
+              buf.vert((x + c[0]) * 16, y * 16 + py, (z + c[2]) * 16, UV[k][0], f === 2 || f === 3 ? UV[k][1] : (UV[k][1] ? py : 0), layer, m, m, m, sky, blk);
             }
             buf.quad(false, false);
           }

@@ -1,7 +1,7 @@
 // Boot, main loop, chunk streaming, block updates, saving.
 import { G, loadSettings, store, load, remove, isTouchDevice } from './game.js';
 import { buildTextures, buildIcons } from './textures.js';
-import { BLOCKS, B, ID, SMELTING, fuelValue, maxStack, canHarvest } from './blocks.js';
+import { BLOCKS, B, ID, RENDER, SMELTING, fuelValue, maxStack, canHarvest } from './blocks.js';
 import { World, ckey, CH } from './world.js';
 import { initMesher, buildChunkMesh, computeLight } from './mesher.js';
 import { R, initRenderer, setChunkMeshes, disposeChunkMeshes, updateSky, render } from './render.js';
@@ -29,7 +29,7 @@ const S = {
   lastCX: null, lastCZ: null,
   urgent: new Set(),
   updates: [],
-  water: [],
+  water: new Map(),   // liquid blocks due for another look: "x,y,z" -> { x, y, z, t }
   saplings: new Map(),
   saveTimer: 0,
 };
@@ -159,13 +159,9 @@ function onBlockChange(x, y, z, oldId, newId) {
   if (G.net) G.net.blockChanged(x, y, z, newId);
   if (isGuest()) return;   // falling sand, water and the rest happen on the host
   S.updates.push(x, y, z);
-  const liquid = (id) => id === B.water || id === B.lava;
-  if (newId === 0 || liquid(newId) || liquid(oldId)) {
-    // lava creeps slowly (faster in the Nether), water quickly
-    const lavaNear = newId === B.lava || oldId === B.lava;
-    const t = G.clock + (lavaNear ? (G.dim === 'nether' ? 0.5 : 1.5) : 0.25);
-    S.water.push([x, y, z, t], [x, y - 1, z, t], [x + 1, y, z, t], [x - 1, y, z, t], [x, y, z + 1, t], [x, y, z - 1, t]);
-  }
+  // any change can start, stop or turn a flow: the liquid here and next to it takes another look
+  scheduleLiquid(w, x, y, z);
+  for (const [dx, dy, dz] of NEIGHBORS6) scheduleLiquid(w, x + dx, y + dy, z + dz);
   // breaking a portal block or its frame collapses the whole portal
   if ((oldId === B.obsidian || oldId === B.nether_portal) && newId !== oldId && !S.collapsing) {
     S.collapsing = true;
@@ -209,53 +205,169 @@ function processUpdates() {
   }
 }
 
-// Flowing liquids: sources spread sideways (water 4 blocks, lava 2, or 4 in the Nether) and fall straight
-// down. Where water meets lava the lava hardens: a lava source into obsidian, flowing lava into cobblestone.
-function processWater() {
-  const w = G.world;
-  if (!S.water.length) return;
-  const keep = [];
-  let n = 0;
-  for (const e of S.water) {
-    if (e[3] > G.clock || n > 200) { keep.push(e); continue; }
-    n++;
-    const [x, y, z] = e;
-    if (y < 1 || y >= CH - 1) continue;
-    if (!w.getChunk(x >> 4, z >> 4)) continue;
-    const id = w.getBlock(x, y, z);
-    if (id === B.water || id === B.lava) { mixLiquids(w, x, y, z); continue; }
-    if (id !== 0 && !BLOCKS[id].replaceable) continue;
-    for (const liquid of [B.water, B.lava]) {
-      const range = liquid === B.water ? 4 : w.dim === 'nether' ? 4 : 2;
-      let level = -1;
-      if (w.getBlock(x, y + 1, z) === liquid) level = 1;
-      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        if (w.getBlock(x + dx, y, z + dz) !== liquid) continue;
-        const l = w.getMeta(x + dx, y, z + dz) & 7;
-        const underN = w.getBlock(x + dx, y - 1, z + dz);
-        if (l < range && (underN !== 0 || l === 0)) level = level < 0 ? l + 1 : Math.min(level, l + 1);
-      }
-      if (level >= 0) { w.setBlock(x, y, z, liquid, level); mixLiquids(w, x, y, z); break; }
-    }
-  }
-  S.water = keep;
+// ---------------------------------------------------------------- liquids
+// As in Minecraft: a liquid block is a source (meta 0), flowing (meta 1-7, how far it is from a source)
+// or falling (meta 8, pouring down from above). Liquid falls first; on the ground it spreads towards the
+// nearest drop within a few blocks (everywhere if there is none). A flowing block only stays while a
+// stronger neighbour or liquid above feeds it, so anything cut off from its source drains away. Water runs
+// 7 blocks; lava 3 and slowly (7 and faster in the Nether). Two water sources make a third between them.
+const FALLING = 8;
+const SIDES = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+const isLiquid = (id) => id === B.water || id === B.lava;
+const liquidRules = (id) => (id === B.water ? { drop: 1, slope: 4, delay: 0.25 }
+  : G.dim === 'nether' ? { drop: 1, slope: 4, delay: 0.5 } : { drop: 2, slope: 2, delay: 1.5 });
+const amountOf = (meta) => (meta === 0 || meta & FALLING ? 8 : 8 - (meta & 7));
+
+// Washed away by flowing liquid: air, grass, flowers, crops, torches, fire
+function washable(id) {
+  if (id === 0) return true;
+  const d = BLOCKS[id];
+  return !d.solid && !isLiquid(id) && (d.replaceable || d.render === RENDER.CROSS || d.render === RENDER.TORCH);
+}
+// Can this liquid move into the cell (or update it, if it is a weaker flow of the same liquid)?
+function openFor(w, x, y, z, id) {
+  const b = w.getBlock(x, y, z);
+  return b === id ? w.getMeta(x, y, z) !== 0 : washable(b);
 }
 
+function scheduleLiquid(w, x, y, z) {
+  const id = w.getBlock(x, y, z);
+  if (!isLiquid(id)) return;
+  const k = x + ',' + y + ',' + z;
+  if (!S.water.has(k)) S.water.set(k, { x, y, z, t: G.clock + liquidRules(id).delay });
+}
+
+function processWater() {
+  const w = G.world;
+  // flowing liquid in saved edits takes a look once its chunk loads (it may have been cut off)
+  if (w.liquidLoaded && w.liquidLoaded.length) { for (const [x, y, z] of w.liquidLoaded) scheduleLiquid(w, x, y, z); w.liquidLoaded.length = 0; }
+  if (!S.water.size) return;
+  const due = [];
+  for (const [k, e] of S.water) {
+    if (e.t > G.clock) continue;
+    due.push(e);
+    S.water.delete(k);
+    if (due.length >= 400) break;
+  }
+  for (const e of due) {
+    if (e.y < 1 || e.y >= CH - 1 || !w.getChunk(e.x >> 4, e.z >> 4)) continue;
+    liquidTick(w, e.x, e.y, e.z);
+  }
+}
+
+function liquidTick(w, x, y, z) {
+  const id = w.getBlock(x, y, z);
+  if (!isLiquid(id)) return;
+  const meta = w.getMeta(x, y, z);
+  if (meta !== 0) {
+    const want = settledLevel(w, x, y, z, id);
+    if (want < 0) { w.setBlock(x, y, z, 0); return; }
+    if (want !== meta) { w.setBlock(x, y, z, id, want); return; }   // the change brings it back for another look
+  }
+  if (mixLiquids(w, x, y, z)) return;
+  spreadLiquid(w, x, y, z, id, meta);
+}
+
+// What a flowing block should be now, from what feeds it (-1: nothing does, it dries up)
+function settledLevel(w, x, y, z, id) {
+  let best = 0, sources = 0;
+  for (const [dx, dz] of SIDES) {
+    if (w.getBlock(x + dx, y, z + dz) !== id) continue;
+    const m = w.getMeta(x + dx, y, z + dz);
+    if (m === 0) sources++;
+    best = Math.max(best, amountOf(m));
+  }
+  if (id === B.water && sources >= 2) {
+    const below = w.getBlock(x, y - 1, z);
+    if (BLOCKS[below].solid || (below === id && w.getMeta(x, y - 1, z) === 0)) return 0;
+  }
+  if (w.getBlock(x, y + 1, z) === id) return FALLING;
+  const amt = best - liquidRules(id).drop;
+  return amt <= 0 ? -1 : 8 - amt;
+}
+
+function spreadLiquid(w, x, y, z, id, meta) {
+  const r = liquidRules(id);
+  const source = meta === 0;
+  const below = w.getBlock(x, y - 1, z);
+  if (y > 1 && id === B.lava && below === B.water) {
+    // lava pouring onto water turns the water to stone
+    w.setBlock(x, y - 1, z, B.stone);
+    fizz(x, y - 1, z);
+    return;
+  }
+  if (y > 1 && openFor(w, x, y - 1, z, id)) {
+    flowInto(w, x, y - 1, z, id, FALLING);
+    // only the edge of a lake spills sideways as well as down
+    let around = 0;
+    for (const [dx, dz] of SIDES) if (w.getBlock(x + dx, y, z + dz) === id && w.getMeta(x + dx, y, z + dz) === 0) around++;
+    if (!source || around < 3) return;
+  } else if (!source && below === id) return;   // resting on its own kind: it just joins it
+  const next = meta & FALLING ? r.drop : (meta & 7) + r.drop;
+  if (next > 7) return;
+  for (const [dx, dz] of spreadDirections(w, x, y, z, id, r.slope)) flowInto(w, x + dx, y, z + dz, id, next);
+}
+
+// Liquid heads for the nearest place within `slope` blocks where it can fall; with none in reach it goes everywhere
+function spreadDirections(w, x, y, z, id, slope) {
+  let best = 1000, out = [];
+  for (const [dx, dz] of SIDES) {
+    const nx = x + dx, nz = z + dz;
+    if (!openFor(w, nx, y, nz, id)) continue;
+    const d = openFor(w, nx, y - 1, nz, id) ? 0 : slopeDistance(w, nx, y, nz, id, 1, -dx, -dz, slope);
+    if (d < best) { best = d; out = []; }
+    if (d === best) out.push([dx, dz]);
+  }
+  return out;
+}
+function slopeDistance(w, x, y, z, id, depth, fx, fz, slope) {
+  let best = 1000;
+  for (const [dx, dz] of SIDES) {
+    if (dx === fx && dz === fz) continue;
+    const nx = x + dx, nz = z + dz;
+    if (!openFor(w, nx, y, nz, id)) continue;
+    if (openFor(w, nx, y - 1, nz, id)) return depth;
+    if (depth < slope) best = Math.min(best, slopeDistance(w, nx, y, nz, id, depth + 1, -dx, -dz, slope));
+  }
+  return best;
+}
+
+function flowInto(w, x, y, z, id, meta) {
+  const b = w.getBlock(x, y, z);
+  if (b === id) {
+    const m = w.getMeta(x, y, z);
+    // only ever made stronger: falling beats flowing, and nearer the source beats further
+    if (m === 0 || m === meta || (meta === FALLING ? false : m === FALLING || (m & 7) <= meta)) return;
+  } else if (!washable(b)) return;
+  else if (b !== 0) {
+    if (id === B.water && b !== B.fire) Game.removeBlock(x, y, z, true);
+    else w.setBlock(x, y, z, 0);
+  }
+  w.setBlock(x, y, z, id, meta);
+}
+
+function fizz(x, y, z) {
+  sfx('extinguish', { x: x + 0.5, y: y + 0.5, z: z + 0.5 }, { vol: 0.6 });
+  for (let i = 0; i < 6; i++) G.entities.particles.spawn(x + Math.random(), y + 1, z + Math.random(), 0, 1, 0, 0.7, 0.7, 0.7, 0.15, 0.8, -0.06);
+}
+
+// Lava touched by water from above or the side hardens: a source into obsidian, flowing lava into
+// cobblestone (true if this block changed)
 function mixLiquids(w, x, y, z) {
   const id = w.getBlock(x, y, z);
-  if (id !== B.water && id !== B.lava) return;
-  const other = id === B.water ? B.lava : B.water;
+  if (!isLiquid(id)) return false;
   for (const [dx, dy, dz] of NEIGHBORS6) {
     const nx = x + dx, ny = y + dy, nz = z + dz;
-    if (w.getBlock(nx, ny, nz) !== other) continue;
-    // the lava one of the pair turns to stone
+    if (!isLiquid(w.getBlock(nx, ny, nz)) || w.getBlock(nx, ny, nz) === id) continue;
+    // the lava of the pair, and the water must not be underneath it
     const [lx, ly, lz] = id === B.lava ? [x, y, z] : [nx, ny, nz];
-    const source = (w.getMeta(lx, ly, lz) & 7) === 0;
-    w.setBlock(lx, ly, lz, source ? B.obsidian : B.cobblestone);
-    sfx('extinguish', { x: lx + 0.5, y: ly + 0.5, z: lz + 0.5 }, { vol: 0.6 });
-    for (let i = 0; i < 6; i++) G.entities.particles.spawn(lx + Math.random(), ly + 1, lz + Math.random(), 0, 1, 0, 0.7, 0.7, 0.7, 0.15, 0.8, -0.06);
-    if (id === B.lava) return;
+    const waterY = id === B.lava ? ny : y;
+    if (waterY < ly) continue;
+    w.setBlock(lx, ly, lz, w.getMeta(lx, ly, lz) === 0 ? B.obsidian : B.cobblestone);
+    fizz(lx, ly, lz);
+    if (id === B.lava) return true;
   }
+  return false;
 }
 
 function tickFurnaces(dt) {
@@ -1009,7 +1121,7 @@ function teardown() {
   G.world = null;
   S.urgent.clear();
   S.updates.length = 0;
-  S.water.length = 0;
+  S.water.clear();
   S.saplings.clear();
   G.sleeping = null;
 }

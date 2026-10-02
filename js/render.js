@@ -39,6 +39,7 @@ uniform float uFogFar;
 uniform float uAlphaTest;
 uniform float uGamma;
 uniform float uAmbient;
+uniform float uMoon;
 varying vec3 vUv;
 varying vec3 vCol;
 varying vec2 vLight;
@@ -52,6 +53,8 @@ void main() {
   float b = mix(l / (4.0 - 3.0 * l), l, uGamma);
   b = uAmbient + (1.0 - uAmbient) * b;
   vec3 lc = vec3(b) * mix(vec3(1.0), vec3(1.1, 0.96, 0.8), clamp((blk - sky) * 1.5, 0.0, 1.0));
+  // moonlight is a little blue
+  lc *= mix(vec3(1.0), vec3(0.8, 0.88, 1.15), uMoon * clamp((sky - blk) * 2.0, 0.0, 1.0));
   vec3 col = c.rgb * vCol * lc;
   float f = smoothstep(uFogNear, uFogFar, vDist);
   gl_FragColor = vec4(mix(col, uFogColor, f), c.a);
@@ -61,8 +64,12 @@ export function pixelRatio() {
   return Math.min(window.devicePixelRatio || 1, isTouchDevice ? 1.5 : 2);
 }
 
+// How bright the sky's light looks: nights are dark but you can still find your way (the game itself,
+// e.g. where monsters may spawn, uses the real sky light in G.daylight)
+export const skyLook = (d) => (G.dim === 'nether' ? d : Math.max(d, 0.36 + (d - 0.2) * 0.8));
+
 export function brightness(sky, blk) {
-  const l = Math.max(sky / 15 * G.daylight, blk / 15);
+  const l = Math.max(sky / 15 * skyLook(G.daylight), blk / 15);
   const g = G.settings.gamma;
   const b = (l / (4 - 3 * l)) * (1 - g) + l * g;
   const amb = DIM_LOOK[G.dim || 'overworld'].ambient;
@@ -103,7 +110,8 @@ export function initRenderer(container) {
     uTime: { value: 0 },
     uWaterLayer: { value: TEX.water },
     uLavaLayer: { value: TEX.lava },
-    uAmbient: { value: 0.045 },
+    uAmbient: { value: 0.22 },
+    uMoon: { value: 0 },
   };
   R.shared = shared;
   R.opaqueMat = new THREE.ShaderMaterial({
@@ -457,7 +465,7 @@ const fogCol = new THREE.Color();
 
 // How each dimension looks: the Nether is a red haze lit by lava, the End a dark violet void
 const DIM_LOOK = {
-  overworld: { ambient: 0.045 },
+  overworld: { ambient: 0.22 },   // the darkest cave is dark, not black
   nether: { ambient: 0.32, fog: new THREE.Color(0.2, 0.03, 0.02), near: 0.25, far: 0.75 },
   end: { ambient: 0.28, fog: new THREE.Color(0.06, 0.04, 0.09), near: 0.4, far: 0.95, sky: new THREE.Color(0.05, 0.03, 0.08) },
 };
@@ -485,7 +493,7 @@ export function updateSky(time, dt, underwater, inLava) {
     R.scene.fog.color.copy(fogCol); R.scene.fog.near = near; R.scene.fog.far = far;
     const sh = R.shared;
     sh.uFogColor.value.copy(fogCol); sh.uFogNear.value = near; sh.uFogFar.value = far;
-    sh.uDaylight.value = G.daylight; sh.uGamma.value = G.settings.gamma;
+    sh.uDaylight.value = skyLook(G.daylight); sh.uGamma.value = G.settings.gamma; sh.uMoon.value = 0;
     sh.uTime.value = (sh.uTime.value + dt) % 1000;
     R.sky.visible = true;
     return;
@@ -533,7 +541,8 @@ export function updateSky(time, dt, underwater, inLava) {
   sh.uFogColor.value.copy(fogCol);
   sh.uFogNear.value = near;
   sh.uFogFar.value = far;
-  sh.uDaylight.value = G.daylight;
+  sh.uDaylight.value = skyLook(G.daylight);
+  sh.uMoon.value = 1 - smoothstep(0.45, 0.85, G.daylight);
   sh.uGamma.value = G.settings.gamma;
   sh.uTime.value = (sh.uTime.value + dt) % 1000;
   R.sky.visible = !underwater;

@@ -61,6 +61,7 @@ export class World {
     this.spawned = new Set();         // ckeys of chunks that have had their animals placed
     this.spawners = new Map();        // "x,y,z" -> monster spawner state
     this.flags = {};                  // world events, e.g. the dragon beaten
+    this.liquidLoaded = [];           // flowing liquid in chunks just loaded, for the liquid simulation
   }
 
   getChunk(cx, cz) { return this.chunks.get(ckey(cx, cz)); }
@@ -343,11 +344,14 @@ export class World {
     const edits = this.edits.get(ckey(cx, cz));
     if (edits) {
       for (const [i, v] of edits) {
-        blocks[i] = v & 255;
-        if (v >> 8) {
+        const id = v & 255;
+        blocks[i] = id;
+        if (v >> 8 || chunk.meta) {
           if (!chunk.meta) chunk.meta = new Uint8Array(CS * CS * CH);
           chunk.meta[i] = v >> 8;
         }
+        // flowing water or lava gets another look (it may have been cut off from its source)
+        if (v >> 8 && (id === B.water || id === B.lava)) this.liquidLoaded.push([x0 + (i & 15), i >> 8, z0 + ((i >> 4) & 15)]);
       }
     }
 

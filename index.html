@@ -97,13 +97,11 @@
   #mob-name { font-size: 22px; text-shadow: 2px 2px 0 var(--shadow); margin-bottom: 3px; font-variant-numeric: tabular-nums; }
   #mob-track { height: 8px; background: rgba(0, 0, 0, 0.55); border: 2px solid #111; }
   #mob-fill { display: block; height: 100%; width: 100%; background: linear-gradient(#ff5a5a, #c01818); }
+  /* flames licking up the screen while you are on fire (drawn in pixels by the HUD) */
   #burning {
-    position: absolute; left: 0; right: 0; bottom: 0; height: 38%;
-    background: linear-gradient(to top, rgba(255, 120, 20, 0.55), rgba(255, 180, 40, 0.25) 45%, transparent);
-    animation: flicker 0.18s steps(2) infinite alternate;
+    position: absolute; left: 0; bottom: 0; width: 100%; height: 48%;
+    image-rendering: pixelated; pointer-events: none; opacity: 0.88;
   }
-  @keyframes flicker { from { opacity: 0.8; } to { opacity: 1; } }
-  @media (prefers-reduced-motion: reduce) { #burning { animation: none; } }
   #food, #bubbles { flex-direction: row-reverse; }
   .heart, .food, .bubble {
     display: block; width: calc(var(--slot-size) * 0.39); height: calc(var(--slot-size) * 0.39);
@@ -393,7 +391,7 @@
   <div id="effects" hidden></div>
   <div id="sleep" hidden></div>
   <div id="portal-overlay"></div>
-  <div id="burning" hidden></div>
+  <canvas id="burning" width="64" height="24" hidden></canvas>
   <div id="mob-bar" hidden><div id="mob-name"></div><div id="mob-track"><i id="mob-fill"></i></div></div>
   <div id="bottom">
     <div id="stats">

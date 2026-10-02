@@ -232,7 +232,7 @@ class Fireball {
   }
   hitEntity(e) {
     if (this.owner === 'fx') { this.impact(null); return; }
-    const dmg = this.kind === 'small' ? 5 : 6;
+    const dmg = this.kind === 'small' ? 4 : 6;
     if (e.isPlayer) {
       e.hurt(dmg, this.pos.x, this.pos.z, 'fireball');
       if (this.kind === 'small') e.addEffect('burn', 5);
@@ -416,7 +416,7 @@ function wailerAI(m, dt) {
   const f = m.flight || (m.flight = { x: m.pos.x, y: m.pos.y, z: m.pos.z, t: 0 });
   f.t -= dt;
   let see = false;
-  if (t) see = dist3(m, t) < 64 && m.canSee(t);
+  if (t) see = dist3(m, t) < 48 && m.canSee(t);
   if (t && see) {
     m.yaw = Math.atan2(t.pos.x - m.pos.x, t.pos.z - m.pos.z);
     m.shootCd -= dt;
@@ -730,22 +730,22 @@ const cleanup = (m) => { if (m.beam) { R.scene.remove(m.beam); m.beam.geometry.d
 
 // ---------------------------------------------------------------- mob types
 Object.assign(MOB_TYPES, {
-  wailer: { name: 'Wailer', hp: 10, w: 4, h: 4, speed: 2, hostile: true, flies: true, fireImmune: true, ai: wailerAI, animate: anims.wailer, anim: 'wailer', sound: 'wailer', pitch: 1, init: scaled(4),
+  wailer: { name: 'Wailer', hp: 10, w: 4, h: 4, speed: 2, hostile: true, flies: true, sight: 40, fireImmune: true, ai: wailerAI, animate: anims.wailer, anim: 'wailer', sound: 'wailer', pitch: 1, init: scaled(4),
     drops: [drop('wailer_tear', 0, 1), drop('gunpowder', 0, 2)] },
-  cinder: { name: 'Cinder', hp: 20, w: 0.6, h: 1.8, speed: 2.3, hostile: true, fireImmune: true, ai: cinderAI, animate: anims.cinder, anim: 'cinder', sound: 'cinder', pitch: 1,
+  cinder: { name: 'Cinder', hp: 20, w: 0.6, h: 1.8, speed: 2.3, hostile: true, sight: 16, fireImmune: true, ai: cinderAI, animate: anims.cinder, anim: 'cinder', sound: 'cinder', pitch: 1,
     drops: [drop('cinder_rod', 0, 1)] },
   magma_slime: { name: 'Magma Slime', hp: 16, w: 2, h: 2, speed: 2.4, hostile: true, slime: true, fireImmune: true, sound: 'slime', pitch: 0.7, drops: [], anim: 'slime' },
-  snoutling: { name: 'Snoutling', hp: 16, w: 0.6, h: 1.95, speed: 2.6, hostile: true, goldLover: true, damage: 5, fireImmune: false, tick: snoutlingTick, sound: 'snoutling', pitch: 1, anim: 'human',
+  snoutling: { name: 'Snoutling', hp: 16, w: 0.6, h: 1.95, speed: 2.6, hostile: true, goldLover: true, damage: 4, fireImmune: false, tick: snoutlingTick, sound: 'snoutling', pitch: 1, anim: 'human',
     init: (m) => holdItem(m, 'golden_sword'), drops: [drop('gold_nugget', 0, 2)] },
-  snoutling_brute: { name: 'Snoutling Brute', hp: 50, w: 0.6, h: 1.95, speed: 2.7, hostile: true, always: true, persistent: true, damage: 13, sound: 'snoutling', pitch: 0.7, anim: 'human',
+  snoutling_brute: { name: 'Snoutling Brute', hp: 50, w: 0.6, h: 1.95, speed: 2.7, hostile: true, always: true, persistent: true, damage: 9, sound: 'snoutling', pitch: 0.7, anim: 'human',
     init: (m) => holdItem(m, 'golden_axe'), drops: [drop('golden_axe', 0, 1), drop('gold_ingot', 1, 3)] },
-  rotting_snoutling: { name: 'Rotting Snoutling', hp: 20, w: 0.6, h: 1.95, speed: 2.4, hostile: true, neutral: true, groupAnger: true, damage: 5, fireImmune: true, sound: 'zombie', pitch: 1.2, anim: 'human',
+  rotting_snoutling: { name: 'Rotting Snoutling', hp: 20, w: 0.6, h: 1.95, speed: 2.4, hostile: true, neutral: true, groupAnger: true, damage: 4, fireImmune: true, sound: 'zombie', pitch: 1.2, anim: 'human',
     init: (m) => holdItem(m, 'golden_sword'), drops: [drop('rotten_flesh', 0, 1), drop('gold_nugget', 0, 1)] },
-  tusker: { name: 'Tusker', hp: 40, w: 1.4, h: 1.4, speed: 2.4, hostile: true, damage: 6, launch: 8, sound: 'tusker', pitch: 1, anim: 'quad',
+  tusker: { name: 'Tusker', hp: 40, w: 1.4, h: 1.4, speed: 2.4, hostile: true, damage: 5, launch: 6, sound: 'tusker', pitch: 1, anim: 'quad',
     drops: [drop('porkchop', 2, 4), drop('leather', 0, 1)] },
-  rotting_tusker: { name: 'Rotting Tusker', hp: 40, w: 1.4, h: 1.4, speed: 2.5, hostile: true, damage: 6, launch: 8, fireImmune: true, sound: 'tusker', pitch: 0.8, anim: 'quad',
+  rotting_tusker: { name: 'Rotting Tusker', hp: 40, w: 1.4, h: 1.4, speed: 2.5, hostile: true, damage: 5, launch: 6, fireImmune: true, sound: 'tusker', pitch: 0.8, anim: 'quad',
     drops: [drop('rotten_flesh', 1, 3)] },
-  charred_skeleton: { name: 'Charred Skeleton', hp: 20, w: 0.7, h: 2.4, speed: 2.6, hostile: true, damage: 8, witherHit: true, fireImmune: true, sound: 'skeleton', pitch: 0.8, anim: 'human',
+  charred_skeleton: { name: 'Charred Skeleton', hp: 20, w: 0.7, h: 2.4, speed: 2.6, hostile: true, damage: 6, witherHit: true, fireImmune: true, sound: 'skeleton', pitch: 0.8, anim: 'human',
     init: (m) => { scaled(1.2)(m); holdItem(m, 'stone_sword'); }, drops: [drop('coal', 0, 1), drop('bone', 0, 2), drop('charred_skull', 0, 1, 0.04)] },
   strider: { name: 'Strider', hp: 20, w: 0.9, h: 1.7, speed: 1.6, fireImmune: true, ai: striderAI, animate: anims.strider, anim: 'strider', sound: 'strider', pitch: 1,
     drops: [drop('string', 2, 5)] },
@@ -789,7 +789,7 @@ export function inFortress(w, x, y, z) {
 
 function spawnNether(E, w, p) {
   for (let attempt = 0; attempt < 4; attempt++) {
-    const a = rand() * TAU, d = 18 + rand() * 26;
+    const a = rand() * TAU, d = 24 + rand() * 24;
     const x = Math.floor(p.pos.x + Math.cos(a) * d), z = Math.floor(p.pos.z + Math.sin(a) * d);
     if (!w.getChunk(x >> 4, z >> 4)) continue;
     if (rand() < 0.1) {
@@ -815,9 +815,9 @@ function spawnNether(E, w, p) {
     let sy = y;
     if (type === 'wailer') {
       sy = y + 5;
-      if (boxBlocked(w, x + 0.5, sy, z + 0.5, 2.2, 4.4) || E.mobs.filter((m) => m.type === 'wailer').length >= 4) continue;
+      if (boxBlocked(w, x + 0.5, sy, z + 0.5, 2.2, 4.4) || E.mobs.filter((m) => m.type === 'wailer').length >= 2) continue;
     } else if (boxBlocked(w, x + 0.5, y, z + 0.5, MOB_TYPES[type].w / 2, MOB_TYPES[type].h)) continue;
-    const n = type === 'rotting_snoutling' ? 2 + (rand() * 3 | 0) : 1;
+    const n = type === 'rotting_snoutling' ? 1 + (rand() * 2 | 0) : 1;
     for (let i = 0; i < n; i++) E.spawnMob(type, x + 0.5 + (i ? (rand() - 0.5) * 3 : 0), sy, z + 0.5 + (i ? (rand() - 0.5) * 3 : 0));
     return;
   }
@@ -842,10 +842,8 @@ Entities.prototype.spawnDim = function () {
   if (!alive.length) return;
   const p = alive[(rand() * alive.length) | 0];
   const hostiles = this.mobs.reduce((n, m) => n + (m.def.hostile && !m.persistent ? 1 : 0), 0);
-  if (hostiles < 20 + 8 * (alive.length - 1)) {
-    if (w.dim === 'nether') spawnNether(this, w, p);
-    else if (w.dim === 'end') spawnEnd(this, w, p);
-  }
+  if (w.dim === 'nether') { if (hostiles < 9 + 5 * (alive.length - 1) && rand() < 0.45) spawnNether(this, w, p); }
+  else if (w.dim === 'end' && hostiles < 20 + 8 * (alive.length - 1)) spawnEnd(this, w, p);
 };
 
 // Monster spawners (cinders in fortresses, shademites in strongholds)

@@ -536,6 +536,28 @@ export class UI {
     setTimeout(() => line.classList.add('old'), 10000);
   }
 
+  // Pixel flames rising from the bottom of the screen, a new flicker every few frames
+  drawFlames(dt) {
+    this.flameT = (this.flameT || 0) - dt;
+    if (this.flameT > 0) return;
+    this.flameT = matchMedia('(prefers-reduced-motion: reduce)').matches ? 1e9 : 0.07;
+    const cv = $('burning'), g = cv.getContext('2d'), W = cv.width, H = cv.height;
+    const pal = ['#fffac8', '#ffdc5a', '#faa01e', '#e65a14', '#b4280a'];
+    g.clearRect(0, 0, W, H);
+    const t = performance.now() / 1000;
+    for (let x = 0; x < W; x++) {
+      // taller at the sides, like flames around the edge of your view
+      const edge = Math.abs(x - W / 2) / (W / 2);
+      const h = Math.max(0, H * (0.35 + 0.55 * edge * edge) + Math.sin(x * 0.9 + t * 9) * 2.5 + (Math.random() - 0.5) * 6);
+      for (let i = 0; i < h; i++) {
+        const f = i / h;
+        if (f > 0.75 && Math.random() < 0.4) continue;
+        g.fillStyle = pal[Math.min(4, Math.floor(f * 5 + Math.random() * 0.8))];
+        g.fillRect(x, H - 1 - i, 1, 1);
+      }
+    }
+  }
+
   toast(text) {
     const t = $('toast');
     t.textContent = text;
@@ -780,6 +802,7 @@ export class UI {
     if (c.mobBarShown !== !!showBar) { c.mobBarShown = !!showBar; $('mob-bar').hidden = !showBar; }
     const burning = p.burning > 0 && !p.dead;
     if (c.burning !== burning) { c.burning = burning; $('burning').hidden = !burning; }
+    if (burning) this.drawFlames(dt);
     const poisoned = p.effects.poison > 0;
     if (c.poison !== poisoned) { c.poison = poisoned; $('hearts').classList.toggle('poison', poisoned); }
     const fx = [];
