@@ -53,6 +53,26 @@ How it works:
 - Animals, villagers and dropped items are kept when you walk away.
 - Press **T** (or the **T** button on iPad) to chat.
 
+## Admins
+
+The account called **Enzo** is the server admin (to change who, set `ADMINS` on Render to a comma-separated list of usernames). Admins can make other players admins too.
+
+In any online world's chat (press **T**):
+
+- `/kill name`: kills that player.
+- `/kick name`: sends them out of the world.
+- `/ban name reason`: bans them from multiplayer and signs them out everywhere. `/unban name` lets them back.
+- `/op name`, `/deop name`: give or take away admin.
+- `/players`: who is online, and where. `/accounts`: every account. `/list`: who is in this world (anyone can use this).
+
+The **Admin** link on the Multiplayer screen (next to Sign out) lists every account, with buttons for the same things.
+
+Nobody else can sign up as an admin name. If the Enzo account doesn't exist yet on your server: in Render, open the service, go to **Environment**, add `ADMIN_PASSWORD` with the password you want, save, then click **Create Account** as Enzo with that same password. If the account already exists, just sign in. The password is never written in this repo.
+
+## Updates on the title screen
+
+The title screen shows the newest update as Minecraft does: its version in the corner, its own splash texts, a "New:" link to **What's New**, and a slowly turning view of a place that fits it behind the menus. Updates are listed in `js/updates.js`, newest first. Each has a version, a name, notes, splashes and a scene (a world seed, a spot in it, and any blocks to place there).
+
 ## Deploy on Render
 
 1. On Render, choose **New → Blueprint** and connect this repo. `render.yaml` sets it up as a free Node web service.
@@ -74,6 +94,10 @@ Add a free Postgres database from [Neon](https://neon.tech):
 4. Save. Render redeploys, and from then on every online world, account and inventory is stored in the database.
 
 To check it worked, open **Multiplayer** in the game. Under the list it says *"Online worlds, accounts and items are saved in the database, with daily backups."* If it shows a red warning instead, the database isn't set up.
+
+## Caves & Ores (1.6)
+
+Caves are winding tunnels that slope down gently, branch and open onto the surface, with big caverns deep down. Below y 31 is deepslate, and ores sit at the heights Minecraft uses: diamonds and redstone near the bottom, iron and copper in the middle and high in the mountains, coal higher up, and emeralds only in mountains. Places you had already been in older worlds keep their old caves and ores. The new ones appear everywhere else.
 
 ## Keeping worlds safe through updates
 

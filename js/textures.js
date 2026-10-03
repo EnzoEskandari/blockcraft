@@ -174,6 +174,26 @@ function ore(p, c, hi, n) {
     p.set(cx + 1, cy + 1, sh(c, 0.7));
   }
 }
+// Deepslate: dark grey stone in wavy layers
+function deepslate(p) {
+  const n = vnoise(p.r, 4);
+  p.each((x, y) => {
+    const band = Math.sin((y + n(x, y) * 3) * 1.5) * 0.5 + 0.5;
+    let v = 64 + band * 18 + (p.r() - 0.5) * 10;
+    if (p.r() < 0.06) v -= 14;
+    return [v, v, v + 6];
+  });
+}
+// Speckled stones of cave walls (granite, diorite, andesite, tuff)
+function speckled(p, base, dot, dot2, k) {
+  const n = vnoise(p.r, 5);
+  p.each((x, y) => {
+    const r = p.r();
+    if (r < k) return jit(dot, 8, p.r);
+    if (r < k * 1.6) return jit(dot2, 8, p.r);
+    return jit(sh(base, 0.9 + n(x, y) * 0.2), 5, p.r);
+  });
+}
 function metal(p, base) {
   p.each((x, y) => {
     if (x === 0 || y === 0) return sh(base, 1.12);
@@ -467,6 +487,30 @@ for (let s = 0; s < 4; s++) PAINTERS['wheat_' + s] = (p) => wheatStage(p, s);
 
 Object.assign(PAINTERS, {
   emerald_ore: (p) => ore(p, [44, 196, 88], [170, 255, 190], 3),
+  deepslate,
+  cobbled_deepslate: (p) => {
+    const vor = voronoi(p.r, 12);
+    p.each((x, y) => {
+      const c = vor(x, y);
+      if (c.d2 - c.d1 < 0.9) return jit([30, 30, 34], 5, p.r);
+      const v = 52 + c.v * 34 + (p.r() - 0.5) * 10;
+      return [v, v, v + 5];
+    });
+  },
+  deepslate_coal_ore: (p) => oreOn(p, deepslate, [24, 24, 24], [60, 60, 60], 5),
+  deepslate_iron_ore: (p) => oreOn(p, deepslate, [206, 162, 130], [236, 208, 186], 5),
+  deepslate_gold_ore: (p) => oreOn(p, deepslate, [246, 214, 54], [255, 250, 176], 5),
+  deepslate_diamond_ore: (p) => oreOn(p, deepslate, [76, 222, 218], [206, 255, 250], 4),
+  deepslate_redstone_ore: (p) => oreOn(p, deepslate, [196, 16, 10], [255, 90, 70], 6),
+  deepslate_lapis_ore: (p) => oreOn(p, deepslate, [40, 80, 200], [110, 150, 245], 5),
+  deepslate_emerald_ore: (p) => oreOn(p, deepslate, [44, 196, 88], [170, 255, 190], 3),
+  copper_ore: (p) => { ore(p, [216, 120, 76], [246, 168, 120], 4); oreSpots(p, [88, 176, 146], [150, 220, 196], 2); },
+  deepslate_copper_ore: (p) => { oreOn(p, deepslate, [212, 116, 72], [244, 164, 116], 4); oreSpots(p, [84, 170, 140], [146, 216, 190], 2); },
+  copper_block: (p) => metal(p, [196, 110, 76]),
+  tuff: (p) => speckled(p, [108, 110, 100], [84, 86, 76], [140, 140, 128], 0.12),
+  granite: (p) => speckled(p, [154, 106, 88], [122, 76, 62], [188, 140, 122], 0.14),
+  diorite: (p) => speckled(p, [196, 196, 196], [120, 120, 122], [236, 236, 236], 0.12),
+  andesite: (p) => speckled(p, [132, 132, 134], [100, 100, 102], [160, 160, 160], 0.14),
   emerald_block: (p) => metal(p, [62, 204, 104]),
   dirt_path_top: (p) => p.each(() => p.r() < 0.15 ? [126, 102, 52] : jit([150, 124, 68], 7, p.r)),
   dirt_path_side: (p) => {
@@ -591,6 +635,13 @@ Object.assign(PAINTERS, {
 
 // ---------------------------------------------------------------- the Nether and the End
 function netherrackBase(p) { PAINTERS.netherrack(p); }
+// A few more ore flecks on a finished tile (copper's green-blue patina)
+function oreSpots(p, c, hi, n) {
+  for (let k = 0; k < n; k++) {
+    const cx = 1 + Math.floor(p.r() * 13), cy = 1 + Math.floor(p.r() * 13);
+    p.set(cx, cy, jit(c, 10, p.r)); p.set(cx + 1, cy, hi);
+  }
+}
 function oreOn(p, base, c, hi, n) {
   base(p);
   for (let k = 0; k < n; k++) {
@@ -1063,6 +1114,7 @@ const ITEM_ART = {
   lapis_lazuli: ['lump', pal3([40, 72, 194], [24, 44, 130], [96, 128, 234], { O: [14, 24, 70] })],
   iron_ingot: ['ingot', pal3([210, 210, 210], [140, 140, 140], [246, 246, 246], { O: [70, 70, 70] })],
   gold_ingot: ['ingot', pal3([250, 214, 60], [200, 144, 20], [255, 248, 170], { O: [110, 70, 10] })],
+  copper_ingot: ['ingot', pal3([214, 120, 80], [160, 78, 48], [246, 170, 128], { O: [90, 40, 24] })],
   brick: ['ingot', pal3([172, 82, 56], [122, 56, 38], [204, 112, 82], { O: [70, 30, 20] })],
   diamond: ['gem', pal3([82, 230, 220], [38, 168, 158], [212, 255, 250], { O: [16, 80, 76] })],
   redstone: ['dust', pal3([204, 22, 12], [132, 10, 6], [255, 86, 64], { O: [70, 6, 4] })],

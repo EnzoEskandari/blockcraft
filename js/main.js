@@ -16,6 +16,7 @@ import { rollLoot } from './structures.js';
 import { hash3 } from './noise.js';
 import { Net, serverURL } from './net.js';
 import './dimmobs.js';
+import { startPanorama, stopPanorama, panoramaFrame } from './panorama.js';
 import { findPortalFrame, portalCells, findNearbyPortal, buildPortal, END_SPAWN, endColumn, DIMS } from './dims.js';
 
 const dayLength = () => G.settings.dayLength || 1200; // seconds; the original's day is 20 minutes
@@ -836,8 +837,24 @@ export const Game = {
     try {
       const r = await fetch('/api/me', { headers: authHeader(a), cache: 'no-store' });
       if (r.status === 401) { G.account = null; remove('account'); return null; }
+      const b = await r.json().catch(() => null);
+      if (b && b.account && G.account) { G.account.admin = !!b.account.admin; store('account', G.account); }
     } catch { /* offline: keep it */ }
     return G.account;
+  },
+
+  // Admins: every account on the server, and doing something about one of them
+  async adminPlayers() {
+    const r = await fetch('/api/admin/players', { headers: authHeader(G.account), cache: 'no-store' });
+    const b = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(b.error || 'Could not load the players.');
+    return b.players || [];
+  },
+  async adminAction(action, name, reason) {
+    const r = await fetch('/api/admin', { method: 'POST', headers: { 'content-type': 'application/json', ...authHeader(G.account) }, body: JSON.stringify({ action, name, reason }) });
+    const b = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(b.error || 'That did not work.');
+    return b.msg;
   },
 
   async createOnline(name, seedText, mode) {
@@ -943,6 +960,7 @@ export const Game = {
       k: 'world', host: G.net.name, name: G.worldMeta.name, seed: w.seed, mode: G.worldMeta.mode,
       time: G.time, day: G.day || 0, nns: G.nightsNoSleep || 0,
       spawn: w.worldSpawn || p.spawn, edits: packEdits(w), guest: playerRecord(w.guests, account, name),
+      legacy: w.legacy ? [...w.legacy] : null,
     };
   },
 
@@ -961,6 +979,20 @@ export const Game = {
 
 const DIM_TITLE = { nether: 'Entering the Nether', end: 'Entering the End', overworld: 'Returning to the Overworld' };
 const dimKey = (id, dim) => (dim && dim !== 'overworld' ? `${id}~${dim}` : id);
+
+// Worlds from before the Caves & Ores update keep their old caves and ores wherever anyone had been: every
+// chunk that was ever loaded, everything built or dug and the land around it, the world spawn, beds and
+// where the players were. The rest of the world gets the new caves, deepslate and ores.
+function legacyChunks(data, g, me) {
+  const out = new Set((data.spawned || []).filter(Number.isFinite));
+  const add = (cx, cz, r) => { for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) out.add(ckey(cx + dx, cz + dz)); };
+  for (const k of Object.keys(data.edits || {})) { const [cx, cz] = k.split(',').map(Number); if (Number.isFinite(cx + cz)) add(cx, cz, 3); }
+  for (const k of Object.keys(data.entities || {})) { const n = Number(k); if (Number.isFinite(n)) add(Math.floor(n / 65536) - 32768, (n % 65536) - 32768, 1); }
+  const people = [g && g.player, me, ...Object.values(data.guests || {})].filter((q) => q && typeof q === 'object');
+  const spots = [g && g.worldSpawn, data.worldSpawn, ...people.map((q) => (!q.dim || q.dim === 'overworld') && q.pos), ...people.map((q) => q.bed)];
+  for (const p of spots) if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) add(Math.floor(p.x) >> 4, Math.floor(p.z) >> 4, 5);
+  return out;
+}
 
 // Time of day and the player (singleplayer), kept apart from each dimension's blocks
 function loadGlobals(id) { return load('world.' + id + '@g') || load('world.' + id); }
@@ -1081,6 +1113,7 @@ function startRemoteWorld(snap, onlineId, dim = 'overworld', me = null) {
   G.worldMeta = { id: null, remote: true, online: onlineId, dim, name: snap.name, seed: snap.seed, mode: snap.mode === 'creative' ? 'creative' : 'survival' };
   G.dim = dim;
   const w = new World(snap.seed, dim);
+  if (Array.isArray(snap.legacy) && snap.legacy.length) w.legacy = new Set(snap.legacy);   // the host's old-cave chunks
   w.onChange = onBlockChange;
   w.villagerTrades = new Map();
   w.deadMobs = new Set();
@@ -1119,6 +1152,7 @@ function takeCarry(p, onlineId) {
 
 // ---------------------------------------------------------------- worlds
 function teardown() {
+  stopPanorama();
   if (G.world) for (const c of G.world.chunks.values()) disposeChunkMeshes(c);
   if (G.entities) G.entities.clear();
   G.world = null;
@@ -1143,6 +1177,10 @@ function startWorld(meta, data, opts = {}) {
   w.stored = new Map(Object.entries((data && data.entities) || {}).map(([k, v]) => [Number(k), v]));
   w.spawned = new Set((data && data.spawned) || []);
   w.flags = (data && data.flags) || {};
+  if (dim === 'overworld' && data) {
+    w.legacy = data.gen >= 2 ? (data.legacy && data.legacy.length ? new Set(data.legacy) : null)
+      : legacyChunks(data, opts.globals || data, opts.me || opts.player);
+  }
   G.world = w;
   const p = new Player();
   p.mode = meta.mode;
@@ -1210,6 +1248,8 @@ function saveWorld(playerOverride) {
     deadMobs: [...w.deadMobs],
     flags: w.flags || {},
     edits, containers, saplings: [...S.saplings.keys()],
+    // made by the Caves & Ores generator, except these chunks (older worlds' places people had been)
+    gen: 2, legacy: w.legacy ? [...w.legacy] : [],
   };
   // the time of day, the world spawn, and the player
   const globals = {
@@ -1244,6 +1284,8 @@ function loop(now) {
 
 // One game frame; also callable directly (G.step) to drive the game without animation frames
 function frame(dt) {
+  // the title screen and its menus: the turning picture of the latest update behind them
+  if (G.state === 'title') { panoramaFrame(dt); return; }
   if (G.state === 'loading') {
     updateChunks(40);
     if (G.net) G.net.update(dt);
@@ -1333,6 +1375,7 @@ function boot(hotData) {
   G.canvas = R.renderer.domElement;
   G.game = Game;
   G.step = frame;
+  G.startPanorama = startPanorama;
   G.ui = new UI();
   G.ui.init();
   initInput();

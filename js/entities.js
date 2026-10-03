@@ -855,10 +855,12 @@ class Mob {
           this.throwPotion(t, kind);
         }
       } else if (def.explodes) {
-        if (dist < 2.8 && this.canSee(t)) {
+        // lights its fuse close up and in sight; step back a little (or behind a block) and it calms down
+        const sees = this.canSee(t);
+        if (dist < 2.8 && sees) {
           if (this.fuse === 0) sfx('fuse', this.pos);
           this.fuse += dt;
-        } else if (dist > 5) this.fuse = Math.max(0, this.fuse - dt);
+        } else if (dist > 3.6 || !sees) this.fuse = Math.max(0, this.fuse - dt);
         else this.fuse = this.fuse > 0 ? this.fuse + dt : 0;
         if (this.fuse <= 0) { mx = dirX; mz = dirZ; speed = def.speed; }
         if (this.fuse >= 1.5) {
@@ -1107,11 +1109,12 @@ class Mob {
     return false;
   }
 
+  // Line of sight from its eyes to the target's: any solid block (glass and leaves too) is in the way
   canSee(t) {
     const ex = this.pos.x, ey = this.pos.y + this.h * 0.85, ez = this.pos.z;
     const tx = t.pos.x - ex, ty = t.pos.y + (t.h || 1.8) * 0.8 - ey, tz = t.pos.z - ez;
     const d = Math.hypot(tx, ty, tz) || 1;
-    return !raycast(G.world, ex, ey, ez, tx / d, ty / d, tz / d, d, (id) => BLOCKS[id].opaque);
+    return !raycast(G.world, ex, ey, ez, tx / d, ty / d, tz / d, d, (id) => BLOCKS[id].opaque || BLOCKS[id].solid);
   }
 
   shootAt(t, v, damage) {

@@ -1,4 +1,5 @@
 // HUD, menus and inventory screens (plain DOM).
+import { UPDATES, LATEST } from './updates.js';
 import { G, saveSettings } from './game.js';
 import { ITEMS, ID, B, maxStack, itemName, matchRecipe, fuelValue, SMELTING, creativeList, RECIPES } from './blocks.js';
 import { iconURL, ICONS, drawAscii, TILES, TEX, armorSilhouette } from './textures.js';
@@ -105,8 +106,15 @@ export class UI {
     }
 
     // Menus
-    $('splash').textContent = SPLASHES[(Math.random() * SPLASHES.length) | 0];
+    // the newest update's own splash lines come up most of the time
+    const lines = Math.random() < 0.7 && LATEST.splashes ? LATEST.splashes : SPLASHES;
+    $('splash').textContent = lines[(Math.random() * lines.length) | 0];
+    $('version').textContent = `Blockcraft ${LATEST.version}`;
+    $('b-update').textContent = `New: the ${LATEST.name} Update!`;
     const on = (id, fn) => $(id).addEventListener('click', (e) => { e.preventDefault(); initAudio(); sfx('click'); fn(); });
+    on('b-update', () => this.openScreen('news'));
+    on('b-version', () => this.openScreen('news'));
+    on('b-news-back', () => this.back());
     on('b-single', () => this.openScreen('worlds'));
     on('b-multi', () => this.openScreen('mp'));
     on('b-mp-back', () => this.back());
@@ -115,6 +123,12 @@ export class UI {
     $('mp-auth').addEventListener('submit', (e) => { e.preventDefault(); initAudio(); sfx('click'); this.auth(false); });
     on('b-sign-up', () => this.auth(true));
     on('b-sign-out', async () => { await G.game.signOut(); this.syncAccount(); this.mpStatus('Signed out.'); });
+    on('b-admin', () => this.openScreen('admin'));
+    on('b-admin-back', () => this.back());
+    on('b-admin-kill', () => this.adminDo('kill'));
+    on('b-admin-kick', () => this.adminDo('kick'));
+    on('b-admin-ban', () => this.adminDo(this.adminSel && this.adminSel.banned ? 'unban' : 'ban'));
+    on('b-admin-op', () => this.adminDo(this.adminSel && this.adminSel.admin ? 'deop' : 'op'));
     on('b-copy-link', () => this.copyLink(this.selectedOnline));
     on('b-copy-link-pause', () => this.copyLink(G.worldMeta && G.worldMeta.online));
     on('b-delete-online', () => this.askDeleteOnline());
@@ -198,6 +212,8 @@ export class UI {
     if (CONTAINERS.includes(name)) this.buildContainer(name, data);
     if (name === 'worlds') this.buildWorldList();
     if (name === 'options') this.syncOptions();
+    if (name === 'news') this.buildNews();
+    if (name === 'admin') this.buildAdminList();
     if (name === 'pause') this.syncPause();
     if (name === 'mp') {
       this.mpStatus('');
@@ -252,6 +268,23 @@ export class UI {
     this.section('title');
     $('hud').hidden = true;
     this.updateTouchVisibility();
+    if (G.startPanorama) G.startPanorama();
+  }
+
+  // Every update, newest first
+  buildNews() {
+    const list = $('news-list');
+    list.innerHTML = '';
+    for (const u of UPDATES) {
+      const box = h('div', 'news-item');
+      box.appendChild(h('h3', null, `${u.version} · ${u.name}`));
+      box.appendChild(h('span', 'news-date', new Date(u.date + 'T12:00:00').toLocaleDateString([], { year: 'numeric', month: 'long', day: 'numeric' })));
+      const ul = h('ul');
+      for (const n of u.notes) ul.appendChild(h('li', null, n));
+      box.appendChild(ul);
+      list.appendChild(box);
+    }
+    list.scrollTop = 0;
   }
 
   showLoading(p) {
@@ -406,6 +439,7 @@ export class UI {
     $('mp-account').hidden = !a;
     if (a) {
       $('mp-account-name').textContent = a.name;
+      $('mp-admin-link').hidden = !a.admin;
       if (rebuild || !this.online) this.buildOnlineList();
     } else {
       $('auth-pass').value = '';
@@ -469,6 +503,62 @@ export class UI {
       b.textContent = 'Link copied!';
       setTimeout(() => { b.textContent = 'Copy Link'; }, 2000);
     }
+  }
+
+  // ---------------------------------------------------------------- admin
+  // Every account on the server, online players first
+  async buildAdminList(keep) {
+    const list = $('admin-list');
+    if (!keep) { $('admin-status').textContent = ''; this.adminSel = null; }
+    list.innerHTML = '';
+    list.appendChild(h('p', 'empty', 'Loading players…'));
+    let players;
+    try { players = await G.game.adminPlayers(); } catch (err) {
+      list.innerHTML = '';
+      list.appendChild(h('p', 'empty', err.message));
+      this.syncAdminButtons();
+      return;
+    }
+    if (G.screen !== 'admin') return;
+    list.innerHTML = '';
+    if (this.adminSel) this.adminSel = players.find((x) => x.name === this.adminSel.name) || null;
+    for (const pl of players) {
+      const row = h('button', 'world-row');
+      row.type = 'button';
+      row.appendChild(h('strong', null, pl.name + (pl.admin ? '  (admin)' : '')));
+      const st = h('span', pl.banned ? 'tag-banned' : pl.online.length ? 'tag-online' : null,
+        pl.banned ? `Banned by ${pl.banned.by}${pl.banned.reason ? ': ' + pl.banned.reason : ''}`
+          : pl.online.length ? `Playing in ${pl.online.join(', ')}` : `Joined ${new Date(pl.created || Date.now()).toLocaleDateString()}`);
+      row.appendChild(st);
+      if (this.adminSel && this.adminSel.name === pl.name) row.classList.add('sel');
+      row.addEventListener('click', () => {
+        this.adminSel = pl;
+        for (const r of list.children) r.classList.remove('sel');
+        row.classList.add('sel');
+        this.syncAdminButtons();
+      });
+      list.appendChild(row);
+    }
+    this.syncAdminButtons();
+  }
+
+  syncAdminButtons() {
+    const pl = this.adminSel;
+    for (const id of ['b-admin-kill', 'b-admin-kick', 'b-admin-ban', 'b-admin-op']) $(id).disabled = !pl;
+    if (!pl) return;
+    $('b-admin-kill').disabled = $('b-admin-kick').disabled = !pl.online.length;
+    $('b-admin-ban').textContent = pl.banned ? 'Unban' : 'Ban';
+    $('b-admin-ban').disabled = pl.owner;
+    $('b-admin-op').textContent = pl.admin ? 'Remove Admin' : 'Make Admin';
+    $('b-admin-op').disabled = pl.owner;
+  }
+
+  async adminDo(action) {
+    const pl = this.adminSel;
+    if (!pl) return;
+    try { $('admin-status').textContent = await G.game.adminAction(action, pl.name, action === 'ban' ? $('admin-reason').value.trim() : ''); } catch (err) { $('admin-status').textContent = err.message; }
+    if (action === 'ban') $('admin-reason').value = '';
+    this.buildAdminList(true);
   }
 
   // Your own worlds can be deleted for everyone; anyone else's only leave your list

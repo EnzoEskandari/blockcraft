@@ -65,7 +65,15 @@ const BUILD = crypto.createHash('sha256').update(
 const NAME_RE = /^[A-Za-z0-9_]{3,16}$/;
 const sha = (t) => crypto.createHash('sha256').update(t).digest('hex');
 const scrypt = (pw, salt) => new Promise((res, rej) => crypto.scrypt(pw, salt, 64, (e, k) => (e ? rej(e) : res(k))));
-const pub = (a) => ({ id: a.id, name: a.name });
+const pub = (a) => ({ id: a.id, name: a.name, admin: isAdmin(a) || undefined });
+
+// Admins run the online worlds: the accounts named in ADMINS (by default "Enzo"), and anyone an admin
+// makes one with /op. An admin name can only be signed up with the ADMIN_PASSWORD set on the server
+// (Render > Environment), so nobody else can claim it.
+const ADMIN_NAMES = new Set(String(process.env.ADMINS ?? 'Enzo').split(',').map((n) => n.trim().toLowerCase()).filter(Boolean));
+const isAdmin = (a) => !!a && (ADMIN_NAMES.has(a.name.toLowerCase()) || !!a.admin);
+const sameSecret = (a, b) => crypto.timingSafeEqual(crypto.createHash('sha256').update(String(a)).digest(), crypto.createHash('sha256').update(String(b)).digest());
+const BANNED = 'This account is banned from multiplayer.';
 function addAccount(a) { accounts.set(a.id, a); byName.set(a.name.toLowerCase(), a); }
 // During an update two copies of the server run for a moment: anything new on the other one is looked up.
 // If the database can't answer these throw, so nobody is signed out or given a fresh world by mistake.
@@ -110,7 +118,7 @@ async function accountFrom(token) {
   if (!x) return null;
   let a = accounts.get(x.account);
   if (!a) { a = await store.getAccount(x.account); if (a) addAccount(a); }
-  return a || null;
+  return a && !a.banned ? a : null;   // a banned account is signed out everywhere
 }
 const bearer = (req) => { const m = String(req.headers.authorization || '').match(/^Bearer (.+)$/); return m ? m[1] : null; };
 
@@ -173,6 +181,10 @@ const server = http.createServer(async (req, res) => {
       if (!NAME_RE.test(name)) { json(res, 400, { error: 'Usernames are 3 to 16 letters, numbers or _.' }); return; }
       if (pw.length < 6 || pw.length > 100) { json(res, 400, { error: 'Passwords need at least 6 characters.' }); return; }
       if (await accountNamed(name)) { json(res, 409, { error: 'That username is taken.' }); return; }
+      if (ADMIN_NAMES.has(name.toLowerCase()) && !(process.env.ADMIN_PASSWORD && sameSecret(pw, process.env.ADMIN_PASSWORD))) {
+        json(res, 403, { error: 'That username is reserved.' });
+        return;
+      }
       const salt = crypto.randomBytes(16).toString('hex');
       const a = { id: 'u_' + crypto.randomBytes(9).toString('base64url'), name, salt, hash: (await scrypt(pw, salt)).toString('hex'), created: Date.now() };
       await store.putAccount(a);
@@ -186,6 +198,7 @@ const server = http.createServer(async (req, res) => {
       const a = await accountNamed(String(b.name || '').trim());
       const key = await scrypt(String(b.password || ''), a ? a.salt : 'no-such-account');
       if (!a || !crypto.timingSafeEqual(key, Buffer.from(a.hash, 'hex'))) { json(res, 401, { error: 'Wrong username or password.' }); return; }
+      if (a.banned) { json(res, 403, { error: BANNED + (a.banned.reason ? ` (${a.banned.reason})` : '') }); return; }
       json(res, 200, { token: await newSession(a), account: pub(a) });
       return;
     }
@@ -198,6 +211,20 @@ const server = http.createServer(async (req, res) => {
       const t = bearer(req);
       if (t && t.length <= 100) { sessions.delete(sha(t)); await store.delSession(sha(t)); }
       json(res, 200, { ok: true });
+      return;
+    }
+    // Admins: every account, who is online where, and what they can do about it
+    if (p === '/api/admin/players' && req.method === 'GET') {
+      const who = await accountFrom(bearer(req));
+      if (!isAdmin(who)) { json(res, 403, { error: 'Only admins can do that.' }); return; }
+      json(res, 200, { players: playerList() });
+      return;
+    }
+    if (p === '/api/admin' && req.method === 'POST') {
+      const who = await accountFrom(bearer(req));
+      if (!isAdmin(who)) { json(res, 403, { error: 'Only admins can do that.' }); return; }
+      const b = await readBody(req);
+      json(res, 200, { msg: await adminAction(who, String(b.action || ''), String(b.name || ''), String(b.reason || '').slice(0, 80)) });
       return;
     }
     // Your online worlds: the ones you made, and the ones whose link you have opened (nobody else's)
@@ -357,7 +384,7 @@ const send = (ws, msg) => { if (ws && ws.readyState === 1) ws.send(typeof msg ==
 async function enterWorld(ws, m) {
   if (!store || stopping) { send(ws, { t: 'error', msg: stopping ? 'Blockcraft is updating. Reconnecting…' : notReady(), retry: true }); return; }
   const acc = await accountFrom(m.token);
-  if (!acc) { send(ws, { t: 'error', msg: 'Sign in to play online.' }); return; }
+  if (!acc) { send(ws, { t: 'error', msg: 'Sign in to play online.', signedOut: true }); return; }
   ws.account = acc.id;
   const id = String(m.id || '').toUpperCase();
   ws.world = id;
@@ -422,6 +449,78 @@ async function enterWorld(ws, m) {
   send(ws, { t: 'hostworld', meta, dim, v: rm.v || 0, save, useLocal, me, build: BUILD });
 }
 
+// ---------------------------------------------------------------- admin
+const socketsOf = (accountId) => [...wss.clients].filter((q) => q.account === accountId && q.readyState === 1);
+const placeOf = (q) => { const [id, dim] = String(q.room || '').split('~'); const w = worlds.get(id); return w ? `${w.name}${dim ? ` (${dim === 'nether' ? 'Nether' : 'End'})` : ''}` : 'joining'; };
+
+function playerList() {
+  return [...accounts.values()].map((a) => ({
+    name: a.name, created: a.created || 0, admin: isAdmin(a), owner: ADMIN_NAMES.has(a.name.toLowerCase()),
+    banned: a.banned ? { by: a.banned.by, reason: a.banned.reason || '', at: a.banned.at } : null,
+    online: socketsOf(a.id).filter((q) => q.room).map(placeOf),
+  })).sort((x, y) => (y.online.length - x.online.length) || x.name.localeCompare(y.name));
+}
+
+// kill, kick, ban, unban, op and deop someone; the answer is a sentence for the admin
+async function adminAction(admin, action, name, reason) {
+  const a = name ? await accountNamed(name.trim()) : null;
+  if (!a) return name ? `There is no player called ${name}.` : 'Say which player.';
+  const fixed = ADMIN_NAMES.has(a.name.toLowerCase());
+  if (action === 'kill') {
+    const qs = socketsOf(a.id).filter((q) => q.room);
+    for (const q of qs) send(q, { t: 'admin', a: 'kill', by: admin.name });
+    return qs.length ? `Killed ${a.name}.` : `${a.name} isn't in an online world right now.`;
+  }
+  if (action === 'kick' || action === 'ban') {
+    if (action === 'ban') {
+      if (fixed) return `${a.name} is a server admin and can't be banned.`;
+      a.banned = { by: admin.name, at: Date.now(), reason };
+      await store.putAccount(a);
+    }
+    const qs = socketsOf(a.id);
+    for (const q of qs) { send(q, { t: 'admin', a: action, by: admin.name, reason }); setTimeout(() => q.close(), 400); }
+    if (action === 'kick') return qs.length ? `Kicked ${a.name}.` : `${a.name} isn't online.`;
+    return `Banned ${a.name} from multiplayer${reason ? ` (${reason})` : ''}. /unban ${a.name} lets them back.`;
+  }
+  if (action === 'unban') {
+    if (!a.banned) return `${a.name} isn't banned.`;
+    delete a.banned;
+    await store.putAccount(a);
+    return `Unbanned ${a.name}.`;
+  }
+  if (action === 'op' || action === 'deop') {
+    if (fixed) return `${a.name} is always an admin.`;
+    a.admin = action === 'op';
+    await store.putAccount(a);
+    return a.admin ? `${a.name} is now an admin.` : `${a.name} is no longer an admin.`;
+  }
+  return `Unknown action ${action}.`;
+}
+
+// Chat commands (anything starting with /)
+async function command(ws, text) {
+  const acc = accounts.get(ws.account);
+  const [cmd, name, ...rest] = text.trim().replace(/^\//, '').split(/\s+/);
+  const c = (cmd || '').toLowerCase();
+  if (c === 'list') {
+    const here = String(ws.room || '').split('~')[0];
+    const names = [...wss.clients].filter((q) => q.room && q.room.split('~')[0] === here && q.name).map((q) => q.name);
+    return `${names.length} playing here: ${names.join(', ')}`;
+  }
+  if (!isAdmin(acc)) return c === 'help' ? 'Commands: /list (who is playing here). The rest are for admins.' : `Only admins can use /${c}.`;
+  if (c === 'help') return 'Admin commands: /kill name, /kick name, /ban name [reason], /unban name, /op name, /deop name, /players (everyone online), /accounts (every account), /list';
+  if (c === 'players') {
+    const on = playerList().filter((x) => x.online.length);
+    return on.length ? 'Online: ' + on.map((x) => `${x.name} in ${x.online.join(', ')}`).join('; ') : 'Nobody is in an online world.';
+  }
+  if (c === 'accounts') {
+    const all = playerList();
+    return `${all.length} accounts: ` + all.map((x) => x.name + (x.banned ? ' (banned)' : x.admin ? ' (admin)' : '')).join(', ');
+  }
+  if (['kill', 'kick', 'ban', 'unban', 'op', 'deop'].includes(c)) return adminAction(acc, c, name || '', rest.join(' ').slice(0, 80));
+  return `Unknown command /${c}. Try /help.`;
+}
+
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 32 * 1024 * 1024 });
 
 wss.on('connection', (ws) => {
@@ -450,6 +549,10 @@ wss.on('connection', (ws) => {
       return;
     }
     if (m.t === 'me' && ws.world && ws.account && m.data && typeof m.data === 'object') { putRecord(ws.world, ws.account, m.data); return; }
+    if (m.t === 'cmd' && ws.account && typeof m.text === 'string') {
+      try { send(ws, { t: 'cmd', msg: await command(ws, m.text.slice(0, 200)) }); } catch (err) { send(ws, { t: 'cmd', msg: 'That did not work: ' + err.message }); }
+      return;
+    }
     if (m.t === 'save' && room && ws.pid === 0 && typeof m.data === 'string') { queueSave(ws.room, m.data, m.v); return; }
     if (m.t === 'to' && room) {
       // Guests only talk to the host; the host can talk to one guest, several, or everyone

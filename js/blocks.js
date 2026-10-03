@@ -210,6 +210,25 @@ block(138, 'end_rod', 'End Rod', { render: RENDER.TORCH, solid: false, opaque: f
 block(139, 'dragon_egg', 'Dragon Egg', { light: 1, hardness: 3, stack: 1 });
 block(140, 'spawner', 'Monster Spawner', { opaque: false, cutout: true, hardness: 5, tool: 'pickaxe', level: 0, sound: 'metal', drops: none });
 
+// Caves & Ores: deepslate deep underground (with its own ores), copper, and the stones of cave walls
+const deepOre = (o = {}) => ({ hardness: 4.5, tool: 'pickaxe', level: 0, ...o });
+block(141, 'deepslate', 'Deepslate', { hardness: 3, tool: 'pickaxe', level: 0, drops: one('cobbled_deepslate') });
+block(142, 'cobbled_deepslate', 'Cobbled Deepslate', { hardness: 3.5, tool: 'pickaxe', level: 0 });
+block(143, 'deepslate_coal_ore', 'Deepslate Coal Ore', deepOre({ drops: one('coal') }));
+block(144, 'deepslate_iron_ore', 'Deepslate Iron Ore', deepOre({ level: 1 }));
+block(145, 'deepslate_gold_ore', 'Deepslate Gold Ore', deepOre({ level: 2 }));
+block(146, 'deepslate_diamond_ore', 'Deepslate Diamond Ore', deepOre({ level: 2, drops: one('diamond') }));
+block(147, 'deepslate_redstone_ore', 'Deepslate Redstone Ore', deepOre({ level: 2, drops: range('redstone', 4, 5) }));
+block(148, 'deepslate_lapis_ore', 'Deepslate Lapis Lazuli Ore', deepOre({ level: 1, drops: range('lapis_lazuli', 4, 8) }));
+block(149, 'deepslate_emerald_ore', 'Deepslate Emerald Ore', deepOre({ level: 2, drops: one('emerald') }));
+block(150, 'copper_ore', 'Copper Ore', { hardness: 3, tool: 'pickaxe', level: 1 });
+block(151, 'deepslate_copper_ore', 'Deepslate Copper Ore', deepOre({ level: 1 }));
+block(152, 'copper_block', 'Block of Copper', { hardness: 3, tool: 'pickaxe', level: 1, sound: 'metal' });
+block(153, 'tuff', 'Tuff', { hardness: 1.5, tool: 'pickaxe', level: 0 });
+block(154, 'granite', 'Granite', { hardness: 1.5, tool: 'pickaxe', level: 0 });
+block(155, 'diorite', 'Diorite', { hardness: 1.5, tool: 'pickaxe', level: 0 });
+block(156, 'andesite', 'Andesite', { hardness: 1.5, tool: 'pickaxe', level: 0 });
+
 // How easily fire catches each block
 const FLAMMABLE = {
   oak_log: 5, birch_log: 5, spruce_log: 5, jungle_log: 5, dark_oak_log: 5,
@@ -298,10 +317,11 @@ item(364, 'magma_cream', 'Magma Cream');
 item(365, 'wailer_tear', 'Wailer Tear');
 item(366, 'clamper_shell', 'Clamper Shell');
 item(367, 'charred_skull', 'Charred Skull');
+item(368, 'copper_ingot', 'Copper Ingot');
 
 export const TOOL_MATERIALS = [
   { key: 'wooden', name: 'Wooden', tier: 0, speed: 2, durability: 59, dmg: 0, ing: '#planks' },
-  { key: 'stone', name: 'Stone', tier: 1, speed: 4, durability: 131, dmg: 1, ing: 'cobblestone' },
+  { key: 'stone', name: 'Stone', tier: 1, speed: 4, durability: 131, dmg: 1, ing: '#cobblestone' },
   { key: 'iron', name: 'Iron', tier: 2, speed: 6, durability: 250, dmg: 2, ing: 'iron_ingot' },
   { key: 'golden', name: 'Golden', tier: 0, speed: 12, durability: 32, dmg: 0, ing: 'gold_ingot' },
   { key: 'diamond', name: 'Diamond', tier: 3, speed: 8, durability: 1561, dmg: 3, ing: 'diamond' },
@@ -364,6 +384,7 @@ const TAGS = {
   '#log': ['oak_log', 'birch_log', 'spruce_log', 'jungle_log', 'dark_oak_log', 'crimson_stem', 'warped_stem'],
   '#wool': WOOL_COLORS.map(([k]) => k + '_wool'),
   '#coal': ['coal', 'charcoal'],
+  '#cobblestone': ['cobblestone', 'cobbled_deepslate', 'blackstone'],   // what stone tools and furnaces can be made of
 };
 
 const RECIPE_DEFS = [
@@ -383,7 +404,7 @@ const RECIPE_DEFS = [
   { in: ['hay_bale'], out: ['wheat', 9] },
   { shape: ['#', '#'], key: { '#': '#planks' }, out: ['stick', 4] },
   { shape: ['##', '##'], key: { '#': '#planks' }, out: ['crafting_table', 1] },
-  { shape: ['###', '# #', '###'], key: { '#': 'cobblestone' }, out: ['furnace', 1] },
+  { shape: ['###', '# #', '###'], key: { '#': '#cobblestone' }, out: ['furnace', 1] },
   { shape: ['###', '# #', '###'], key: { '#': '#planks' }, out: ['chest', 1] },
   { shape: ['C', 'S'], key: { C: '#coal', S: 'stick' }, out: ['torch', 4] },
   { shape: ['##', '##'], key: { '#': 'stone' }, out: ['stone_bricks', 4] },
@@ -413,7 +434,7 @@ const RECIPE_DEFS = [
   { shape: ['###', '###', '###'], key: { '#': 'bone' }, out: ['bone_block', 1] },
   { in: ['bone_block'], out: ['bone', 9] },
 ];
-for (const [block, ingot] of [['emerald_block', 'emerald'], ['iron_block', 'iron_ingot'], ['gold_block', 'gold_ingot'], ['diamond_block', 'diamond'], ['coal_block', 'coal'], ['redstone_block', 'redstone'], ['lapis_block', 'lapis_lazuli']]) {
+for (const [block, ingot] of [['emerald_block', 'emerald'], ['iron_block', 'iron_ingot'], ['gold_block', 'gold_ingot'], ['diamond_block', 'diamond'], ['coal_block', 'coal'], ['redstone_block', 'redstone'], ['lapis_block', 'lapis_lazuli'], ['copper_block', 'copper_ingot']]) {
   RECIPE_DEFS.push({ shape: ['###', '###', '###'], key: { '#': ingot }, out: [block, 1] });
   RECIPE_DEFS.push({ in: [block], out: [ingot, 9] });
 }
@@ -523,6 +544,9 @@ const SMELT_DEFS = {
   diamond_ore: 'diamond', coal_ore: 'coal', clay: 'terracotta', emerald_ore: 'emerald', lapis_ore: 'lapis_lazuli', redstone_ore: 'redstone',
   netherrack: 'nether_brick', nether_quartz_ore: 'nether_quartz', nether_gold_ore: 'gold_ingot', crimson_stem: 'charcoal', warped_stem: 'charcoal',
   jungle_log: 'charcoal', dark_oak_log: 'charcoal',
+  copper_ore: 'copper_ingot', cobbled_deepslate: 'deepslate',
+  deepslate_coal_ore: 'coal', deepslate_iron_ore: 'iron_ingot', deepslate_gold_ore: 'gold_ingot', deepslate_diamond_ore: 'diamond',
+  deepslate_redstone_ore: 'redstone', deepslate_lapis_ore: 'lapis_lazuli', deepslate_emerald_ore: 'emerald', deepslate_copper_ore: 'copper_ingot',
 };
 
 // Mining a block drops it only with a good enough pickaxe (stone needs wood, iron ore stone,

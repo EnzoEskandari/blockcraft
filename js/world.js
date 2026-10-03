@@ -4,11 +4,13 @@ import { B, BLOCKS } from './blocks.js';
 import { CS, CH, SEA, BIOME, BIOME_NAMES } from './constants.js';
 import { stampStructures, structurePartsNear } from './structures.js';
 import { generateNether, generateEnd, netherBiome, endColumn } from './dims.js';
+import { carveTunnels, placeOres, deepslateAt } from './caves.js';
 
 export { CS, CH, SEA, BIOME, BIOME_NAMES };
 
 export const ckey = (cx, cz) => (cx + 32768) * 65536 + (cz + 32768);
 export const bidx = (x, y, z) => (y << 8) | (z << 4) | x;
+const CAVERN_TOP = 44;   // big caverns stay below this
 
 export class Chunk {
   constructor(cx, cz) {
@@ -62,6 +64,9 @@ export class World {
     this.spawners = new Map();        // "x,y,z" -> monster spawner state
     this.flags = {};                  // world events, e.g. the dragon beaten
     this.liquidLoaded = [];           // flowing liquid in chunks just loaded, for the liquid simulation
+    // Chunks made the way they were before the Caves & Ores update (the parts of older worlds people had
+    // already been to keep their caves and ores); every other chunk gets the new caves, deepslate and ores
+    this.legacy = null;               // Set of ckeys, or null
   }
 
   getChunk(cx, cz) { return this.chunks.get(ckey(cx, cz)); }
@@ -195,19 +200,28 @@ export class World {
       }
     }
 
-    // Cave density on a coarse grid, trilinearly interpolated
-    const GX = 5, GY = Math.min(33, (maxH >> 2) + 2);
+    // Cave density on a coarse grid, trilinearly interpolated. Older chunks: noodle tunnels and caverns
+    // as before; newer ones: only the big caverns deep down (their tunnels are carved further on)
+    const legacy = !!(this.legacy && this.legacy.has(ckey(cx, cz)));
+    const GX = 5, GY = legacy ? Math.min(33, (maxH >> 2) + 2) : CAVERN_TOP / 4 + 2;
     const grid = new Float32Array(GX * GX * GY);
     for (let iy = 0; iy < GY; iy++) {
       for (let iz = 0; iz < GX; iz++) {
         for (let ix = 0; ix < GX; ix++) {
           const wx = x0 + ix * 4, wy = iy * 4, wz = z0 + iz * 4;
-          const a = this.nCave1.noise3(wx * 0.015, wy * 0.022, wz * 0.015);
-          const b = this.nCave2.noise3(wx * 0.015, wy * 0.022, wz * 0.015);
-          let f = a * a + b * b - 0.006;
-          if (wy < 56) {
+          let f;
+          if (legacy) {
+            const a = this.nCave1.noise3(wx * 0.015, wy * 0.022, wz * 0.015);
+            const b = this.nCave2.noise3(wx * 0.015, wy * 0.022, wz * 0.015);
+            f = a * a + b * b - 0.006;
+            if (wy < 56) {
+              const c3 = this.nCave3.noise3(wx * 0.011, wy * 0.02, wz * 0.011);
+              f = Math.min(f, (0.6 - c3) * 0.1);
+            }
+          } else {
+            // caverns fade out towards y 44 and above the bedrock
             const c3 = this.nCave3.noise3(wx * 0.011, wy * 0.02, wz * 0.011);
-            f = Math.min(f, (0.6 - c3) * 0.1);
+            f = (0.56 - c3) * 0.1 + smoothstep(CAVERN_TOP - 16, CAVERN_TOP, wy) * 0.06 + Math.max(0, 8 - wy) * 0.01;
           }
           grid[(iy * GX + iz) * GX + ix] = f;
         }
@@ -261,14 +275,20 @@ export class World {
           if (y > 0 && y <= h && id !== B.bedrock) {
             const nearWater = h <= SEA + 1;
             // deep caves hold lava, the way to obsidian
-            if (!(nearWater && y >= h - 5) && !(y === h && h <= SEA + 2) && cave(lx, y, lz) < 0) id = y <= 10 ? B.lava : 0;
+            if (legacy) {
+              if (!(nearWater && y >= h - 5) && !(y === h && h <= SEA + 2) && cave(lx, y, lz) < 0) id = y <= 10 ? B.lava : 0;
+            } else {
+              if (id === B.stone && deepslateAt(seed, x, y, z)) id = B.deepslate;
+              if (y < CAVERN_TOP && !(nearWater && y >= h - 5) && cave(lx, y, lz) < 0) id = y < 9 ? B.lava : 0;
+            }
           }
           blocks[(y << 8) | (lz << 4) | lx] = id;
         }
       }
     }
 
-    this.generateOres(chunk);
+    if (legacy) this.generateOres(chunk);
+    else { carveTunnels(this, chunk); placeOres(this, chunk); }
 
     // Trees: origins may lie up to R blocks outside so canopies cross chunk borders cleanly.
     // No trees grow on structure footprints (village houses, roads, temples...).

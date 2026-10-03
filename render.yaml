@@ -11,3 +11,6 @@ services:
       # Optional: a Postgres connection string (e.g. a free Neon database) to keep online worlds forever
       - key: DATABASE_URL
         sync: false
+      # Optional: lets the admin account (Enzo) be created; see "Admins" in the README
+      - key: ADMIN_PASSWORD
+        sync: false

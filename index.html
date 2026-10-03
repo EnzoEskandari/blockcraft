@@ -153,6 +153,20 @@
   .mp-players { font-size: 20px; color: var(--text-dim); text-align: center; margin: 0; }
   .mp-status { max-width: 560px; overflow-wrap: anywhere; min-height: 1.2em; }
   #mp-storage { font-size: 17px; min-height: 0; }
+  /* the latest update, under the title buttons */
+  .linkbtn.update-banner { font-size: 21px; color: var(--accent); text-shadow: 2px 2px 0 #3f3f00; margin-top: 6px; }
+  .footer .linkbtn { font-size: 18px; color: #d8d8d8; text-shadow: 2px 2px 0 #222; }
+  .news-list { max-height: 58vh; padding: 10px 14px; gap: 14px; }
+  .news-item h3 { margin: 0; font: 400 clamp(12px, 2.4vw, 16px) var(--title-font); color: var(--accent); text-shadow: 2px 2px 0 #3f3f00; }
+  .news-date { font-size: 18px; color: var(--text-dim); }
+  .news-item ul { margin: 6px 0 0; padding-left: 22px; font-size: 21px; line-height: 1.15; }
+  .news-item li { margin-bottom: 4px; }
+  /* the turning picture of the latest update shows through the menus */
+  body.panorama .menu-bg:not(#s-loading) { background: rgba(0, 0, 0, 0.5); }
+  body.panorama #s-title.menu-bg { background: linear-gradient(rgba(0, 0, 0, 0.05), rgba(0, 0, 0, 0.35)); }
+  .admin-reason { width: min(560px, 100%); }
+  .world-row .tag-online { color: #7ec850; }
+  .world-row .tag-banned { color: #ff8a80; }
   #mp-storage.warn { color: #ff8a80; }
   .linkbtn { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); text-decoration: underline; cursor: pointer; }
   #s-mp.signed-out #online-list, #s-mp.signed-out .mp-world-buttons { display: none; }
@@ -419,8 +433,15 @@
       <button class="btn" id="b-options" type="button">Options…</button>
       <button class="btn" id="b-help" type="button">Controls</button>
     </div>
+    <button class="linkbtn update-banner" id="b-update" type="button"></button>
   </div>
-  <div class="footer"><span>Blockcraft 1.0</span><span>An original block game. Not affiliated with Mojang or Microsoft.</span></div>
+  <div class="footer"><button class="linkbtn" id="b-version" type="button"><span id="version">Blockcraft</span> · What's New</button><span>An original block game. Not affiliated with Mojang or Microsoft.</span></div>
+</section>
+
+<section class="screen menu-bg" id="s-news" hidden>
+  <h2>What's New</h2>
+  <div class="world-list news-list" id="news-list"></div>
+  <div class="col"><button class="btn" id="b-news-back" type="button">Back</button></div>
 </section>
 
 <section class="screen menu-bg" id="s-worlds" hidden>
@@ -462,7 +483,7 @@
       <button class="btn" id="b-sign-up" type="button">Create Account</button>
     </div>
   </form>
-  <p class="note" id="mp-account" hidden>Signed in as <strong id="mp-account-name"></strong> · <button class="linkbtn" id="b-sign-out" type="button">Sign out</button></p>
+  <p class="note" id="mp-account" hidden>Signed in as <strong id="mp-account-name"></strong> · <button class="linkbtn" id="b-sign-out" type="button">Sign out</button><span id="mp-admin-link" hidden> · <button class="linkbtn" id="b-admin" type="button">Admin</button></span></p>
   <div class="world-list" id="online-list"></div>
   <div class="confirm" id="online-delete-confirm" hidden>
     <p id="online-delete-text"></p>
@@ -484,6 +505,25 @@
     </div>
     <button class="btn" id="b-mp-back" type="button">Back</button>
   </div>
+</section>
+
+<section class="screen menu-bg" id="s-admin" hidden>
+  <h2>Players</h2>
+  <p class="note">Every account on this server. Pick a player, then what to do. In a world's chat, /help lists the commands.</p>
+  <div class="world-list" id="admin-list"></div>
+  <label class="field admin-reason" for="admin-reason">Reason for a ban (optional)<input id="admin-reason" type="text" maxlength="80" autocomplete="off"></label>
+  <div class="col" style="width:min(560px,100%)">
+    <div class="row2">
+      <button class="btn" id="b-admin-kill" type="button">Kill</button>
+      <button class="btn" id="b-admin-kick" type="button">Kick</button>
+    </div>
+    <div class="row2">
+      <button class="btn danger" id="b-admin-ban" type="button">Ban</button>
+      <button class="btn" id="b-admin-op" type="button">Make Admin</button>
+    </div>
+    <button class="btn" id="b-admin-back" type="button">Back</button>
+  </div>
+  <p class="note mp-status" id="admin-status"></p>
 </section>
 
 <section class="screen menu-bg" id="s-create" hidden>

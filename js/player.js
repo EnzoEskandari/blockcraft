@@ -911,10 +911,12 @@ export class Player {
     }
     const msgs = { lava: 'You tried to swim in lava', fireball: 'You were fireballed', wither: 'You withered away', fall: 'You hit the ground too hard', drown: 'You drowned', starve: 'You starved to death', void: 'You fell out of the world', explosion: 'You blew up', fire: 'You burned to death', magic: 'You were killed by magic', arrow: 'You were shot', pearl: 'You hit the ground too hard' };
     if (kind === 'player' && this.lastAttacker) msgs.player = `You were slain by ${this.lastAttacker}`;
+    if (kind === 'admin') msgs.admin = `You were killed by ${this.lastAttacker || 'an admin'}`;
     G.ui.showDeath(msgs[kind] || 'You were slain');
     if (G.net) {
       const told = { lava: 'tried to swim in lava', fireball: 'was fireballed', wither: 'withered away', fall: 'hit the ground too hard', drown: 'drowned', starve: 'starved to death', void: 'fell out of the world', explosion: 'blew up', fire: 'burned to death', magic: 'was killed by magic', arrow: 'was shot', pearl: 'hit the ground too hard' };
       if (kind === 'player' && this.lastAttacker) told.player = `was slain by ${this.lastAttacker}`;
+      if (kind === 'admin') told.admin = `was killed by ${this.lastAttacker || 'an admin'}`;
       G.net.announce(`${G.net.name} ${told[kind] || 'was slain'}`);
     }
   }

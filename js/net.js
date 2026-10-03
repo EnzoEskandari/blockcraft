@@ -351,6 +351,8 @@ export class Net {
       else this.saveGuest();
       return;
     }
+    if (m.t === 'cmd') { this.chat(null, String(m.msg || '')); return; }
+    if (m.t === 'admin') { this.adminDid(m); return; }
     if (m.t === 'left') { this.removePlayer(m.id); return; }
     if (m.t === 'rehost') {
       // whoever was running the world left: reconnect, and the first one back takes over
@@ -359,6 +361,22 @@ export class Net {
       if (G.net === this) G.net = null;
       G.game.rejoin(this.code, m.wait || 0, `${this.hostName || 'The host'} left. Taking over the world…`);
     }
+  }
+
+  // An admin killed, kicked or banned this player
+  adminDid(m) {
+    const by = String(m.by || 'An admin').slice(0, 16);
+    if (m.a === 'kill') {
+      const p = G.player;
+      if (p && !p.dead) { p.lastAttacker = by; p.die('admin'); }
+      return;
+    }
+    // whoever ran the world saves it for everyone else first
+    if (this.role === 'host') G.game.saveNow(); else this.saveGuest();
+    this.shutdown();
+    if (G.net === this) G.net = null;
+    if (m.a === 'ban') G.game.signOut();
+    G.game.leaveOnline(m.a === 'ban' ? `You were banned from multiplayer by ${by}${m.reason ? ': ' + String(m.reason).slice(0, 80) : '.'}` : `You were kicked from the world by ${by}.`);
   }
 
   // ------------------------------------------------------------ players
@@ -417,6 +435,8 @@ export class Net {
   say(text) {
     text = String(text).trim().slice(0, 120);
     if (!text) return;
+    // commands (/list, and for admins /kill, /ban...) go to the server, not to everyone
+    if (text[0] === '/') { this.chat(null, text); this.raw({ t: 'cmd', text }); return; }
     this.chat(this.name, text);
     if (this.role === 'host') this.send({ k: 'chat', n: this.name, t: text });
     else this.send({ k: 'chat', t: text });

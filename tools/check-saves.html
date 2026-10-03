@@ -34,7 +34,8 @@ async function openGame() {
   const { G } = await imp('game.js');
   for (let i = 0; i < 200 && !G.game; i++) await sleep(50);
   const { B, ITEMS } = await imp('blocks.js');
-  return { f, G, B, ITEMS };
+  const { ckey } = await imp('world.js');
+  return { f, G, B, ITEMS, ckey };
 }
 
 const waitPlaying = async (G) => {
@@ -43,7 +44,7 @@ const waitPlaying = async (G) => {
 };
 
 async function check(fx) {
-  const { f, G, B, ITEMS } = await openGame();
+  const { f, G, B, ITEMS, ckey } = await openGame();
   const e = fx.expect, bad = [];
   const slot = (s) => (s ? `${ITEMS[s.id].key} x${s.count}${s.dmg ? ' /' + s.dmg : ''}` : 'nothing');
   try {
@@ -59,6 +60,9 @@ async function check(fx) {
     if (e.nether) { const [x, y, z] = e.nether; if (G.world.getBlock(x, y, z) !== B.gold_block) bad.push('the gold block in the Nether is gone'); }
     if (G.dim !== 'overworld') { G.game.travel('overworld', 'spawn'); await waitPlaying(G); }
     const [x, y, z] = e.pos;
+    // worlds from before the Caves & Ores update keep their old caves and ores where the player had been
+    const old = G.world.legacy && G.world.legacy.has(ckey(x >> 4, z >> 4));
+    if (e.newCaves ? old : !old) bad.push(e.newCaves ? 'a world made with the new caves went back to the old ones' : 'the land around the build would get the new caves');
     if (![0, 1, 2, 3].every((k) => G.world.getBlock(x, y + k, z) === B.oak_planks)) bad.push('the plank tower is gone');
     if (G.world.getBlock(x, y, z + 2) !== B.chest) bad.push('the chest is gone');
     else if (slot(G.game.container(x, y, z + 2, 'chest').slots[3]) !== e.chest) bad.push(`the chest holds ${slot(G.game.container(x, y, z + 2, 'chest').slots[3])}, expected ${e.chest}`);
