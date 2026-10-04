@@ -4,16 +4,30 @@
 //
 // For a new update: add it at the top with its own splashes, notes and scene (a seed and a spot in that
 // world, plus any blocks to put there, e.g. torches to light a cave).
+// a torch-lit cavern in seed 7, with copper, iron, gold and redstone in its walls
+const CAVERN = {
+  seed: 7, x: -4.5, y: 28.4, z: -10.5, pitch: -0.08, time: 0.3, fog: [0.03, 0.03, 0.04],
+  place: [[-1, 26, -11, 'torch'], [-6, 27, -7, 'torch'], [-8, 26, -13, 'torch'], [-3, 26, -17, 'torch'], [1, 27, -5, 'torch'], [-12, 28, -7, 'torch'],
+    [-14, 28, -13, 'torch'], [-10, 26, -19, 'torch'], [3, 26, -16, 'torch'], [-5, 28, -1, 'torch'], [7, 27, -11, 'torch'], [-5, 25, -23, 'torch']],
+};
+
 export const UPDATES = [
+  {
+    // a small update: it keeps the Caves & Ores picture
+    version: '1.6.1', name: 'Shields & Off Hand', date: '2026-10-04',
+    splashes: ['Shields up!', 'Two hands now!', 'Press F!', 'Torch in the other hand!', 'Light it up or else!', 'Caves & Ores!', 'Now with deepslate!', 'Bring torches!'],
+    scene: CAVERN,
+    notes: [
+      'Shields: craft one from six planks and an iron ingot. Hold right click (or the shield button on iPad) to raise it and stop hits, arrows, fireballs and blasts from the front. Axes knock it down for a few seconds.',
+      'An off hand: press F to swap what you hold into it (on iPad, tap the slot left of the hotbar). Blocks and items there are used when your main hand has nothing to do, so you can place torches while holding a pickaxe.',
+      'Other players see your shield and off-hand item.',
+      'Monsters now appear by light level, like Minecraft: anywhere with no torchlight and little sky light, day or night. Dark caves and unlit rooms are dangerous in the daytime, and torches keep them away.',
+    ],
+  },
   {
     version: '1.6', name: 'Caves & Ores', date: '2026-10-02',
     splashes: ['Caves & Ores!', 'Now with deepslate!', 'Copper!', 'Mind the drop!', 'Bring torches!', 'Diamonds live deep!', 'Tunnels everywhere!'],
-    // a torch-lit cavern in seed 7, with copper, iron, gold and redstone in its walls
-    scene: {
-      seed: 7, x: -4.5, y: 28.4, z: -10.5, pitch: -0.08, time: 0.3, fog: [0.03, 0.03, 0.04],
-      place: [[-1, 26, -11, 'torch'], [-6, 27, -7, 'torch'], [-8, 26, -13, 'torch'], [-3, 26, -17, 'torch'], [1, 27, -5, 'torch'], [-12, 28, -7, 'torch'],
-        [-14, 28, -13, 'torch'], [-10, 26, -19, 'torch'], [3, 26, -16, 'torch'], [-5, 28, -1, 'torch'], [7, 27, -11, 'torch'], [-5, 25, -23, 'torch']],
-    },
+    scene: CAVERN,
     notes: [
       'New caves: winding tunnels that slope down gently, branch, and open onto the surface, with big caverns deep down. No more surprise pits.',
       'Deepslate below y 31, with its own ores, plus tuff, granite, diorite and andesite in the cave walls.',

@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { G, isTouchDevice } from './game.js';
 import { atlasData, TILES, TEX, ICONS } from './textures.js';
-import { BLOCKS, ITEMS, RENDER } from './blocks.js';
+import { BLOCKS, ITEMS, ID, RENDER } from './blocks.js';
 import { smoothstep, mulberry32 } from './noise.js';
 
 THREE.ColorManagement.enabled = false;
@@ -366,6 +366,38 @@ function buildHand() {
   R.handItemId = -1;
   R.handItem = null;
   R.swing = 0;
+  // the off hand's item, on the left
+  R.offHolder = new THREE.Group();
+  R.handScene.add(R.offHolder);
+  R.offItemId = -1;
+  R.offItem = null;
+  R.blockBlend = 0;
+}
+
+// What the off hand holds, shown at the bottom left (a shield faces you, ready to come up)
+export function setOffItem(id) {
+  if (id === R.offItemId) return;
+  R.offItemId = id;
+  const h = R.offHolder;
+  while (h.children.length) h.remove(h.children[0]);
+  R.offItem = null;
+  if (!id) return;
+  const m = itemModel(id);
+  if (m.userData.cube) {
+    m.scale.setScalar(0.2);
+    m.position.set(-0.46, -0.4, -0.7);
+    m.rotation.set(0.05, -Math.PI / 4 - 0.15, 0);
+  } else if (id === ID.shield) {
+    m.scale.setScalar(0.5);
+    m.position.set(-0.56, -0.47, -0.72);
+    m.rotation.set(0, 0.45, 0.08);
+  } else {
+    m.scale.setScalar(0.42);
+    m.position.set(-0.5, -0.36, -0.7);
+    m.rotation.set(0.1, 1.2, -0.35);
+  }
+  h.add(m);
+  R.offItem = m;
 }
 
 export function setHeldItem(id) {
@@ -386,6 +418,10 @@ export function setHeldItem(id) {
     m.scale.setScalar(0.24);
     m.position.set(0.44, -0.38, -0.66);
     m.rotation.set(0.05, Math.PI / 4 + 0.15, 0);
+  } else if (id === ID.shield) {
+    m.scale.setScalar(0.5);
+    m.position.set(0.56, -0.45, -0.72);
+    m.rotation.set(0, -0.45, -0.08);
   } else {
     m.scale.setScalar(0.5);
     m.position.set(0.46, -0.32, -0.66);
@@ -396,8 +432,8 @@ export function setHeldItem(id) {
   R.handItem = m;
 }
 
-// eat: seconds spent eating so far, or -1 when not eating
-export function updateHand(dt, light, bob, eat = -1) {
+// eat: seconds spent eating so far, or -1 when not eating; shield: 1 raised in the main hand, 2 in the off hand
+export function updateHand(dt, light, bob, eat = -1, shield = 0) {
   R.swing = Math.max(0, R.swing - dt * 4.5);
   const s = R.swing > 0 ? 1 - R.swing : 0;
   const h = R.handHolder;
@@ -417,7 +453,18 @@ export function updateHand(dt, light, bob, eat = -1) {
     const b = item.userData.baseRot;
     item.rotation.set(b.x - e * 0.1, b.y + e * 0.95, b.z - e * 0.3);
   }
+  // A raised shield comes up in front of you, from whichever side holds it
+  R.blockBlend = Math.max(0, Math.min(1, R.blockBlend + (shield ? dt : -dt) * 8));
+  if (shield) R.blockSide = shield;
+  const k = R.blockBlend * R.blockBlend * (3 - 2 * R.blockBlend);
+  const main = R.blockSide === 1 ? k : 0, offk = R.blockSide === 2 ? k : 0;
+  h.position.x -= main * 0.2; h.position.y += main * 0.13;
+  h.rotation.y += main * 0.35;
+  const o = R.offHolder;
+  o.position.set(Math.sin(bob * 2) * 0.012 + offk * 0.2, -Math.abs(Math.cos(bob * 2)) * 0.02 + offk * 0.13, 0);
+  o.rotation.set(0, -offk * 0.35, 0);
   tintModel(h, light);
+  tintModel(o, light);
 }
 
 export function swingHand() { if (R.swing <= 0.3) R.swing = 1; }

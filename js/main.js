@@ -1089,7 +1089,7 @@ function playerData(p) {
   return {
     pos: { ...p.pos }, yaw: p.yaw, pitch: p.pitch, health: p.health, food: p.food, saturation: p.saturation,
     inv: packSlots(p.inv.slots), selected: p.inv.selected, spawn: p.spawn, flying: p.flying,
-    armor: packSlots(p.armor), bed: p.bedSpawn, dim: G.dim || 'overworld',
+    armor: packSlots(p.armor), off: packSlots(p.off)[0], bed: p.bedSpawn, dim: G.dim || 'overworld',
   };
 }
 
@@ -1102,6 +1102,7 @@ function applyPlayerData(p, d) {
   p.spawn = d.spawn || { ...p.pos };
   p.flying = !!d.flying && p.creative;
   p.armor = unpackSlots(d.armor, 4);
+  p.off[0] = unpackSlots([d.off || 0], 1)[0];
   p.bedSpawn = d.bed || null;
   if (p.health <= 0) { p.health = 20; p.pos = { ...p.spawn }; }
 }

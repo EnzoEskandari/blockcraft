@@ -177,6 +177,7 @@ export function sfx(name, pos, opts = {}) {
     case 'splash_potion': for (let i = 0; i < 4; i++) tone(d, t + i * 0.02, 0.15, 'sine', 2200 + Math.random() * 2000, 1500, 0.1); noise(d, t, 0.3, 'highpass', 2500, 1, 0.3); break;
     case 'fireball': noise(d, t, 0.5, 'lowpass', 900, 0.8, 0.5, 200); tone(d, t, 0.3, 'sawtooth', 160, 60, 0.2, 400); break;
     case 'extinguish': noise(d, t, 0.5, 'highpass', 2600, 0.8, 0.35); break;
+    case 'shield': tone(d, t, 0.12, 'square', 190, 90, 0.35, 700); noise(d, t, 0.09, 'bandpass', 900, 1.5, 0.5); break;
     case 'burn': for (let i = 0; i < 3; i++) noise(d, t + Math.random() * 0.25, 0.04, 'bandpass', 1800 + Math.random() * 2500, 3, 0.25); noise(d, t, 0.4, 'lowpass', 500, 0.7, 0.12); break;
     case 'bucket': noise(d, t, 0.25, 'lowpass', 1100, 0.8, 0.35, 500); break;
     case 'portal': { const o = tone(d, t, 2.5, 'sine', 180, 260, 0.2); const l = ctx.createOscillator(), lg = ctx.createGain(); l.frequency.value = 4; lg.gain.value = 30; l.connect(lg); lg.connect(o.frequency); l.start(t); l.stop(t + 2.55); break; }

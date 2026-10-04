@@ -6,7 +6,7 @@ import { throwEye } from './dimmobs.js';
 import { activateEndPortal } from './dims.js';
 import { Inventory } from './inventory.js';
 import { moveBox, raycast, boxBlocked } from './physics.js';
-import { R, showHighlight, swingHand, setHeldItem, updateHand, brightness } from './render.js';
+import { R, showHighlight, swingHand, setHeldItem, setOffItem, updateHand, brightness } from './render.js';
 import { sfx, blockSound } from './audio.js';
 import { hitParticles } from './entities.js';
 import { iconColors } from './textures.js';
@@ -19,6 +19,11 @@ const HURT_TIME = 0.5;
 const tmpV = new THREE.Vector3();
 // Block defs also name the tool that mines them (.tool), so only non-block items count as tools
 const toolOf = (it) => (it && !it.isBlock ? it.tool : null);
+
+// Items with a use of their own on right-click; anything else in the main hand lets an off-hand shield come up
+const USES = ['bow', 'bucket', 'water_bucket', 'lava_bucket', 'flint_and_steel', 'shade_pearl', 'shade_eye', 'wheat_seeds'];
+const noUse = (st) => { if (!st) return true; const it = ITEMS[st.id]; return !(it.isBlock || it.food || it.armor || USES.includes(it.key)); };
+const SHIELD_STOPS = ['mob', 'arrow', 'fireball', 'explosion', 'player'];
 
 export class Player {
   constructor() {
@@ -67,6 +72,12 @@ export class Player {
     this.lastJumpTap = 0;
     this.hintCd = 0;
     this.armor = [null, null, null, null];   // helmet, chestplate, leggings, boots
+    this.off = [null];        // the off hand (F swaps it with the main hand); a list of one so the inventory can show it
+    this.shieldUp = false;    // holding a shield up
+    this.blocking = false;    // ...and it has been up long enough to stop a hit
+    this.blockT = 0;
+    this.shieldCd = 0;        // an axe knocked it down: seconds until it can be raised again
+    this.blockedAt = -9;
     this.effects = { poison: 0, slow: 0, wither: 0, levitation: 0 };
     this.poisonTick = 0;
     this.portalT = 0;
@@ -102,6 +113,7 @@ export class Player {
 
   addEffect(name, secs) {
     if (this.creative || this.dead) return;
+    if (G.clock - this.blockedAt < 0.2) return;   // it came with a hit the shield just stopped
     if (name === 'hunger') { this.hungerEffect = Math.max(this.hungerEffect, secs); return; }
     if (name === 'burn') { this.burning = Math.max(this.burning, secs); return; }
     this.effects[name] = Math.max(this.effects[name] || 0, secs);
@@ -124,6 +136,43 @@ export class Player {
 
   get creative() { return this.mode === 'creative'; }
   get eyeY() { return this.pos.y + 1.62 - (this.sneaking && !this.flying ? 0.12 : 0); }
+
+  get offhand() { return this.off[0]; }
+
+  // F: what is in the main hand and the off hand change places
+  swapHands() {
+    const inv = this.inv, i = inv.selected;
+    if (!inv.slots[i] && !this.off[0]) return;
+    [inv.slots[i], this.off[0]] = [this.off[0], inv.slots[i]];
+    this.eating = null;
+    this.mining = null;
+    sfx('armor', null, { vol: 0.5 });
+    G.ui.invChanged(true);
+  }
+
+  // The off hand gets its turn when the main hand had nothing to do (a torch while holding a pickaxe)
+  useOff(target, fromTap) {
+    const off = this.off[0];
+    if (!off || off.id === ID.shield || ITEMS[off.id].food || ITEMS[off.id].armor) return false;
+    const inv = this.inv, i = inv.selected, main = inv.slots[i];
+    inv.slots[i] = off;
+    let done = false;
+    try { done = this.use(target, fromTap); } finally { this.off[0] = inv.slots[i]; inv.slots[i] = main; }
+    if (done) G.ui.invChanged();
+    return done;
+  }
+
+  // A blocked hit wears the shield out (the one in the main hand if both hold one)
+  wearShield(n) {
+    if (!n || this.creative) return;
+    const inv = this.inv, i = inv.selected;
+    const inMain = !!inv.slots[i] && inv.slots[i].id === ID.shield;
+    const sh = inMain ? inv.slots[i] : this.off[0];
+    if (!sh || sh.id !== ID.shield) return;
+    sh.dmg = (sh.dmg || 0) + n;
+    if (sh.dmg >= ITEMS[ID.shield].durability) { if (inMain) inv.slots[i] = null; else this.off[0] = null; sfx('break_tool'); }
+    G.ui.invChanged();
+  }
 
   lookDir() {
     const cp = Math.cos(this.pitch);
@@ -205,7 +254,7 @@ export class Player {
       if (now - this.lastJumpTap < 300) { this.flying = !this.flying; this.vel.y = 0; this.lastJumpTap = 0; }
       else this.lastJumpTap = now;
     }
-    if (input.toggleFly && this.creative) { this.flying = !this.flying; this.vel.y = 0; }
+    if (input.swapHands && !this.dead) this.swapHands();
     if (!this.creative) this.flying = false;
 
     this.sneaking = input.sneak && !this.flying && !this.inWater;
@@ -214,13 +263,13 @@ export class Player {
     if (len > 1) { fwd /= len; str /= len; }
     const canSprint = this.food > 6 || this.creative;
     if ((input.sprint || input.sprintLatch) && fwd > 0.5 && !this.sneaking && canSprint && !this.eating) this.sprinting = true;
-    if (fwd <= 0.1 || this.sneaking || !canSprint || this.eating) this.sprinting = false;
+    if (fwd <= 0.1 || this.sneaking || !canSprint || this.eating || this.shieldUp) this.sprinting = false;
 
     let speed = this.flying ? (this.sprinting ? FLY_SPRINT : FLY) : this.sneaking ? SNEAK : this.sprinting ? SPRINT : WALK;
     if (this.effects.slow > 0) speed *= 0.7;
     const inWeb = BLOCKS[w.getBlock(bx, Math.floor(this.pos.y + 0.2), bz)].slow || BLOCKS[w.getBlock(bx, Math.floor(this.pos.y + 1.2), bz)].slow;
     if (inWeb && !this.flying) { speed *= inWeb; this.vel.y = Math.max(this.vel.y, -1.5); }
-    if (this.eating && !this.flying) speed *= 0.35;
+    if ((this.eating || this.shieldUp) && !this.flying) speed *= 0.35;
     if (this.inWater && !this.flying) speed *= this.sprinting ? 0.8 : 0.55;
     if (this.inLava && !this.flying) speed *= 0.35;
     const sy = Math.sin(this.yaw), cy = Math.cos(this.yaw);
@@ -398,6 +447,18 @@ export class Player {
     const held = this.inv.held;
     const it = held ? ITEMS[held.id] : null;
     setHeldItem(held ? held.id : 0);
+    const off = this.off[0];
+    setOffItem(off ? off.id : 0);
+
+    // Shield: hold use (or the shield button on a touch screen) with one in either hand; it takes a moment
+    // to come up. In the off hand it waits its turn behind a main-hand item with a use of its own.
+    const shieldMain = !!held && held.id === ID.shield, shieldOff = !!off && off.id === ID.shield;
+    this.shieldCd = Math.max(0, this.shieldCd - dt);
+    this.shieldUp = !this.frozen && !this.dead && this.shieldCd <= 0 && !this.eating
+      && ((input.block && (shieldMain || shieldOff)) || (input.useHeld && (shieldMain || (shieldOff && noUse(held)))));
+    this.blockT = this.shieldUp ? this.blockT + dt : 0;
+    this.blocking = this.blockT >= 0.25;
+    this.shieldHand = this.shieldUp ? (shieldMain ? 1 : 2) : 0;
 
     // Eating: hold right mouse with food in hand. On touch, a tap starts eating (auto),
     // so holding the screen always mines, whatever you are holding.
@@ -465,7 +526,7 @@ export class Player {
           if (this.food < 20 && !this.creative) this.eating = { id: held.id, t: 0, crunch: 0, auto: true };
           else this.hint('You are not hungry');
         }
-      } else if (!this.use(target, true)) swingHand();
+      } else if (!this.use(target, true) && !this.useOff(target, true)) swingHand();
       this.useCd = 0.25;
     }
 
@@ -484,7 +545,7 @@ export class Player {
     // Use / place (right click, repeats while held)
     if ((input.usePressed || (input.useHeld && this.useCd <= 0)) && !this.frozen && !this.eating) {
       this.placeBlocked = false;
-      if (this.use(target, false)) this.useCd = 0.25;
+      if (this.use(target, false) || this.useOff(target, false)) this.useCd = 0.25;
       else if (input.usePressed && !this.placeBlocked) this.useCd = 0.25;
     }
 
@@ -853,10 +914,24 @@ export class Player {
     G.ui.invChanged();
   }
 
-  hurt(amount, fromX, fromZ, kind) {
+  // axe: the blow came from an axe, which knocks a shield down for a while
+  hurt(amount, fromX, fromZ, kind, axe = false) {
     if (this.dead) return;
     if (this.creative && kind !== 'void') return;
     if (this.invul > 0 && kind !== 'void') return;
+    // A raised shield stops what comes from in front: hits, arrows, fireballs and blasts
+    if (this.blocking && fromX != null && SHIELD_STOPS.includes(kind)) {
+      const dx = fromX - this.pos.x, dz = fromZ - this.pos.z, d = Math.hypot(dx, dz);
+      const look = this.lookDir();
+      if (d < 0.05 || dx * look.x + dz * look.z > 0) {
+        sfx('shield', null, { vol: 0.9 });
+        this.blockedAt = G.clock;
+        this.invul = HURT_TIME;
+        this.wearShield(amount >= 3 ? 1 + Math.floor(amount) : 0);
+        if (axe) { this.shieldCd = 5; this.shieldUp = this.blocking = false; this.blockT = 0; this.hint('Your shield was knocked down'); }
+        return;
+      }
+    }
     // monsters hit softer than in Minecraft's normal difficulty (its "easy" amounts)
     if (kind === 'mob' || kind === 'arrow' || kind === 'fireball' || kind === 'explosion') amount = Math.min(amount, amount / 2 + 1);
     const bypass = ['fall', 'drown', 'starve', 'void', 'poison', 'magic', 'pearl', 'wither'].includes(kind);
@@ -902,12 +977,13 @@ export class Player {
     this.mining = null;
     this.eating = null;
     if (!this.creative) {
-      const all = [...this.inv.slots, ...this.armor];
+      const all = [...this.inv.slots, ...this.armor, ...this.off];
       for (const s of all) {
         if (s) G.entities.dropShared(s.id, s.count, this.pos.x, this.pos.y + 1, this.pos.z, (Math.random() - 0.5) * 6, 3 + Math.random() * 3, (Math.random() - 0.5) * 6, s.dmg);
       }
       this.inv.clear();
       this.armor = [null, null, null, null];
+      this.off[0] = null;
     }
     const msgs = { lava: 'You tried to swim in lava', fireball: 'You were fireballed', wither: 'You withered away', fall: 'You hit the ground too hard', drown: 'You drowned', starve: 'You starved to death', void: 'You fell out of the world', explosion: 'You blew up', fire: 'You burned to death', magic: 'You were killed by magic', arrow: 'You were shot', pearl: 'You hit the ground too hard' };
     if (kind === 'player' && this.lastAttacker) msgs.player = `You were slain by ${this.lastAttacker}`;
@@ -930,6 +1006,7 @@ export class Player {
     this.hungerEffect = 0;
     this.effects = { poison: 0, slow: 0, wither: 0, levitation: 0 };
     this.burning = 0;
+    this.shieldUp = this.blocking = false;
     this.air = 15;
     this.fallDist = 0;
     this.vel = { x: 0, y: 0, z: 0 };
@@ -966,7 +1043,7 @@ export class Player {
     if (Math.abs(cam.fov - fov) > 0.01) { cam.fov = fov; cam.updateProjectionMatrix(); }
     if (this.dead && this.pos.y > -60) cam.position.y = this.pos.y + 0.3;
     const [s, b] = G.world.getLight(Math.floor(this.pos.x), Math.floor(this.eyeY), Math.floor(this.pos.z));
-    updateHand(dt, brightness(s, b), this.bob * Math.PI * bob, this.eating ? this.eating.t : -1);
+    updateHand(dt, brightness(s, b), this.bob * Math.PI * bob, this.eating ? this.eating.t : -1, this.shieldHand || 0);
     R.handHolder.visible = !this.dead;
   }
 }

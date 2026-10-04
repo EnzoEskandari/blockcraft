@@ -2,7 +2,7 @@
 import { UPDATES, LATEST } from './updates.js';
 import { G, saveSettings } from './game.js';
 import { ITEMS, ID, B, maxStack, itemName, matchRecipe, fuelValue, SMELTING, creativeList, RECIPES } from './blocks.js';
-import { iconURL, ICONS, drawAscii, TILES, TEX, armorSilhouette } from './textures.js';
+import { iconURL, ICONS, drawAscii, TILES, TEX, armorSilhouette, shieldSilhouette } from './textures.js';
 import { PROFESSIONS } from './villagers.js';
 import { structuresNear } from './structures.js';
 import { sameItem, stack, craftableTimes, takeIngredients } from './inventory.js';
@@ -92,6 +92,16 @@ export class UI {
       food.appendChild(h('i', 'food'));
       bubbles.appendChild(h('i', 'bubble'));
     }
+    // the off hand: tap or click it to swap hands (F on a keyboard)
+    this.shieldIcon = shieldSilhouette();
+    const offEl = $('offhand');
+    offEl.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (G.state !== 'playing' || G.screen) return;
+      G.player.swapHands();
+    });
+    $('t-shield').style.backgroundImage = `url(${iconURL(ID.shield)})`;
     const bar = $('hotbar');
     for (let i = 0; i < 9; i++) {
       const s = h('div', 'slot');
@@ -856,6 +866,13 @@ export class UI {
         this.renderSlot(el, inv.slots[i]);
         el.classList.toggle('sel', i === inv.selected);
       });
+      const off = p.off[0], offEl = $('offhand');
+      this.renderSlot(offEl, off);
+      offEl.classList.toggle('empty', !off);
+      offEl.style.backgroundImage = off ? '' : `url(${this.shieldIcon})`;
+      // the shield button, on touch screens, while a shield is in a hand
+      const held = inv.held;
+      $('t-shield').hidden = !((held && held.id === ID.shield) || (off && off.id === ID.shield));
     }
     const survival = !p.creative;
     if (c.survival !== survival) { c.survival = survival; $('stats').style.visibility = survival ? 'visible' : 'hidden'; }
@@ -1042,6 +1059,12 @@ export class UI {
           el.style.backgroundImage = `url(${this.armorIcons[i]})`;
         }
         row.appendChild(col);
+        // the off hand, beside the boots
+        const offCol = h('div', 'off-col');
+        const offSlot = add(offCol, { kind: 'offhand', arr: G.player.off, i: 0 });
+        offSlot.classList.add('armor-slot');
+        offSlot.style.backgroundImage = `url(${this.shieldIcon})`;
+        row.appendChild(offCol);
       }
       const g = grid(n);
       for (let i = 0; i < n * n; i++) add(g, { kind: 'craft', arr: this.craft.slots, i });
@@ -1416,6 +1439,9 @@ export class UI {
     const arm = ITEMS[s.id] && ITEMS[s.id].armor;
     if (ref.arr === inv.slots && arm && !G.player.armor[arm.slot] && c && c.kind === 'inventory') {
       G.player.armor[arm.slot] = s; ref.arr[ref.i] = null; sfx('armor'); return;
+    }
+    if (ref.arr === inv.slots && s.id === ID.shield && !G.player.off[0] && c && c.kind === 'inventory') {
+      G.player.off[0] = s; ref.arr[ref.i] = null; sfx('armor'); return;   // a shield goes straight to the off hand
     }
     if (ref.arr === inv.slots) {
       if (c && c.kind === 'chest') left = this.moveInto(s, c.data.slots, range(0, 27));

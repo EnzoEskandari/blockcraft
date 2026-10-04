@@ -732,7 +732,7 @@ Object.assign(MOB_TYPES, {
   magma_slime: { name: 'Magma Slime', hp: 16, w: 2, h: 2, speed: 2.4, hostile: true, slime: true, fireImmune: true, sound: 'slime', pitch: 0.7, drops: [], anim: 'slime' },
   snoutling: { name: 'Snoutling', hp: 16, w: 0.6, h: 1.95, speed: 2.6, hostile: true, goldLover: true, damage: 4, fireImmune: false, tick: snoutlingTick, sound: 'snoutling', pitch: 1, anim: 'human',
     init: (m) => holdItem(m, 'golden_sword'), drops: [drop('gold_nugget', 0, 2)] },
-  snoutling_brute: { name: 'Snoutling Brute', hp: 50, w: 0.6, h: 1.95, speed: 2.7, hostile: true, always: true, persistent: true, damage: 9, sound: 'snoutling', pitch: 0.7, anim: 'human',
+  snoutling_brute: { name: 'Snoutling Brute', hp: 50, w: 0.6, h: 1.95, speed: 2.7, hostile: true, always: true, persistent: true, damage: 9, axe: true, sound: 'snoutling', pitch: 0.7, anim: 'human',
     init: (m) => holdItem(m, 'golden_axe'), drops: [drop('golden_axe', 0, 1), drop('gold_ingot', 1, 3)] },
   rotting_snoutling: { name: 'Rotting Snoutling', hp: 20, w: 0.6, h: 1.95, speed: 2.4, hostile: true, neutral: true, groupAnger: true, damage: 4, fireImmune: true, sound: 'zombie', pitch: 1.2, anim: 'human',
     init: (m) => holdItem(m, 'golden_sword'), drops: [drop('rotten_flesh', 0, 1), drop('gold_nugget', 0, 1)] },

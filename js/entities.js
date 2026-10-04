@@ -225,18 +225,23 @@ const MODELS = {
 
 // An item in a humanoid model's right hand: the grip in the fist and the blade pointing forward, its
 // flat side seen from the side as in Minecraft (blocks are held as small cubes)
-export function holdInHand(model, id, scale = 10) {
+// (left: the off hand instead; a shield is strapped to the forearm, facing out)
+export function holdInHand(model, id, scale = 10, left = false) {
   const it = itemModel(id);
   if (it.userData.cube) {
     it.scale.setScalar(scale * 0.6);
     it.position.set(0, -10, 1.5);
     it.rotation.set(0, Math.PI / 4, 0);
+  } else if (id === ID.shield) {
+    it.scale.setScalar(scale * 1.2);
+    it.position.set(0, -6, 2.6);
+    it.rotation.set(0, 0, 0);
   } else {
     it.scale.setScalar(scale);
     it.position.set(0, -10, scale * 0.42);
-    it.rotation.set(0, -Math.PI / 2, -Math.PI / 4);
+    it.rotation.set(0, left ? Math.PI / 2 : -Math.PI / 2, left ? Math.PI * 0.75 : -Math.PI / 4);
   }
-  model.parts.arm0.add(it);
+  model.parts[left ? 'arm1' : 'arm0'].add(it);
   return it;
 }
 
@@ -507,7 +512,7 @@ export const MOB_TYPES = {
   shade: { name: 'Shade', hp: 40, w: 0.6, h: 2.6, speed: 3.4, hostile: true, neutral: true, damage: 6, teleports: true, sound: 'shade', pitch: 0.8, drops: [drop('shade_pearl', 0, 1)], anim: 'shade' },
   gloomwing: { name: 'Gloomwing', hp: 20, w: 0.9, h: 0.5, speed: 7, hostile: true, flies: true, sight: 32, burns: true, damage: 2, sound: 'gloomwing', pitch: 1, drops: [drop('gloom_membrane', 0, 1)], anim: 'wing' },
   pillager: { name: 'Pillager', hp: 24, w: 0.6, h: 1.95, speed: 2.3, hostile: true, always: true, ranged: 'crossbow', persistent: true, sound: 'illager', pitch: 1, drops: [drop('arrow', 0, 2)], anim: 'illager' },
-  vindicator: { name: 'Vindicator', hp: 24, w: 0.6, h: 1.95, speed: 2.7, hostile: true, always: true, damage: 8, huntsVillagers: true, persistent: true, sound: 'illager', pitch: 0.85, drops: [drop('emerald', 0, 1)], anim: 'illager' },
+  vindicator: { name: 'Vindicator', hp: 24, w: 0.6, h: 1.95, speed: 2.7, hostile: true, always: true, damage: 8, axe: true, huntsVillagers: true, persistent: true, sound: 'illager', pitch: 0.85, drops: [drop('emerald', 0, 1)], anim: 'illager' },
   iron_golem: { name: 'Iron Golem', hp: 100, w: 1.4, h: 2.7, speed: 1.5, golem: true, damage: 12, persistent: true, sound: 'golem', pitch: 0.5, drops: [drop('iron_ingot', 3, 5), drop('poppy', 0, 2)], anim: 'golem' },
   villager: { name: 'Villager', hp: 20, w: 0.6, h: 1.95, speed: 1.5, villager: true, persistent: true, sound: 'villager', pitch: 1, drops: [], anim: 'villager' },
 };
@@ -706,7 +711,7 @@ class Mob {
 
   hit(t, dmg) {
     if (t.isPlayer) {
-      t.hurt(dmg, this.pos.x, this.pos.z, 'mob');
+      t.hurt(dmg, this.pos.x, this.pos.z, 'mob', !!this.def.axe);   // an axe knocks a shield down
       if (this.def.hungerHit) t.addEffect('hunger', 7);
     } else t.hurt(dmg, this.pos.x, this.pos.z, false, 1, this);
   }
@@ -1798,14 +1803,17 @@ export class Entities {
       const gx = p.pos.x + Math.cos(a) * 10, gz = p.pos.z + Math.sin(a) * 10, gy = Math.min(CH - 4, p.pos.y + 20 + rand() * 10);
       if (!boxBlocked(w, gx, gy, gz, 0.45, 0.5)) { this.spawnMob('gloomwing', gx, gy, gz, { home: { x: p.pos.x, y: p.pos.y, z: p.pos.z } }); return; }
     }
-    for (let attempt = 0; attempt < 4; attempt++) {
-      const ang = rand() * TAU, dist = 24 + rand() * 20;
+    // Monsters appear wherever it is dark enough, day or night, as in Minecraft: caves, unlit rooms, deep
+    // shade, and the open ground once the sun goes down. Never within 24 blocks of a player.
+    const far = (x, y, z) => !alive.some((q) => Math.hypot(q.pos.x - x, q.pos.y - y, q.pos.z - z) < 24);
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const ang = rand() * TAU, dist = Math.sqrt(rand()) * 44;
       const x = Math.floor(p.pos.x + Math.cos(ang) * dist), z = Math.floor(p.pos.z + Math.sin(ang) * dist);
       const c = w.getChunk(x >> 4, z >> 4);
       if (!c || !c.light) continue;
       const biome = c.biomes[((z & 15) << 4) | (x & 15)];
       // Drowned rise out of deep water now and then: at night, or in the day only where it is very deep
-      if (rand() < 0.06) {
+      if (rand() < 0.06 && dist >= 24) {
         let y = SEA;
         if (w.getBlock(x, y, z) !== B.water) continue;
         while (y > 2 && w.getBlock(x, y - 1, z) === B.water) y--;
@@ -1815,20 +1823,22 @@ export class Entities {
         this.spawnMob('drowned', x + 0.5, y, z + 0.5);
         return;
       }
-      let y;
-      if (rand() < 0.5) {
-        y = Math.min(CH - 3, c.maxY + 1);
-        while (y > 1 && !w.isSolid(x, y - 1, z)) y--;
-      } else {
-        y = 4 + Math.floor(rand() * Math.max(1, Math.min(CH - 8, p.pos.y + 20) - 4));
-        let k = 0;
-        while (k < 16 && y > 1 && !w.isSolid(x, y - 1, z)) { y--; k++; }
+      // every floor in this column with room to stand: the ground, and each cave level beneath it
+      const floors = [];
+      for (let fy = Math.min(CH - 3, c.maxY + 1); fy > 1; fy--) {
+        if (w.getBlock(x, fy, z) === 0 && w.getBlock(x, fy + 1, z) === 0 && BLOCKS[w.getBlock(x, fy - 1, z)].opaque && w.isSolid(x, fy - 1, z)) floors.push(fy);
       }
-      if (!w.isSolid(x, y - 1, z) || w.getBlock(x, y, z) !== 0 || w.getBlock(x, y + 1, z) !== 0) continue;
-      const below = w.getBlock(x, y - 1, z);
-      if (!BLOCKS[below].opaque) continue;
+      if (!floors.length) continue;
+      // levels near the player's own height are the likeliest: caves when you are down there, the ground
+      // when you are up top (there are only so many monsters to go round)
+      const wts = floors.map((fy) => 1 / (1 + ((fy - p.pos.y) / 10) ** 2));
+      let pick = rand() * wts.reduce((a, b) => a + b, 0), fi = 0;
+      while (fi < floors.length - 1 && (pick -= wts[fi]) > 0) fi++;
+      const y = floors[fi];
+      if (!far(x + 0.5, y, z + 0.5)) continue;
+      // no light at all from torches, lava or glowstone, and little enough from the sky (the darker, the likelier)
       const [sky, blk] = w.getLight(x, y, z);
-      if (Math.max(Math.round(sky * G.daylight), blk) > 7) continue;
+      if (blk > 0 || Math.round(sky * G.daylight) > Math.floor(rand() * 8)) continue;
       const r = rand() * 100;
       let type, opts = {};
       if (biome === BIOME.SWAMP && r < 20) { type = 'slime'; }
@@ -1857,11 +1867,11 @@ export class Entities {
     for (const m of this.mobs) {
       if (m.removed) continue;
       let d = Infinity;
-      for (const q of ps) d = Math.min(d, Math.hypot(m.pos.x - q.pos.x, m.pos.z - q.pos.z));
+      for (const q of ps) d = Math.min(d, Math.hypot(m.pos.x - q.pos.x, m.pos.y - q.pos.y, m.pos.z - q.pos.z));
       // wandered out of the loaded world: kept for when that area loads again
       if (!w.getChunk(Math.floor(m.pos.x) >> 4, Math.floor(m.pos.z) >> 4)) { this.stash(m); continue; }
       if (m.persistent) continue;
-      if (m.def.hostile && (d > 80 || (d > 40 && rand() < 0.02))) m.removed = true;
+      if (m.def.hostile && (d > 72 || (d > 34 && rand() < 0.025))) m.removed = true;   // far ones make room for new ones nearer
       if (m.type === 'gloomwing' && G.daylight > 0.8 && rand() < 0.05) m.removed = true;
     }
     for (const it of this.items) if (!it.removed && !it.proxy && !w.getChunk(Math.floor(it.pos.x) >> 4, Math.floor(it.pos.z) >> 4)) this.stash(it);

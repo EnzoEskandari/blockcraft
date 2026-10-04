@@ -5,7 +5,9 @@ import { initAudio } from './audio.js';
 export const input = {
   moveX: 0, moveZ: 0,
   jump: false, jumpPressed: false,
-  sneak: false, sprint: false, sprintLatch: false, toggleFly: false,
+  sneak: false, sprint: false, sprintLatch: false,
+  swapHands: false,   // F: swap the main hand and the off hand
+  block: false,       // the shield button on a touch screen is held
   lookX: 0, lookY: 0,
   attackPressed: false, mine: false,
   usePressed: false, useHeld: false, tap: false,
@@ -23,7 +25,7 @@ let mouseX = 0, mouseY = 0, mouseInside = false;
 const touch = {
   joyId: null, joyX: 0, joyY: 0, joyDX: 0, joyDY: 0,
   lookId: null, lastX: 0, lastY: 0, startX: 0, startY: 0, startT: 0, dragging: false, holding: false, holdTimer: 0, tapX: 0, tapY: 0,
-  jump: false, sneakLatch: false, sneakHold: false, sprintLatch: false,
+  jump: false, sneakLatch: false, sneakHold: false, sprintLatch: false, block: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -81,7 +83,7 @@ export function initInput() {
       if (code === 'KeyE') { G.ui.openScreen(G.player.creative ? 'creative' : 'inventory'); return; }
       if ((code === 'KeyT' || code === 'Enter') && G.net) { e.preventDefault(); G.ui.openScreen('chat'); return; }
       if (code === 'KeyQ') { input.drop = true; input.dropAll = e.ctrlKey || e.metaKey; }
-      if (code === 'KeyF') input.toggleFly = true;
+      if (code === 'KeyF') input.swapHands = true;
       if (code === 'F3') { G.settings.showCoords = !G.settings.showCoords; }
       if (code === 'Escape' && !document.pointerLockElement) { G.ui.openScreen('pause'); return; }
       if (code.startsWith('Digit')) {
@@ -260,6 +262,7 @@ function initTouch() {
   hold('t-inv', () => { if (playing()) G.ui.openScreen(G.player.creative ? 'creative' : 'inventory'); });
   hold('t-pause', () => { if (playing()) G.ui.openScreen('pause'); });
   hold('t-drop', () => { if (playing()) input.drop = true; });
+  hold('t-shield', () => { touch.block = true; }, () => { touch.block = false; });
 
   document.addEventListener('gesturestart', (e) => e.preventDefault());
   document.addEventListener('dblclick', (e) => e.preventDefault());
@@ -280,6 +283,7 @@ export function pollInput(dt) {
   input.moveZ = mz;
   input.jump = k('Space') || touch.jump;
   input.sneak = k('ShiftLeft') || k('ShiftRight') || touch.sneakLatch || touch.sneakHold;
+  input.block = touch.block;
   input.sprint = k('ControlLeft') || k('ControlRight') || touch.sprintLatch
     || (touch.joyId !== null && touch.joyDY < -0.92 && Math.abs(touch.joyDX) < 0.45);
   input.mine = mouseL || touch.holding;
@@ -300,13 +304,13 @@ export function pollInput(dt) {
     if (input.tap) input.aim = ndc(touch.tapX, touch.tapY);
     else if (touch.lookId !== null) input.aim = ndc(touch.lastX, touch.lastY);
   }
-  if (!playing()) { input.moveX = input.moveZ = 0; input.jump = input.mine = input.useHeld = false; }
+  if (!playing()) { input.moveX = input.moveZ = 0; input.jump = input.mine = input.useHeld = input.block = false; }
 }
 
 export function endFrame() {
   input.lookX = input.lookY = 0;
   input.jumpPressed = input.attackPressed = input.usePressed = input.tap = false;
-  input.drop = input.dropAll = input.pick = input.toggleFly = false;
+  input.drop = input.dropAll = input.pick = input.swapHands = false;
 }
 
 export function resetTouch() {
@@ -314,5 +318,6 @@ export function resetTouch() {
   touch.sneakHold = false;
   touch.jump = false;
   touch.sprintLatch = false;
+  touch.block = false;
   for (const id of ['t-sneak', 't-sprint']) { const s = $(id); if (s) s.classList.remove('latched'); }
 }

@@ -53,6 +53,12 @@ How it works:
 - Animals, villagers and dropped items are kept when you walk away.
 - Press **T** (or the **T** button on iPad) to chat.
 
+## Shields and the off hand (1.6.1)
+
+- **Shield:** six planks and an iron ingot. Hold right click to raise it (on iPad, hold the shield button that appears above jump). It stops hits, arrows, fireballs and blasts that come from in front; axes knock it down for five seconds.
+- **Off hand:** press **F** to swap what you are holding into it (on iPad, tap the slot left of the hotbar). Its item is used when the main hand has nothing to do, so a torch there can be placed while you hold a pickaxe.
+- **Monsters by light level:** they appear anywhere with no torch or lava light and little sky light, day or night, and never within 24 blocks of a player. Light your caves and rooms.
+
 ## Admins
 
 The account called **Enzo** is the server admin (to change who, set `ADMINS` on Render to a comma-separated list of usernames). Admins can make other players admins too.

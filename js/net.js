@@ -86,6 +86,10 @@ export class Avatar {
     R.scene.add(this.tag);
     this.heldShown = -1;
     this.heldMesh = null;
+    this.offId = 0;
+    this.offShown = -1;
+    this.offMesh = null;
+    this.shield = 0;
     this.worn = '';
     this.model.root.visible = this.tag.visible = false;
   }
@@ -95,6 +99,8 @@ export class Avatar {
     this.worn = worn;
     const old = this.model;
     if (this.heldMesh) { this.heldMesh.parent.remove(this.heldMesh); this.heldMesh = null; }
+    if (this.offMesh) { this.offMesh.parent.remove(this.offMesh); this.offMesh = null; }
+    this.offShown = -1;
     this.model = buildModel('player', worn ? `${this.slot}|${worn}` : this.slot);
     const root = this.model.root;
     root.position.copy(old.root.position);
@@ -113,14 +119,14 @@ export class Avatar {
   }
 
   // On the host, whatever happens to this player is sent to their browser
-  hurt(dmg, fromX, fromZ, kind) {
+  hurt(dmg, fromX, fromZ, kind, axe = false) {
     if (this.dead || this.mode !== 'survival') return;
-    G.net.sendTo(this.id, { k: 'hurt', d: dmg, x: fromX, z: fromZ, c: kind });
+    G.net.sendTo(this.id, { k: 'hurt', d: dmg, x: fromX, z: fromZ, c: kind, ax: axe ? 1 : undefined });
     this.hurtTime = 0.35;
   }
   addEffect(n, t) { G.net.sendTo(this.id, { k: 'fx', n, t }); }
 
-  // [x, y, z, yaw, pitch, held, flags, swings, hp, creative, [helmet, chestplate, leggings, boots]]
+  // [x, y, z, yaw, pitch, held, flags, swings, hp, creative, [helmet, chestplate, leggings, boots], off hand]
   applyState(s) {
     const first = !this.state;
     this.state = s;
@@ -134,6 +140,8 @@ export class Avatar {
     this.sleeping = !!(f & 4);
     this.burning = !!(f & 16);
     this.gold = !!(f & 32);
+    this.shield = f & 64 ? 1 : f & 128 ? 2 : 0;   // a shield is up: in the main hand, or the off hand
+    this.offId = s[11] | 0;
     if (s[7] !== this.swings) { if (!first) this.swingT = 0; this.swings = s[7]; }
     if (s[8] < this.hp) this.hurtTime = 0.35;
     this.hp = s[8];
@@ -168,16 +176,21 @@ export class Avatar {
     root.rotation.x = this.sleeping ? -Math.PI / 2 : 0;
     root.rotation.z = this.dead ? Math.min(1, this.deathTime * 3) * Math.PI / 2 : 0;
     P.leg0.rotation.x = sw; P.leg1.rotation.x = -sw;
-    P.arm1.rotation.x = -sw * 0.8;
+    P.arm1.rotation.x = this.shield === 2 ? -0.75 : -sw * 0.8 - (this.offId ? 0.3 : 0);
     // the right arm swings and holds things
     if (this.swingT < 1) {
       this.swingT = Math.min(1, this.swingT + dt / 0.3);
       P.arm0.rotation.x = -Math.sin(this.swingT * Math.PI) * 1.7 - 0.3;
-    } else P.arm0.rotation.x = sw * 0.8 - (this.held ? 0.3 : 0);
+    } else P.arm0.rotation.x = this.shield === 1 ? -0.75 : sw * 0.8 - (this.held ? 0.3 : 0);
     P.body.rotation.x = this.sneaking ? 0.45 : 0;
     m.inner.position.y = this.sneaking ? -0.15 : 0;
     P.head.rotation.x = Math.max(-1.4, Math.min(1.4, -this.pitch));
     if (this.held !== this.heldShown) this.showHeld();
+    if (this.offId !== this.offShown) {
+      this.offShown = this.offId;
+      if (this.offMesh) { this.offMesh.parent.remove(this.offMesh); this.offMesh = null; }
+      if (this.offId) { try { this.offMesh = holdInHand(this.model, this.offId, 10, true); } catch { /* not something that can be drawn */ } }
+    }
     if (this.burning && Math.random() < dt * 12) {
       G.entities.particles.spawn(this.pos.x + (Math.random() - 0.5) * 0.6, this.pos.y + Math.random() * 1.8, this.pos.z + (Math.random() - 0.5) * 0.6, 0, 1, 0, 1, 0.6, 0.1, 0.1, 0.4, -0.05);
     }
@@ -425,9 +438,10 @@ export class Net {
     const p = G.player;
     const held = p.inv.held;
     const gold = p.armor.some((a) => a && ITEMS[a.id] && ITEMS[a.id].material === 'golden');
-    const flags = (p.dead ? 1 : 0) | (p.sneaking && !p.flying ? 2 : 0) | (G.sleeping ? 4 : 0) | (p.flying ? 8 : 0) | (p.burning > 0 ? 16 : 0) | (gold ? 32 : 0);
+    const flags = (p.dead ? 1 : 0) | (p.sneaking && !p.flying ? 2 : 0) | (G.sleeping ? 4 : 0) | (p.flying ? 8 : 0) | (p.burning > 0 ? 16 : 0) | (gold ? 32 : 0)
+      | (p.shieldUp ? (p.shieldHand === 1 ? 64 : 128) : 0);
     return [r2(p.pos.x), r2(p.pos.y), r2(p.pos.z), r2(p.yaw), r2(p.pitch), held ? held.id : 0, flags, this.swings, Math.ceil(p.health), p.creative ? 1 : 0,
-      p.armor.map((a) => (a ? a.id : 0))];
+      p.armor.map((a) => (a ? a.id : 0)), p.off[0] ? p.off[0].id : 0];
   }
 
   chat(from, text) { G.ui.chatLine(from ? `<${from}> ${text}` : text, !from); }
@@ -713,7 +727,7 @@ export class Net {
       case 'hurt':
         if (!p || p.dead) return;
         if (d.c === 'player') this.hurtByPlayer(d, d.by);
-        else p.hurt(+d.d || 0, d.x ?? null, d.z ?? null, d.c);
+        else p.hurt(+d.d || 0, d.x ?? null, d.z ?? null, d.c, !!d.ax);
         break;
       case 'fx': if (p && !p.dead) p.addEffect(d.n, +d.t || 0); break;
       case 'got': {

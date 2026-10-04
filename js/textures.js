@@ -928,6 +928,11 @@ const ART = {
     '..OHHhHHHHHO....', '..OHHHHHhHHO....', '..OHhHHHHHhO....', '...OHHHHHHO.....',
     '....OhHHhO......', '.....OOOO.......',
   ],
+  shield: [
+    '..OOOOOOOOOOOO..', '..OHHHHLLHHHHO..', '..OHHHHLLHHHHO..', '..OHHHHLLHHHHO..', '..OLLLLLLLLLLO..', '..OLLLLLLLLLLO..',
+    '..OhhhhLLhhhhO..', '..OhhhhLLhhhhO..', '..OhhhhLLhhhhO..', '...OhhhLLhhhO...', '...OhhhLLhhhO...', '....OhhLLhhO....',
+    '.....OhLLhO.....', '......OLLO......', '.......OO.......',
+  ],
   ingot: [
     '........OOOOO...', '......OOLLLLLO..', '....OOLLLLLLHO..', '..OOLLLLLLLHHhO.',
     '..OHHHHHHHHHhO..', '..OhHHHHHHHhO...', '..OhhhhhhhhO....', '...OOOOOOOO.....',
@@ -1102,6 +1107,12 @@ export function armorSilhouette(slot) {
   return drawAscii(ART[ARMOR_SLOTS[slot]], { O: [96, 96, 96], H: g, h: g, L: g }).toDataURL();
 }
 
+// The faint shield drawn in the empty off-hand slot
+export function shieldSilhouette() {
+  const g = [120, 120, 120];
+  return drawAscii(ART.shield, { O: [96, 96, 96], H: g, h: g, L: g }).toDataURL();
+}
+
 const STICK = { S: [137, 103, 55], s: [96, 70, 34] };
 const OUT = [34, 26, 18];
 const pal3 = (H, h, L, extra = {}) => ({ O: OUT, H, h, L, ...extra });
@@ -1115,6 +1126,7 @@ const ITEM_ART = {
   iron_ingot: ['ingot', pal3([210, 210, 210], [140, 140, 140], [246, 246, 246], { O: [70, 70, 70] })],
   gold_ingot: ['ingot', pal3([250, 214, 60], [200, 144, 20], [255, 248, 170], { O: [110, 70, 10] })],
   copper_ingot: ['ingot', pal3([214, 120, 80], [160, 78, 48], [246, 170, 128], { O: [90, 40, 24] })],
+  shield: ['shield', pal3([156, 116, 64], [118, 86, 44], [206, 206, 212], { O: [44, 32, 18] })],
   brick: ['ingot', pal3([172, 82, 56], [122, 56, 38], [204, 112, 82], { O: [70, 30, 20] })],
   diamond: ['gem', pal3([82, 230, 220], [38, 168, 158], [212, 255, 250], { O: [16, 80, 76] })],
   redstone: ['dust', pal3([204, 22, 12], [132, 10, 6], [255, 86, 64], { O: [70, 6, 4] })],

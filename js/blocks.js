@@ -318,6 +318,7 @@ item(365, 'wailer_tear', 'Wailer Tear');
 item(366, 'clamper_shell', 'Clamper Shell');
 item(367, 'charred_skull', 'Charred Skull');
 item(368, 'copper_ingot', 'Copper Ingot');
+item(369, 'shield', 'Shield', { stack: 1, durability: 336 });
 
 export const TOOL_MATERIALS = [
   { key: 'wooden', name: 'Wooden', tier: 0, speed: 2, durability: 59, dmg: 0, ing: '#planks' },
@@ -416,6 +417,7 @@ const RECIPE_DEFS = [
   { shape: [' S#', 'S #', ' S#'], key: { S: 'stick', '#': 'string' }, out: ['bow', 1] },
   { shape: ['F', 'S', 'E'], key: { F: 'flint', S: 'stick', E: 'feather' }, out: ['arrow', 4] },
   { in: ['iron_ingot', 'flint'], out: ['flint_and_steel', 1] },
+  { shape: ['#I#', '###', ' # '], key: { '#': '#planks', I: 'iron_ingot' }, out: ['shield', 1] },
   { in: ['cobblestone', 'oak_leaves'], out: ['mossy_cobblestone', 1] },
   { shape: ['###', '###', '###'], key: { '#': 'glowstone' }, out: ['glowstone', 9], skip: true },
   // the Nether and the End
