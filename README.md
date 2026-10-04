@@ -61,7 +61,7 @@ How it works:
 
 **1.6.2:** held items sway gently instead of shaking, and fire spreads slowly, burns out by itself and can be put out by punching the flames or pouring water on them.
 
-## Building Blocks (1.7)
+## Building Blocks (1.6.3)
 
 - **Slabs:** three blocks in a row make six slabs, in 17 materials (the woods, stone, cobblestone, sandstone, brick, stone brick, nether brick, quartz, cobbled deepslate, blackstone and end stone brick). Click the top of a block or the lower half of its side for a bottom slab, the underside or the upper half for a top slab. A second slab of the same kind makes the full block. You walk up half-block steps without jumping.
 - **Trapdoors:** six planks of one wood (two rows of three) make two. Click to open and shut. They sit in the bottom or top half of a block, chosen the same way as slabs.
