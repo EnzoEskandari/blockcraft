@@ -1,7 +1,7 @@
 // Block, item, recipe and smelting definitions.
 // Block ids fit in a byte (they are stored in chunk arrays); plain items start at 256.
 
-export const RENDER = { CUBE: 0, CROSS: 1, TORCH: 2, LIQUID: 3, BED: 4, DOOR: 5, FENCE: 6, PORTAL: 7, END_PORTAL: 8 };
+export const RENDER = { CUBE: 0, CROSS: 1, TORCH: 2, LIQUID: 3, BED: 4, DOOR: 5, FENCE: 6, PORTAL: 7, END_PORTAL: 8, SLAB: 9, TRAPDOOR: 10, SIGN: 11 };
 
 export const BLOCKS = [];  // id -> block def
 export const ITEMS = [];   // id -> item def (obtainable blocks are also items)
@@ -37,6 +37,9 @@ function block(id, key, name, o = {}) {
     art: o.art || null,        // 2D icon art for blocks that are not drawn as cubes
     door: !!o.door,
     bed: !!o.bed,
+    slab: o.slab || null,      // half a block: the key of the full block two of them make
+    trapdoor: !!o.trapdoor,
+    sign: o.sign || 0,         // 1 standing on a post, 2 flat on a wall
     slow: o.slow || 0,         // movement multiplier while inside (cobweb)
     flammable: o.flammable || 0, // how readily fire burns this block away (0 = never)
   };
@@ -229,6 +232,29 @@ block(154, 'granite', 'Granite', { hardness: 1.5, tool: 'pickaxe', level: 0 });
 block(155, 'diorite', 'Diorite', { hardness: 1.5, tool: 'pickaxe', level: 0 });
 block(156, 'andesite', 'Andesite', { hardness: 1.5, tool: 'pickaxe', level: 0 });
 
+// Building pieces. Slabs are half a block (meta 1: the top half); two of a kind make the full block.
+export const SLABS = [
+  ['oak_planks', 'oak_slab', 'Oak Slab'], ['birch_planks', 'birch_slab', 'Birch Slab'], ['spruce_planks', 'spruce_slab', 'Spruce Slab'],
+  ['jungle_planks', 'jungle_slab', 'Jungle Slab'], ['dark_oak_planks', 'dark_oak_slab', 'Dark Oak Slab'], ['crimson_planks', 'crimson_slab', 'Crimson Slab'],
+  ['warped_planks', 'warped_slab', 'Warped Slab'], ['stone', 'stone_slab', 'Stone Slab'], ['cobblestone', 'cobblestone_slab', 'Cobblestone Slab'],
+  ['sandstone', 'sandstone_slab', 'Sandstone Slab'], ['bricks', 'brick_slab', 'Brick Slab'], ['stone_bricks', 'stone_brick_slab', 'Stone Brick Slab'],
+  ['nether_bricks', 'nether_brick_slab', 'Nether Brick Slab'], ['quartz_block', 'quartz_slab', 'Quartz Slab'],
+  ['cobbled_deepslate', 'cobbled_deepslate_slab', 'Cobbled Deepslate Slab'], ['blackstone', 'blackstone_slab', 'Blackstone Slab'],
+  ['end_stone_bricks', 'end_stone_brick_slab', 'End Stone Brick Slab'],
+];
+SLABS.forEach(([full, key, name], i) => {
+  const f = BLOCKS[B[full]];
+  block(157 + i, key, name, { render: RENDER.SLAB, tex: f.tex, opaque: false, atten: 1, slab: full, hardness: f.hardness, tool: f.tool, level: f.level, sound: f.sound, fuel: f.fuel ? 7 : 0 });
+});
+// Trapdoors: meta bits 0-1 the side the hinge is on, 4 open, 8 in the top half of its block
+['oak', 'birch', 'spruce', 'jungle', 'dark_oak'].forEach((wood, i) => {
+  const name = wood.split('_').map((s) => s[0].toUpperCase() + s.slice(1)).join(' ');
+  block(174 + i, wood + '_trapdoor', name + ' Trapdoor', { render: RENDER.TRAPDOOR, opaque: false, cutout: true, trapdoor: true, hardness: 3, tool: 'axe', sound: 'wood', fuel: 15 });
+});
+// Signs: meta is the way they face. The words are kept by the world, not in the block.
+block(179, 'sign', 'Sign', { render: RENDER.SIGN, tex: 'oak_planks', solid: false, opaque: false, sign: 1, hardness: 1, tool: 'axe', sound: 'wood', art: 'sign', stack: 16, fuel: 10 });
+block(180, 'wall_sign', 'Sign', { render: RENDER.SIGN, tex: 'oak_planks', solid: false, opaque: false, sign: 2, hardness: 1, tool: 'axe', sound: 'wood', noItem: true, drops: one('sign') });
+
 // How easily fire catches each block
 const FLAMMABLE = {
   oak_log: 5, birch_log: 5, spruce_log: 5, jungle_log: 5, dark_oak_log: 5,
@@ -237,6 +263,8 @@ const FLAMMABLE = {
   tall_grass: 100, dead_bush: 100, dandelion: 100, poppy: 100, oak_sapling: 100, hay_bale: 60,
   bookshelf: 30, oak_fence: 20, crafting_table: 5, tnt: 100, cactus: 0, sugar_cane: 60, oak_door: 5, oak_door_top: 5,
   bed_foot: 20, bed_head: 20, pumpkin: 5, cobweb: 60, nether_wart_block: 0, crimson_roots: 60, warped_roots: 60,
+  oak_slab: 20, birch_slab: 20, spruce_slab: 20, jungle_slab: 20, dark_oak_slab: 20,
+  oak_trapdoor: 20, birch_trapdoor: 20, spruce_trapdoor: 20, jungle_trapdoor: 20, dark_oak_trapdoor: 20, sign: 20, wall_sign: 20,
 };
 for (const [k, v] of Object.entries(FLAMMABLE)) if (BLOCKS[B[k]]) BLOCKS[B[k]].flammable = v;
 WOOL_COLORS.forEach(([k]) => { BLOCKS[B[k + '_wool']].flammable = 60; });
@@ -400,6 +428,9 @@ const RECIPE_DEFS = [
   { shape: ['PPP', 'BBB', 'PPP'], key: { P: '#planks', B: 'book' }, out: ['bookshelf', 1] },
   { shape: ['WWW', 'PPP'], key: { W: '#wool', P: '#planks' }, out: ['bed_foot', 1] },
   { shape: ['PP', 'PP', 'PP'], key: { P: '#planks' }, out: ['oak_door', 3] },
+  { shape: ['PPP', 'PPP', ' S '], key: { P: '#planks', S: 'stick' }, out: ['sign', 3] },
+  ...['oak', 'birch', 'spruce', 'jungle', 'dark_oak'].map((wood) => ({ shape: ['PPP', 'PPP'], key: { P: wood + '_planks' }, out: [wood + '_trapdoor', 2] })),
+  ...SLABS.map(([full, key]) => ({ shape: ['###'], key: { '#': full }, out: [key, 6] })),
   { shape: ['PSP', 'PSP'], key: { P: '#planks', S: 'stick' }, out: ['oak_fence', 3] },
   { shape: ['###', '###', '###'], key: { '#': 'wheat' }, out: ['hay_bale', 1] },
   { in: ['hay_bale'], out: ['wheat', 9] },

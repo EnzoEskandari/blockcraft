@@ -6,19 +6,29 @@ import { B } from './blocks.js';
 import { R, setChunkMeshes, disposeChunkMeshes, updateSky, render } from './render.js';
 import { buildChunkMesh } from './mesher.js';
 import { LATEST } from './updates.js';
+import { signMesh, disposeSignMesh } from './signs.js';
 
 const RAD = 3;   // chunks made around the spot; those within RAD - 1 are drawn
-const P = { world: null, todo: [], yaw: 0, shown: false };
+const P = { world: null, todo: [], yaw: 0, shown: false, at: null, signs: [] };
 
 export function startPanorama() {
   const sc = LATEST.scene;
   if (P.world || !sc) return;
   const w = new World(sc.seed, 'overworld');
   for (const [x, y, z, key] of sc.place || []) w.setBlockAnywhere(x, y, z, B[key]);
+  // where the view is from: a set spot, or (for a scene that is built) the world's spawn, with the scene around it
+  P.at = { x: sc.x, y: sc.y, z: sc.z };
+  if (sc.build) {
+    const sp = w.findSpawn(), ox = Math.floor(sp.x), oz = Math.floor(sp.z), g = sp.h;
+    sc.build((dx, dy, dz, key, meta = 0) => w.setBlockAnywhere(ox + dx, g + dy, oz + dz, key ? B[key] : 0, meta),
+      (dx, dy, dz, lines) => w.signs.set(`${ox + dx},${g + dy},${oz + dz}`, lines));
+    const v = sc.view || [0, 0];   // where in the scene the view stands
+    P.at = { x: ox + v[0] + 0.5, y: g + 2.62, z: oz + v[1] + 0.5 };
+  }
   P.world = w;
   P.yaw = sc.yaw || 0;
   P.shown = false;
-  const cx = Math.floor(sc.x) >> 4, cz = Math.floor(sc.z) >> 4;
+  const cx = Math.floor(P.at.x) >> 4, cz = Math.floor(P.at.z) >> 4;
   P.todo = [];
   for (let dz = -RAD; dz <= RAD; dz++) for (let dx = -RAD; dx <= RAD; dx++) P.todo.push([cx + dx, cz + dz, Math.max(Math.abs(dx), Math.abs(dz))]);
   P.todo.sort((a, b) => a[2] - b[2]);
@@ -28,6 +38,8 @@ export function startPanorama() {
 export function stopPanorama() {
   if (!P.world) return;
   for (const c of P.world.chunks.values()) disposeChunkMeshes(c);
+  for (const m of P.signs) disposeSignMesh(m);
+  P.signs = [];
   P.world = null;
   P.todo = [];
   document.body.classList.remove('panorama');
@@ -45,13 +57,25 @@ export function panoramaFrame(dt) {
       const c = w.getChunk(cx, cz);
       if (c) setChunkMeshes(c, buildChunkMesh(w, c));
     }
-    if (!P.meshQ.length && !P.shown) { P.shown = true; document.body.classList.add('panorama'); }
+    if (!P.meshQ.length && !P.shown) {
+      P.shown = true;
+      document.body.classList.add('panorama');
+      // the words on the scene's signs
+      for (const [key, lines] of w.signs) {
+        const [x, y, z] = key.split(',').map(Number);
+        const id = w.getBlock(x, y, z);
+        if (!id) continue;
+        const m = signMesh(id, w.getMeta(x, y, z), x, y, z, lines);
+        R.scene.add(m);
+        P.signs.push(m);
+      }
+    }
   }
   if (!P.shown) return;
   G.dim = 'overworld';
   P.yaw += dt * 0.045;
   const cam = R.camera;
-  cam.position.set(sc.x, sc.y, sc.z);
+  cam.position.set(P.at.x, P.at.y, P.at.z);
   cam.rotation.set(sc.pitch || 0, P.yaw, 0);
   R.handHolder.visible = false;
   updateSky(sc.time ?? 0.3, dt, false, false);

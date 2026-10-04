@@ -1,5 +1,6 @@
 // Boot, main loop, chunk streaming, block updates, saving.
 import { G, loadSettings, store, load, remove, isTouchDevice } from './game.js';
+import { cleanSign, signMesh, disposeSignMesh } from './signs.js';
 import { buildTextures, buildIcons } from './textures.js';
 import { BLOCKS, B, ID, RENDER, SMELTING, fuelValue, maxStack, canHarvest } from './blocks.js';
 import { World, ckey, CH } from './world.js';
@@ -157,6 +158,7 @@ function onBlockChange(x, y, z, oldId, newId) {
     const c = w.getChunk(cx + dx, cz + dz);
     if (c) { c.simDirty = true; if (dx || dz) c.dirty = true; }
   }
+  if (BLOCKS[oldId].sign && !BLOCKS[newId].sign && w.signs.delete(`${x},${y},${z}`)) S.signsDirty = true;
   if (G.net) G.net.blockChanged(x, y, z, newId);
   if (isGuest()) return;   // falling sand, water and the rest happen on the host
   S.updates.push(x, y, z);
@@ -174,8 +176,19 @@ function onBlockChange(x, y, z, oldId, newId) {
   }
 }
 
-function supported(def, below) {
+// Is the block here still held up? Torches and signs hang on the wall they were put on (or stand on the
+// block below); plants need their soil.
+const WALLS = [[1, 0], [-1, 0], [0, 1], [0, -1]];              // torch meta 1-4: the wall to the east, west, south, north
+const SIGN_BACK = [[0, -1], [-1, 0], [0, 1], [1, 0]];          // wall sign meta 0-3 (facing south, east, north, west): the wall behind
+function supported(w, x, y, z, id, def) {
+  if (id === B.torch || def.sign) {
+    const m = w.getMeta(x, y, z);
+    if (id === B.torch && m >= 1 && m <= 4) return w.isSolid(x + WALLS[m - 1][0], y, z + WALLS[m - 1][1]);
+    if (def.sign === 2) return w.isSolid(x + SIGN_BACK[m & 3][0], y, z + SIGN_BACK[m & 3][1]);
+    return w.isSolid(x, y - 1, z);
+  }
   if (!def.support) return true;
+  const below = w.getBlock(x, y - 1, z);
   if (def.support === 'solid') return BLOCKS[below].opaque || below === B.oak_fence;
   return def.support().includes(below);
 }
@@ -199,10 +212,51 @@ function processUpdates() {
         }
         w.setBlock(x, yy, z, 0);
         w.setBlock(x, ny, z, id);
-      } else if (!supported(def, below)) {
+      } else if (!supported(w, x, yy, z, id, def)) {
         Game.removeBlock(x, yy, z, true);
       }
     }
+    // torches and signs on the walls of this block come off with it
+    for (const [dx, dz] of WALLS) {
+      const id = w.getBlock(x + dx, y, z + dz);
+      if ((id === B.torch || id === B.wall_sign) && !supported(w, x + dx, y, z + dz, id, BLOCKS[id])) Game.removeBlock(x + dx, y, z + dz, true);
+    }
+  }
+}
+
+// ---------------------------------------------------------------- signs
+// The words on nearby signs are drawn on small flat panels just in front of each board
+const signMeshes = new Map();   // "x,y,z" -> { mesh, text }
+function clearSignMeshes() {
+  for (const m of signMeshes.values()) disposeSignMesh(m.mesh);
+  signMeshes.clear();
+}
+function updateSigns(dt) {
+  S.signT = (S.signT || 0) - dt;
+  if (S.signT > 0 && !S.signsDirty) return;
+  S.signT = 0.5;
+  S.signsDirty = false;
+  const w = G.world, p = G.player;
+  for (const [key, lines] of w.signs) {
+    const [x, y, z] = key.split(',').map(Number);
+    const id = w.getChunk(x >> 4, z >> 4) ? w.getBlock(x, y, z) : 0;
+    const near = BLOCKS[id].sign && Math.hypot(x - p.pos.x, y - p.pos.y, z - p.pos.z) < 40;
+    let m = signMeshes.get(key);
+    const text = lines.join('\n');
+    if (m && (!near || m.text !== text)) { disposeSignMesh(m.mesh); signMeshes.delete(key); m = null; }
+    if (!near) continue;
+    if (!m) {
+      m = { mesh: signMesh(id, w.getMeta(x, y, z), x, y, z, lines), text };
+      R.scene.add(m.mesh);
+      signMeshes.set(key, m);
+    }
+    const [sky, blk] = w.getLight(x, y, z);
+    m.mesh.material.color.setScalar(Math.min(1, 0.25 + Math.max(sky / 15 * G.daylight, blk / 15)));
+  }
+  for (const [key, m] of signMeshes) {
+    if (w.signs.has(key)) continue;
+    disposeSignMesh(m.mesh);
+    signMeshes.delete(key);
   }
 }
 
@@ -573,6 +627,26 @@ export const Game = {
     w.setBlock(x, by, z, B.oak_door, m);
     if (w.getBlock(x, by + 1, z) === B.oak_door_top) w.setBlock(x, by + 1, z, B.oak_door_top, m);
     sfx('door', { x, y, z });
+  },
+
+  toggleTrapdoor(x, y, z) {
+    const w = G.world;
+    const id = w.getBlock(x, y, z);
+    if (!BLOCKS[id].trapdoor) return;
+    w.setBlock(x, y, z, id, w.getMeta(x, y, z) ^ 4);
+    sfx('door', { x, y, z });
+  },
+
+  // What is written on a sign (up to four short lines)
+  signText(x, y, z) { return G.world.signs.get(`${x},${y},${z}`) || []; },
+  setSign(x, y, z, lines, fromNet) {
+    const w = G.world;
+    if (!BLOCKS[w.getBlock(x, y, z)].sign) return;
+    const clean = cleanSign(lines);
+    const key = `${x},${y},${z}`;
+    if (clean.some(Boolean)) w.signs.set(key, clean); else w.signs.delete(key);
+    S.signsDirty = true;
+    if (G.net && !fromNet) G.net.signChanged(x, y, z, clean);
   },
 
   useBed(x, y, z) {
@@ -960,7 +1034,7 @@ export const Game = {
       k: 'world', host: G.net.name, name: G.worldMeta.name, seed: w.seed, mode: G.worldMeta.mode,
       time: G.time, day: G.day || 0, nns: G.nightsNoSleep || 0,
       spawn: w.worldSpawn || p.spawn, edits: packEdits(w), guest: playerRecord(w.guests, account, name),
-      legacy: w.legacy ? [...w.legacy] : null,
+      legacy: w.legacy ? [...w.legacy] : null, signs: Object.fromEntries(w.signs),
     };
   },
 
@@ -1115,6 +1189,8 @@ function startRemoteWorld(snap, onlineId, dim = 'overworld', me = null) {
   G.dim = dim;
   const w = new World(snap.seed, dim);
   if (Array.isArray(snap.legacy) && snap.legacy.length) w.legacy = new Set(snap.legacy);   // the host's old-cave chunks
+  if (snap.signs && typeof snap.signs === 'object') w.signs = new Map(Object.entries(snap.signs).map(([k, v]) => [k, cleanSign(v)]));
+  S.signsDirty = true;
   w.onChange = onBlockChange;
   w.villagerTrades = new Map();
   w.deadMobs = new Set();
@@ -1154,6 +1230,7 @@ function takeCarry(p, onlineId) {
 // ---------------------------------------------------------------- worlds
 function teardown() {
   stopPanorama();
+  clearSignMeshes();
   if (G.world) for (const c of G.world.chunks.values()) disposeChunkMeshes(c);
   if (G.entities) G.entities.clear();
   G.world = null;
@@ -1178,6 +1255,8 @@ function startWorld(meta, data, opts = {}) {
   w.stored = new Map(Object.entries((data && data.entities) || {}).map(([k, v]) => [Number(k), v]));
   w.spawned = new Set((data && data.spawned) || []);
   w.flags = (data && data.flags) || {};
+  w.signs = new Map(Object.entries((data && data.signs) || {}).map(([k, v]) => [k, cleanSign(v)]));
+  S.signsDirty = true;
   if (dim === 'overworld' && data) {
     w.legacy = data.gen >= 2 ? (data.legacy && data.legacy.length ? new Set(data.legacy) : null)
       : legacyChunks(data, opts.globals || data, opts.me || opts.player);
@@ -1249,6 +1328,7 @@ function saveWorld(playerOverride) {
     deadMobs: [...w.deadMobs],
     flags: w.flags || {},
     edits, containers, saplings: [...S.saplings.keys()],
+    signs: Object.fromEntries(w.signs),
     // made by the Caves & Ores generator, except these chunks (older worlds' places people had been)
     gen: 2, legacy: w.legacy ? [...w.legacy] : [],
   };
@@ -1351,6 +1431,7 @@ function frame(dt) {
       tickCrops();
     }
     tickFires(host);
+    updateSigns(dt);
   }
   if (G.net) {
     G.net.update(dt);

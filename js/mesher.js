@@ -109,6 +109,15 @@ function emitBox(buf, X, Y, Z, x0, y0, z0, x1, y1, z1, layers, sky, blk, skip = 
 }
 const ALL6 = (l) => [l, l, l, l, l, l];
 
+// A box inside one block, each face lit by the brighter of its own cell and the cell it looks into
+function litBox(buf, X, Y, Z, x0, y0, z0, x1, y1, z1, layers, ri, skip) {
+  for (let f = 0; f < 6; f++) {
+    if (skip & (1 << f)) continue;
+    const bi = ri + N_OFF[f];
+    emitBox(buf, X, Y, Z, x0, y0, z0, x1, y1, z1, layers, Math.max(rS[ri], rS[bi]) * 17, Math.max(rL[ri], rL[bi]) * 17, 63 ^ (1 << f));
+  }
+}
+
 class MeshBuf {
   constructor(cap) { this.alloc(cap); }
   alloc(cap) {
@@ -371,12 +380,19 @@ export function buildChunkMesh(world, chunk) {
           const layer = FACE[id * 6];
           const sky = rS[ri] * 17, blk = rL[ri] * 17;
           const X = x * 16, Y = y * 16, Z = z * 16;
+          // meta 1-4: on a wall (to the east, west, south, north): it leans out from the wall, foot against it
+          const wm = meta ? meta[(y << 8) | (z << 4) | x] : 0;
+          const wd = wm >= 1 && wm <= 4 ? [[1, 0], [-1, 0], [0, 1], [0, -1]][wm - 1] : null;
           for (const f of [0, 1, 2, 4, 5]) {
             OB.ensure(4);
             const cs = CORNERS[f], m = FACES[f].shade * 255;
             for (let k = 0; k < 4; k++) {
               const c = cs[k];
-              const px = c[0] ? 9 : 7, py = c[1] ? 10 : 0, pz = c[2] ? 9 : 7;
+              let px = c[0] ? 9 : 7, py = c[1] ? 10 : 0, pz = c[2] ? 9 : 7;
+              if (wd) {
+                const out = c[1] ? 3.5 : 7;   // how far from the middle of the block, towards the wall
+                px += wd[0] * out; pz += wd[1] * out; py += 3.5;
+              }
               const u = k === 0 || k === 3 ? 7 : 9;
               const v = f === 2 ? (k < 2 ? 8 : 10) : (k < 2 ? 0 : 10);
               OB.vert(X + px, Y + py, Z + pz, u, v, layer, m, m, m, sky, blk);
@@ -444,6 +460,36 @@ export function buildChunkMesh(world, chunk) {
               buf.vert((x + c[0]) * 16, y * 16 + py, (z + c[2]) * 16, UV[k][0], f === 2 || f === 3 ? UV[k][1] : (UV[k][1] ? py : 0), layer, m, m, m, sky, blk);
             }
             buf.quad(false, false);
+          }
+        } else if (rt === RENDER.SLAB || rt === RENDER.TRAPDOOR || rt === RENDER.SIGN) {
+          const X = x * 16, Y = y * 16, Z = z * 16;
+          const m = meta ? meta[(y << 8) | (z << 4) | x] : 0;
+          const layers = [FACE[id * 6], FACE[id * 6 + 1], FACE[id * 6 + 2], FACE[id * 6 + 3], FACE[id * 6 + 4], FACE[id * 6 + 5]];
+          if (rt === RENDER.SLAB) {
+            // half a block: faces against solid blocks and matching slabs are left out
+            const top = m & 1;
+            let skip = 0;
+            for (let f = 0; f < 6; f++) {
+              const nb = rB[ri + N_OFF[f]];
+              if (f === 2 ? top && OPAQUE[nb] : f === 3 ? !top && OPAQUE[nb]
+                : OPAQUE[nb] || (RTYPE[nb] === RENDER.SLAB && (rM[ri + N_OFF[f]] & 1) === top)) skip |= 1 << f;
+            }
+            litBox(OB, X, Y, Z, 0, top ? 8 : 0, 0, 16, top ? 16 : 8, 16, layers, ri, skip);
+          } else if (rt === RENDER.TRAPDOOR) {
+            // shut: a thin lid at the bottom or top of its block; open: standing against its hinge side
+            const b = m & 4 ? [[0, 0, 0, 16, 16, 3], [13, 0, 0, 16, 16, 16], [0, 0, 13, 16, 16, 16], [0, 0, 0, 3, 16, 16]][m & 3]
+              : m & 8 ? [0, 13, 0, 16, 16, 16] : [0, 0, 0, 16, 3, 16];
+            litBox(OB, X, Y, Z, b[0], b[1], b[2], b[3], b[4], b[5], layers, ri, 0);
+          } else if (BLOCKS[id].sign === 1) {
+            // a board on a post, facing south, east, north or west (meta 0-3)
+            const alongX = !(m & 1);
+            litBox(OB, X, Y, Z, 7, 0, 7, 9, 8, 9, layers, ri, 0);
+            if (alongX) litBox(OB, X, Y, Z, 0, 8, 7, 16, 16, 9, layers, ri, 0);
+            else litBox(OB, X, Y, Z, 7, 8, 0, 9, 16, 16, layers, ri, 0);
+          } else {
+            // a board flat against the wall behind it
+            const b = [[0, 4, 0, 16, 12, 2], [0, 4, 0, 2, 12, 16], [0, 4, 14, 16, 12, 16], [14, 4, 0, 16, 12, 16]][m & 3];
+            litBox(OB, X, Y, Z, b[0], b[1], b[2], b[3], b[4], b[5], layers, ri, 0);
           }
         } else if (rt === RENDER.PORTAL) {
           // a thin glowing sheet across the frame (meta 0: along x, 1: along z)

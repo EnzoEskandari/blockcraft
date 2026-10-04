@@ -11,6 +11,7 @@ export { CS, CH, SEA, BIOME, BIOME_NAMES };
 export const ckey = (cx, cz) => (cx + 32768) * 65536 + (cz + 32768);
 export const bidx = (x, y, z) => (y << 8) | (z << 4) | x;
 const CAVERN_TOP = 44;   // big caverns stay below this
+const FULL = [0, 1], BOTTOM_HALF = [0, 0.5], TOP_HALF = [0.5, 1], TRAP_BOTTOM = [0, 0.1875], TRAP_TOP = [0.8125, 1];
 
 export class Chunk {
   constructor(cx, cz) {
@@ -64,6 +65,7 @@ export class World {
     this.spawners = new Map();        // "x,y,z" -> monster spawner state
     this.flags = {};                  // world events, e.g. the dragon beaten
     this.liquidLoaded = [];           // flowing liquid in chunks just loaded, for the liquid simulation
+    this.signs = new Map();           // "x,y,z" -> the lines written on the sign there
     // Chunks made the way they were before the Caves & Ores update (the parts of older worlds people had
     // already been to keep their caves and ores); every other chunk gets the new caves, deepslate and ores
     this.legacy = null;               // Set of ckeys, or null
@@ -87,8 +89,35 @@ export class World {
     if (!c) return true;
     const i = (y << 8) | ((z & 15) << 4) | (x & 15);
     const b = BLOCKS[c.blocks[i]];
-    if (b.door) return !(c.meta && (c.meta[i] & 4));
+    if (b.door || b.trapdoor) return !(c.meta && (c.meta[i] & 4));   // open: you walk through
     return b.solid;
+  }
+
+  // The solid part of the block at a cell, as [bottom, top] within the cell (0 to 1), or null if things
+  // pass through it: slabs are half a block, a closed trapdoor a thin layer, an open one nothing
+  solidSpan(x, y, z) {
+    if (y < 0) return FULL;
+    if (y >= CH) return null;
+    const c = this.chunks.get(ckey(x >> 4, z >> 4));
+    if (!c) return FULL;
+    const i = (y << 8) | ((z & 15) << 4) | (x & 15);
+    const b = BLOCKS[c.blocks[i]];
+    if (!b.solid) return null;
+    const m = c.meta ? c.meta[i] : 0;
+    if (b.door) return m & 4 ? null : FULL;
+    if (b.slab) return m & 1 ? TOP_HALF : BOTTOM_HALF;
+    if (b.trapdoor) return m & 4 ? null : m & 8 ? TRAP_TOP : TRAP_BOTTOM;
+    return FULL;
+  }
+
+  // The part of a block you can point at, when it doesn't fill its cell: [x0, y0, z0, x1, y1, z1] within it
+  pickBox(x, y, z, id) {
+    const b = BLOCKS[id];
+    if (!b.slab && !b.trapdoor) return null;
+    const m = this.getMeta(x, y, z);
+    if (b.slab) return m & 1 ? [0, 0.5, 0, 1, 1, 1] : [0, 0, 0, 1, 0.5, 1];
+    if (m & 4) return [[0, 0, 0, 1, 1, 0.1875], [0.8125, 0, 0, 1, 1, 1], [0, 0, 0.8125, 1, 1, 1], [0, 0, 0, 0.1875, 1, 1]][m & 3];
+    return m & 8 ? [0, 0.8125, 0, 1, 1, 1] : [0, 0, 0, 1, 0.1875, 1];
   }
 
   getMeta(x, y, z) {

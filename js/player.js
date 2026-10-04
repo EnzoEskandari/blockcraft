@@ -5,7 +5,7 @@ import { BLOCKS, ITEMS, ID, B, canHarvest } from './blocks.js';
 import { throwEye } from './dimmobs.js';
 import { activateEndPortal } from './dims.js';
 import { Inventory } from './inventory.js';
-import { moveBox, raycast, boxBlocked } from './physics.js';
+import { moveBox, raycast, boxBlocked, touching } from './physics.js';
 import { R, showHighlight, swingHand, setHeldItem, setOffItem, updateHand, brightness } from './render.js';
 import { sfx, blockSound } from './audio.js';
 import { hitParticles } from './entities.js';
@@ -316,7 +316,7 @@ export class Player {
       if (dz && !boxBlocked(w, P.x + dx, P.y - 0.6, P.z + dz, this.hw, 0.6)) { dz = 0; this.vel.z = 0; }
     }
     const ox = this.pos.x, oz = this.pos.z, oyPos = this.pos.y;
-    const res = moveBox(w, this, dx, dy, dz);
+    const res = moveBox(w, this, dx, dy, dz, this.flying || this.inWater ? 0 : 0.6);   // slabs are walked up without a jump
     if (res.x) this.vel.x = 0;
     if (res.z) this.vel.z = 0;
     const wasGround = this.onGround;
@@ -659,6 +659,8 @@ export class Player {
       const id = t.id;
       if (BLOCKS[id].bed) { G.game.useBed(t.x, t.y, t.z); return true; }
       if (BLOCKS[id].door) { G.game.toggleDoor(t.x, t.y, t.z); swingHand(); return true; }
+      if (BLOCKS[id].trapdoor) { G.game.toggleTrapdoor(t.x, t.y, t.z); swingHand(); return true; }
+      if (BLOCKS[id].sign) { G.ui.openScreen('sign', { x: t.x, y: t.y, z: t.z }); return true; }
       if (id === B.crafting_table) { G.ui.openScreen('crafting'); return true; }
       if (id === B.furnace || id === B.furnace_lit) { G.ui.openScreen('furnace', G.game.container(t.x, t.y, t.z, 'furnace')); return true; }
       if (id === B.chest) { sfx('chest', t); G.ui.openScreen('chest', G.game.container(t.x, t.y, t.z, 'chest')); return true; }
@@ -737,10 +739,48 @@ export class Player {
     const w = G.world;
     const def = BLOCKS[held.id];
     let x = t.x, y = t.y, z = t.z;
+    // a slab onto the open side of a matching half slab completes the block
+    if (def.slab && t.id === held.id) {
+      const upper = w.getMeta(t.x, t.y, t.z) & 1;
+      if ((t.ny === 1 && !upper) || (t.ny === -1 && upper)) return this.finishPlace(def, t.x, t.y, t.z, B[def.slab], 0);
+    }
     if (!BLOCKS[t.id].replaceable || t.id === held.id) { x += t.nx; y += t.ny; z += t.nz; }
     if (y < 0 || y >= 127) return false;
     const cur = w.getBlock(x, y, z);
+    // (or into the block where a matching half already sits, from the side)
+    if (def.slab && cur === held.id) return this.finishPlace(def, x, y, z, B[def.slab], 0);
     if (cur !== 0 && !BLOCKS[cur].replaceable) return false;
+    // how far up the clicked block the pointer hit (for the top or bottom half)
+    const ray = this.pickRay(this.lastInput || {});
+    const hitY = ray.oy + ray.dy * (t.dist || 0);
+    const upperHalf = t.ny === -1 || (t.ny === 0 && hitY - Math.floor(hitY) > 0.5);
+    const facing = () => { const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw); return Math.abs(fx) > Math.abs(fz) ? (fx > 0 ? 3 : 1) : (fz > 0 ? 0 : 2); };
+    if (held.id === B.torch) {
+      // on the wall that was clicked, else on the floor, else on any wall beside it
+      const walls = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+      let meta = -1;
+      if (t.ny === 0) meta = walls.findIndex(([dx, dz]) => dx === -t.nx && dz === -t.nz) + 1;
+      if (meta > 0 && !w.isSolid(x + walls[meta - 1][0], y, z + walls[meta - 1][1])) meta = -1;
+      if (meta < 0 && w.isSolid(x, y - 1, z)) meta = 0;
+      if (meta < 0) meta = walls.findIndex(([dx, dz]) => w.isSolid(x + dx, y, z + dz)) + 1 || -1;
+      if (meta < 0) { this.hint('Torches need a block to stand on or hang from'); return false; }
+      return this.finishPlace(def, x, y, z, held.id, meta);
+    }
+    if (def.sign) {
+      // on top of a block it stands on a post, facing you; on the side of one it hangs flat
+      if (t.ny === 0 && w.isSolid(t.x, t.y, t.z)) {
+        const m = t.nz === 1 ? 0 : t.nx === 1 ? 1 : t.nz === -1 ? 2 : 3;
+        this.finishPlace(def, x, y, z, B.wall_sign, m);
+      } else {
+        if (!w.isSolid(x, y - 1, z)) { this.hint('Signs need a block to stand on or hang from'); return false; }
+        const lx = -Math.sin(this.yaw), lz = -Math.cos(this.yaw);   // it faces back at whoever placed it
+        this.finishPlace(def, x, y, z, B.sign, Math.abs(lx) > Math.abs(lz) ? (lx > 0 ? 3 : 1) : (lz > 0 ? 2 : 0));
+      }
+      G.ui.openScreen('sign', { x, y, z });
+      return true;
+    }
+    if (def.trapdoor) return this.finishPlace(def, x, y, z, held.id, facing() | (upperHalf ? 8 : 0));
+    if (def.slab) return this.finishPlace(def, x, y, z, held.id, upperHalf ? 1 : 0);
     if (def.support) {
       const below = w.getBlock(x, y - 1, z);
       const ok = def.support === 'solid' ? (BLOCKS[below].opaque || below === B.oak_fence) : def.support().includes(below);
@@ -778,6 +818,24 @@ export class Player {
       G.game.placeBlock(x, y, z, B.oak_door, meta);
       G.game.placeBlock(x, y + 1, z, B.oak_door_top, meta);
     } else G.game.placeBlock(x, y, z, held.id, meta);
+    blockSound(def.sound, 'place', { x: x + 0.5, y: y + 0.5, z: z + 0.5 });
+    swingHand();
+    if (!this.creative) { this.inv.consumeHeld(); G.ui.invChanged(); }
+    return true;
+  }
+
+  // Puts the block down, with its sound, and uses up one from the hand
+  finishPlace(def, x, y, z, id, meta) {
+    const w = G.world;
+    if (BLOCKS[id].solid) {
+      const span = id === B[def.slab] || !def.slab ? [0, 1] : meta & 1 ? [0.5, 1] : [0, 0.5];
+      const hit = (px, py, pz, hw, h) => x < px + hw && x + 1 > px - hw && y + span[0] < py + h && y + span[1] > py && z < pz + hw && z + 1 > pz - hw;
+      if (!def.trapdoor) {
+        if (!this.dead && hit(this.pos.x, this.pos.y, this.pos.z, this.hw - 0.02, this.h - 0.02)) { this.placeBlocked = true; return false; }
+        for (const m of G.entities.mobs) if (!m.dead && hit(m.pos.x, m.pos.y, m.pos.z, m.hw, m.h)) return false;
+      }
+    }
+    G.game.placeBlock(x, y, z, id, meta);
     blockSound(def.sound, 'place', { x: x + 0.5, y: y + 0.5, z: z + 0.5 });
     swingHand();
     if (!this.creative) { this.inv.consumeHeld(); G.ui.invChanged(); }
@@ -861,6 +919,9 @@ export class Player {
       if (Math.random() < dt * 10) G.entities.particles.spawn(this.pos.x + (Math.random() - 0.5) * 0.6, this.pos.y + Math.random() * 1.6, this.pos.z + (Math.random() - 0.5) * 0.6, 0, 1, 0, 1, 0.6, 0.15, 0.12, 0.4, -0.05);
     }
     if (this.hungerEffect > 0) { this.hungerEffect -= dt; this.exhaustion += 0.1 * dt; }
+    // touching a cactus pricks
+    this.cactusT = Math.max(0, (this.cactusT || 0) - dt);
+    if (this.cactusT <= 0 && touching(w, this, B.cactus)) { this.cactusT = 0.5; this.hurt(1, null, null, 'cactus'); }
     // magma blocks burn your feet unless you sneak
     if (this.onGround && !this.sneaking && w.getBlock(bx, Math.floor(this.pos.y - 0.1), bz) === B.magma_block) {
       this.magmaTick = (this.magmaTick || 0) + dt;
@@ -988,11 +1049,13 @@ export class Player {
     const msgs = { lava: 'You tried to swim in lava', fireball: 'You were fireballed', wither: 'You withered away', fall: 'You hit the ground too hard', drown: 'You drowned', starve: 'You starved to death', void: 'You fell out of the world', explosion: 'You blew up', fire: 'You burned to death', magic: 'You were killed by magic', arrow: 'You were shot', pearl: 'You hit the ground too hard' };
     if (kind === 'player' && this.lastAttacker) msgs.player = `You were slain by ${this.lastAttacker}`;
     if (kind === 'admin') msgs.admin = `You were killed by ${this.lastAttacker || 'an admin'}`;
+    msgs.cactus = 'You were pricked to death';
     G.ui.showDeath(msgs[kind] || 'You were slain');
     if (G.net) {
       const told = { lava: 'tried to swim in lava', fireball: 'was fireballed', wither: 'withered away', fall: 'hit the ground too hard', drown: 'drowned', starve: 'starved to death', void: 'fell out of the world', explosion: 'blew up', fire: 'burned to death', magic: 'was killed by magic', arrow: 'was shot', pearl: 'hit the ground too hard' };
       if (kind === 'player' && this.lastAttacker) told.player = `was slain by ${this.lastAttacker}`;
       if (kind === 'admin') told.admin = `was killed by ${this.lastAttacker || 'an admin'}`;
+      told.cactus = 'was pricked to death';
       G.net.announce(`${G.net.name} ${told[kind] || 'was slain'}`);
     }
   }

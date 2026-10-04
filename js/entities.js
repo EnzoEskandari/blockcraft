@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { G } from './game.js';
 import { R, itemModel, tintModel, brightness } from './render.js';
 import { BLOCKS, ITEMS, ID, B, WOOL_COLORS } from './blocks.js';
-import { moveBox, raycast, rayBox, boxBlocked } from './physics.js';
+import { moveBox, raycast, rayBox, boxBlocked, touching } from './physics.js';
 import { sfx } from './audio.js';
 import { mulberry32 } from './noise.js';
 import { tileColors } from './textures.js';
@@ -968,9 +968,12 @@ class Mob {
     } else {
       this.vel.y = Math.max(this.vel.y - 32 * dt, this.type === 'chicken' ? -3 : -60);
     }
-    const res = moveBox(w, this, this.vel.x * dt, this.vel.y * dt, this.vel.z * dt);
+    const res = moveBox(w, this, this.vel.x * dt, this.vel.y * dt, this.vel.z * dt, this.inWater ? 0 : 0.6);   // slabs are walked up
     if (res.y) this.vel.y = 0;
     this.onGround = res.ground;
+    // a cactus pricks whatever brushes against it
+    this.prickT = (this.prickT || 0) - dt;
+    if (this.prickT <= 0) { this.prickT = 0.5; if (touching(w, this, B.cactus)) { this.invul = 0; this.hurt(1, this.pos.x, this.pos.z, false, 0); if (this.dead) return; } }
     let jump = false;
     if ((res.x || res.z) && speed) {
       if (def.climbs) this.vel.y = 4;

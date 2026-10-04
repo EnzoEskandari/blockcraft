@@ -134,6 +134,12 @@ export class UI {
     on('b-sign-up', () => this.auth(true));
     on('b-sign-out', async () => { await G.game.signOut(); this.syncAccount(); this.mpStatus('Signed out.'); });
     on('b-admin', () => this.openScreen('admin'));
+    on('b-sign-done', () => this.back());
+    document.querySelectorAll('.sign-line').forEach((el, i, all) => el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === 'ArrowDown') { e.preventDefault(); if (i < all.length - 1) all[i + 1].focus(); else if (e.key === 'Enter') this.back(); }
+      else if (e.key === 'ArrowUp' && i > 0) { e.preventDefault(); all[i - 1].focus(); }
+      else if (e.key === 'Escape') { e.preventDefault(); this.back(); }
+    }));
     on('b-admin-back', () => this.back());
     on('b-admin-kill', () => this.adminDo('kill'));
     on('b-admin-kick', () => this.adminDo('kick'));
@@ -224,6 +230,7 @@ export class UI {
     if (name === 'options') this.syncOptions();
     if (name === 'news') this.buildNews();
     if (name === 'admin') this.buildAdminList();
+    if (name === 'sign') this.openSign(data);
     if (name === 'pause') this.syncPause();
     if (name === 'mp') {
       this.mpStatus('');
@@ -243,9 +250,27 @@ export class UI {
     this.hideTooltip();
   }
 
+  // Writing on a sign: the words are saved whenever the editor closes
+  openSign(at) {
+    this.signAt = at;
+    const lines = G.game.signText(at.x, at.y, at.z);
+    const inputs = document.querySelectorAll('.sign-line');
+    inputs.forEach((el, i) => { el.value = lines[i] || ''; });
+    setTimeout(() => { if (G.screen === 'sign') inputs[0].focus(); }, 0);
+  }
+
+  saveSign() {
+    const at = this.signAt;
+    this.signAt = null;
+    if (!at) return;
+    G.game.setSign(at.x, at.y, at.z, [...document.querySelectorAll('.sign-line')].map((el) => el.value.trim()));
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  }
+
   back() {
     const cur = G.screen;
     if (cur === 'death' || cur === 'credits' || cur === 'busy') return;
+    if (cur === 'sign') this.saveSign();
     if (CONTAINERS.includes(cur)) this.closeContainer();
     const prev = this.stack.pop();
     if (prev) {

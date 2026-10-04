@@ -194,6 +194,16 @@ function speckled(p, base, dot, dot2, k) {
     return jit(sh(base, 0.9 + n(x, y) * 0.2), 5, p.r);
   });
 }
+// A trapdoor: a framed wooden hatch with four little windows and two iron hinges
+function trapdoor(p, base) {
+  p.each((x, y) => {
+    if (x === 0 || y === 0 || x === 15 || y === 15) return sh(base, 0.66);
+    if ((y === 2 || y === 13) && (x === 1 || x === 2)) return [80, 80, 84];
+    const win = ((x >= 3 && x <= 6) || (x >= 9 && x <= 12)) && ((y >= 3 && y <= 6) || (y >= 9 && y <= 12));
+    if (win) return [0, 0, 0, 0];
+    return jit(x === 7 || x === 8 || y === 7 || y === 8 ? sh(base, 0.86) : base, 5, p.r);
+  });
+}
 function metal(p, base) {
   p.each((x, y) => {
     if (x === 0 || y === 0) return sh(base, 1.12);
@@ -601,6 +611,11 @@ Object.assign(PAINTERS, {
     PAINTERS.stone_bricks(p);
     p.line(3, 1, 6, 5, [60, 60, 60]); p.line(6, 5, 5, 9, [60, 60, 60]); p.line(11, 9, 13, 14, [60, 60, 60]); p.line(12, 11, 9, 13, [60, 60, 60]);
   },
+  oak_trapdoor: (p) => trapdoor(p, [168, 134, 80]),
+  birch_trapdoor: (p) => trapdoor(p, [200, 184, 128]),
+  spruce_trapdoor: (p) => trapdoor(p, [116, 86, 50]),
+  jungle_trapdoor: (p) => trapdoor(p, [160, 114, 80]),
+  dark_oak_trapdoor: (p) => trapdoor(p, [74, 52, 32]),
   oak_door_bottom: (p) => p.each((x, y) => {
     if (x === 0 || x === 15 || y === 15) return [110, 82, 46];
     if (x === 13 && (y === 1 || y === 2)) return [70, 70, 70];
@@ -1084,6 +1099,11 @@ Object.assign(ART, {
     '....OPPPPPPO....', '....OPPPPPPO....', '....OPPPPPPO....', '....OPPPPKPO....',
     '....OPPPPPPO....', '....OPPPPPPO....', '....OPPPPPPO....', '....OOOOOOOO....',
   ],
+  sign: [
+    '.OOOOOOOOOOOOOO.', '.OPPPPPPPPPPPPO.', '.OPKKPKKKPKKKPO.', '.OPPPPPPPPPPPPO.', '.OPKKKPKKPKKPPO.', '.OPPPPPPPPPPPPO.',
+    '.OPKKPKKKKPKPPO.', '.OPPPPPPPPPPPPO.', '.OOOOOOOOOOOOOO.', '......OSSO......', '......OSSO......', '......OSSO......',
+    '......OSSO......', '......OOOO......',
+  ],
   fence: [
     '...OO......OO...', '..OPPO....OPPO..', '..OPPOOOOOOPPO..', '..OPPPPPPPPPPO..',
     '..OPPOOOOOOPPO..', '..OPPO....OPPO..', '..OPPOOOOOOPPO..', '..OPPPPPPPPPPO..',
@@ -1094,6 +1114,7 @@ const BLOCK_ART_PAL = {
   bed: { O: [60, 30, 20], W: [236, 236, 230], R: [176, 34, 32], B: [120, 88, 50] },
   door: { O: [80, 58, 32], P: [168, 134, 80], W: [190, 220, 230], K: [60, 60, 60] },
   fence: { O: [80, 58, 32], P: [168, 134, 80] },
+  sign: { O: [80, 58, 32], P: [176, 142, 88], K: [70, 52, 30], S: [137, 103, 55] },
 };
 const ARMOR_PAL = {
   leather: [[150, 86, 44], [100, 56, 26], [192, 122, 72]],
@@ -1180,26 +1201,27 @@ const TOOL_PAL = {
   diamond: [[74, 226, 212], [30, 160, 150], [200, 255, 250]],
 };
 
-function isoIcon(top, left, right) {
+function isoIcon(top, left, right, half = false) {
   const S = 64;
   const c = document.createElement('canvas');
   c.width = c.height = S;
   const g = c.getContext('2d');
   g.imageSmoothingEnabled = false;
   const T = [32, 2], R = [61, 16.5], M = [32, 31], L = [3, 16.5];
-  const face = (img, o, u, v, shade) => {
+  // (a slab: the top sits halfway down, and only the lower half of each side shows)
+  const face = (img, o, u, v, shade, lower) => {
     g.setTransform(u[0] / 16, u[1] / 16, v[0] / 16, v[1] / 16, o[0], o[1]);
-    g.drawImage(img, 0, 0);
+    if (lower) g.drawImage(img, 0, 8, 16, 8, 0, 8, 16, 8); else g.drawImage(img, 0, 0);
     if (shade) {
       g.globalCompositeOperation = 'source-atop';
       g.fillStyle = `rgba(0,0,0,${shade})`;
-      g.fillRect(0, 0, 16, 16);
+      g.fillRect(0, lower ? 8 : 0, 16, lower ? 8 : 16);
       g.globalCompositeOperation = 'source-over';
     }
   };
-  face(top, L, [T[0] - L[0], T[1] - L[1]], [M[0] - L[0], M[1] - L[1]], 0);
-  face(left, L, [M[0] - L[0], M[1] - L[1]], [0, 30], 0.22);
-  face(right, M, [R[0] - M[0], R[1] - M[1]], [0, 30], 0.42);
+  face(top, half ? [L[0], L[1] + 15] : L, [T[0] - L[0], T[1] - L[1]], [M[0] - L[0], M[1] - L[1]], 0);
+  face(left, L, [M[0] - L[0], M[1] - L[1]], [0, 30], 0.22, half);
+  face(right, M, [R[0] - M[0], R[1] - M[1]], [0, 30], 0.42, half);
   g.setTransform(1, 0, 0, 1, 0, 0);
   return c;
 }
@@ -1211,9 +1233,9 @@ export function buildIcons() {
     if (it.isBlock && it.art) {
       canvas = drawAscii(ART[it.art], BLOCK_ART_PAL[it.art]);
     } else if (it.isBlock) {
-      if (it.render === RENDER.CUBE) {
+      if (it.render === RENDER.CUBE || it.render === RENDER.SLAB) {
         const f = it.faces;
-        canvas = isoIcon(TILES[f[2]], TILES[it.facing ? it.front : f[4]], TILES[f[0]]);
+        canvas = isoIcon(TILES[f[2]], TILES[it.facing ? it.front : f[4]], TILES[f[0]], it.render === RENDER.SLAB);
       } else {
         canvas = TILES[it.faces[0]];
       }

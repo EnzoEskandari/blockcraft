@@ -467,6 +467,9 @@ export class Net {
   }
 
   // ------------------------------------------------------------ hooks called by the game
+  // What someone wrote on a sign goes to everyone (through the host)
+  signChanged(x, y, z, lines) { this.send({ k: 'sign', x, y, z, l: lines }); }
+
   blockChanged(x, y, z, id) {
     if (this.applying) return;
     this.out.push([x, y, z, id, G.world.getMeta(x, y, z), this.breaking ? 1 : 0]);
@@ -666,6 +669,10 @@ export class Net {
         if (m && m.trades && Array.isArray(d.u)) d.u.forEach((u, i) => { if (m.trades[i]) m.trades[i].uses = Math.max(m.trades[i].uses, u | 0); });
         break;
       }
+      case 'sign':
+        G.game.setSign(d.x | 0, d.y | 0, d.z | 0, d.l, true);
+        this.sendExcept(from, { k: 'sign', x: d.x | 0, y: d.y | 0, z: d.z | 0, l: G.game.signText(d.x | 0, d.y | 0, d.z | 0) });
+        break;
       case 'chat': {
         if (!a) return;
         const t = String(d.t || '').slice(0, 120);
@@ -761,6 +768,7 @@ export class Net {
         break;
       }
       case 'chat': this.chat(d.sys ? null : d.n, String(d.t || '')); break;
+      case 'sign': G.game.setSign(d.x | 0, d.y | 0, d.z | 0, d.l, true); break;
       case 'boom': explosionFx(d.x, d.y, d.z, d.pw); break;
       case 'ar': { const a = d.a; G.entities.spawnArrow(a[0], a[1], a[2], a[3], a[4], a[5], 'fx', { effect: a[6] ? 'slow' : null }); break; }
       case 'th': { const a = d.a; G.entities.spawnPotion(a[0], a[1], a[2], a[3], a[4], a[5], a[6], true); break; }
