@@ -1043,7 +1043,7 @@ export class Player {
     if (Math.abs(cam.fov - fov) > 0.01) { cam.fov = fov; cam.updateProjectionMatrix(); }
     if (this.dead && this.pos.y > -60) cam.position.y = this.pos.y + 0.3;
     const [s, b] = G.world.getLight(Math.floor(this.pos.x), Math.floor(this.eyeY), Math.floor(this.pos.z));
-    updateHand(dt, brightness(s, b), this.bob * Math.PI * bob, this.eating ? this.eating.t : -1, this.shieldHand || 0);
+    updateHand(dt, brightness(s, b), this.bob * Math.PI, bob, this.eating ? this.eating.t : -1, this.shieldHand || 0);
     R.handHolder.visible = !this.dead;
   }
 }

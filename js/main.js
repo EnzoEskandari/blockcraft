@@ -410,14 +410,16 @@ function flammableNear(w, x, y, z) {
   return false;
 }
 
-// Fire burns neighbouring wood, leaves, wool and plants, spreads a little, and dies out on bare ground
+// Fire burns neighbouring wood, leaves, wool and plants, creeps along slowly, and burns itself out: each
+// flame lasts half a minute at most, and a big fire stops spreading until it has died down, so it can be
+// put out (punch the flames, or pour water on them)
 function tickFires(host) {
   const w = G.world;
-  const many = w.fires.size > 300;
+  const many = w.fires.size > 40;
   if (host) for (const [key, f] of w.fires) {
-    if (f.t === 0) { f.t = G.clock + 0.5 + Math.random(); continue; }
+    if (f.t === 0) { f.t = G.clock + 1.5 + Math.random() * 1.5; continue; }
     if (G.clock < f.t) continue;
-    f.t = G.clock + 0.6 + Math.random() * 0.8;
+    f.t = G.clock + 1.5 + Math.random() * 1.5;
     const [x, y, z] = key.split(',').map(Number);
     if (!w.getChunk(x >> 4, z >> 4)) continue;
     if (w.getBlock(x, y, z) !== B.fire) { w.fires.delete(key); continue; }
@@ -425,24 +427,22 @@ function tickFires(host) {
     const fuel = flammableNear(w, x, y, z);
     if (!fuel && !BLOCKS[below].solid) { w.setBlock(x, y, z, 0); w.fires.delete(key); continue; }
     f.age += 1;
-    if (below !== B.netherrack && ((!fuel && f.age > 4 + Math.random() * 5) || f.age > 40)) { w.setBlock(x, y, z, 0); w.fires.delete(key); continue; }
+    if (below !== B.netherrack && ((!fuel && f.age > 1 + Math.random() * 3) || f.age > 10 + Math.random() * 4)) { w.setBlock(x, y, z, 0); w.fires.delete(key); continue; }
     // burn neighbours
     for (const [dx, dy, dz] of NEIGHBORS6) {
       const nx = x + dx, ny = y + dy, nz = z + dz;
       const nid = w.getBlock(nx, ny, nz);
       const fl = BLOCKS[nid].flammable;
-      if (!fl || Math.random() * 300 > fl) continue;
+      if (!fl || Math.random() * 400 > fl) continue;
       if (nid === B.tnt) { Game.removeBlock(nx, ny, nz, false); G.entities.primeTNT(nx, ny, nz); continue; }
       Game.removeBlock(nx, ny, nz, false);
-      if (!many && Math.random() < 0.6) Game.ignite(nx, ny, nz);
+      if (!many && Math.random() < 0.45) Game.ignite(nx, ny, nz);
     }
     // spread to nearby air next to something that burns
     if (!many && fuel) {
-      for (let k = 0; k < 2; k++) {
-        const sx = x + Math.floor(Math.random() * 3) - 1, sy = y + Math.floor(Math.random() * 4) - 1, sz = z + Math.floor(Math.random() * 3) - 1;
-        const sid = w.getBlock(sx, sy, sz);
-        if ((sid === 0 || (BLOCKS[sid].replaceable && sid !== B.water && sid !== B.fire)) && flammableNear(w, sx, sy, sz) && Math.random() < 0.25) Game.ignite(sx, sy, sz);
-      }
+      const sx = x + Math.floor(Math.random() * 3) - 1, sy = y + Math.floor(Math.random() * 4) - 1, sz = z + Math.floor(Math.random() * 3) - 1;
+      const sid = w.getBlock(sx, sy, sz);
+      if ((sid === 0 || (BLOCKS[sid].replaceable && sid !== B.water && sid !== B.lava && sid !== B.fire)) && flammableNear(w, sx, sy, sz) && Math.random() < 0.15) Game.ignite(sx, sy, sz);
     }
   }
   // flames and smoke, and anything standing in fire catches alight

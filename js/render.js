@@ -432,8 +432,9 @@ export function setHeldItem(id) {
   R.handItem = m;
 }
 
+// bob: where you are in your stride, sway: how strongly the hands move with it (0 standing still, 1 walking)
 // eat: seconds spent eating so far, or -1 when not eating; shield: 1 raised in the main hand, 2 in the off hand
-export function updateHand(dt, light, bob, eat = -1, shield = 0) {
+export function updateHand(dt, light, bob, sway, eat = -1, shield = 0) {
   R.swing = Math.max(0, R.swing - dt * 4.5);
   const s = R.swing > 0 ? 1 - R.swing : 0;
   const h = R.handHolder;
@@ -442,9 +443,12 @@ export function updateHand(dt, light, bob, eat = -1, shield = 0) {
   const e = R.eatBlend * R.eatBlend * (3 - 2 * R.eatBlend);
   const chew = eat >= 0 ? Math.abs(Math.sin(eat * 13)) * 0.045 : 0;
   // Eating: bring the food up to the middle of the view and chew it
+  // the hands sway gently in step with the walk (the same stride that bobs the view)
+  // (at half the pace of the view bob and without its sharp bounce, or held things look like they shake)
+  const swayX = Math.sin(bob * 0.5) * 0.014 * sway, swayY = -(0.5 - 0.5 * Math.cos(bob)) * 0.018 * sway;
   h.position.set(
-    -sw * 0.25 + Math.sin(bob * 2) * 0.012 - e * 0.3,
-    sw * 0.12 - Math.abs(Math.cos(bob * 2)) * 0.02 + e * (0.17 - chew),
+    -sw * 0.25 + swayX - e * 0.3,
+    sw * 0.12 + swayY + e * (0.17 - chew),
     -sw * 0.15 - e * 0.06,
   );
   h.rotation.set(sw * 0.8 + e * 0.1, sw * 0.5 + e * 0.2, sw * 0.3 - e * 0.1);
@@ -461,7 +465,7 @@ export function updateHand(dt, light, bob, eat = -1, shield = 0) {
   h.position.x -= main * 0.2; h.position.y += main * 0.13;
   h.rotation.y += main * 0.35;
   const o = R.offHolder;
-  o.position.set(Math.sin(bob * 2) * 0.012 + offk * 0.2, -Math.abs(Math.cos(bob * 2)) * 0.02 + offk * 0.13, 0);
+  o.position.set(swayX + offk * 0.2, swayY + offk * 0.13, 0);
   o.rotation.set(0, -offk * 0.35, 0);
   tintModel(h, light);
   tintModel(o, light);

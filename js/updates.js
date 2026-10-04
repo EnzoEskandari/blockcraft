@@ -14,6 +14,16 @@ const CAVERN = {
 export const UPDATES = [
   {
     // a small update: it keeps the Caves & Ores picture
+    version: '1.6.2', name: 'Steady Hands & Calmer Fire', date: '2026-10-04',
+    splashes: ['Steady hands!', 'Fire, but calmer!', 'Punch the flames!', 'Shields up!', 'Press F!', 'Caves & Ores!', 'Bring torches!'],
+    scene: CAVERN,
+    notes: [
+      'What you hold no longer shakes when you walk or run: it sways gently with your steps.',
+      'Fire spreads much more slowly, each flame burns out within about half a minute, and a big fire stops growing until it has died down. Punch flames or pour water on them to put them out.',
+    ],
+  },
+  {
+    // a small update: it keeps the Caves & Ores picture
     version: '1.6.1', name: 'Shields & Off Hand', date: '2026-10-04',
     splashes: ['Shields up!', 'Two hands now!', 'Press F!', 'Torch in the other hand!', 'Light it up or else!', 'Caves & Ores!', 'Now with deepslate!', 'Bring torches!'],
     scene: CAVERN,

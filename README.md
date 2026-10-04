@@ -59,6 +59,8 @@ How it works:
 - **Off hand:** press **F** to swap what you are holding into it (on iPad, tap the slot left of the hotbar). Its item is used when the main hand has nothing to do, so a torch there can be placed while you hold a pickaxe.
 - **Monsters by light level:** they appear anywhere with no torch or lava light and little sky light, day or night, and never within 24 blocks of a player. Light your caves and rooms.
 
+**1.6.2:** held items sway gently instead of shaking, and fire spreads slowly, burns out by itself and can be put out by punching the flames or pouring water on them.
+
 ## Admins
 
 The account called **Enzo** is the server admin (to change who, set `ADMINS` on Render to a comma-separated list of usernames). Admins can make other players admins too.
