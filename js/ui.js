@@ -1,11 +1,13 @@
 // HUD, menus and inventory screens (plain DOM).
 import { UPDATES, LATEST } from './updates.js';
 import { G, saveSettings } from './game.js';
-import { ITEMS, ID, B, maxStack, itemName, matchRecipe, fuelValue, SMELTING, creativeList, RECIPES } from './blocks.js';
+import { BLOCKS, ITEMS, ID, B, maxStack, itemName, matchRecipe, fuelValue, SMELTING, creativeList, RECIPES, inTag } from './blocks.js';
 import { iconURL, ICONS, drawAscii, TILES, TEX, armorSilhouette, shieldSilhouette } from './textures.js';
-import { PROFESSIONS } from './villagers.js';
+import { PROFESSIONS, LEVEL_NAMES, levelProgress } from './villagers.js';
+import { ADV, TABS } from './advancements.js';
 import { structuresNear } from './structures.js';
 import { sameItem, stack, craftableTimes, takeIngredients } from './inventory.js';
+import { isEnchanted, enchList, enchLine, ENCH, xpForLevel, enchantability, tableLevels, tableOffer, enchanted, anvil, grind, repairItem, countShelves } from './enchant.js';
 import { requestLock, exitLock, setTouchMode, resetTouch } from './input.js';
 import { sfx, setVolume, initAudio } from './audio.js';
 import { BIOME_NAMES } from './world.js';
@@ -19,7 +21,8 @@ const h = (tag, cls, text) => {
   return e;
 };
 
-const CONTAINERS = ['inventory', 'crafting', 'furnace', 'chest', 'creative', 'trade'];
+const CONTAINERS = ['inventory', 'crafting', 'furnace', 'chest', 'creative', 'trade', 'enchant', 'anvil', 'grind'];
+const TEMP = ['enchant', 'anvil', 'grind'];   // screens whose slots only hold things while they are open
 const SPLASHES = ['Now on iPad!', 'Punch a tree!', 'Made of blocks!', 'Mind the Boomers!', '100% procedural!', 'Try the caves!', 'Smooth lighting!', 'Hold to mine!', 'Seeds are fun!'];
 
 // ---------------------------------------------------------------- pixel icons for the HUD
@@ -189,6 +192,8 @@ export class UI {
     on('b-options-done', () => this.back());
     on('b-resume', () => this.back());
     on('b-pause-options', () => this.openScreen('options'));
+    on('b-pause-adv', () => this.openScreen('adv'));
+    on('b-adv-close', () => this.back());
     on('b-quit', () => G.game.quitToTitle());
     on('b-respawn', () => G.game.respawn());
     on('b-death-title', () => G.game.quitToTitle());
@@ -206,7 +211,7 @@ export class UI {
 
   // ---------------------------------------------------------------- screens
   section(name) {
-    const map = { inventory: 'container', crafting: 'container', furnace: 'container', chest: 'container', creative: 'container', trade: 'container' };
+    const map = { inventory: 'container', crafting: 'container', furnace: 'container', chest: 'container', creative: 'container', trade: 'container', enchant: 'container', anvil: 'container', grind: 'container' };
     const id = 's-' + (map[name] || name);
     for (const s of document.querySelectorAll('.screen')) s.hidden = s.id !== id;
     const chat = name === 'chat';
@@ -230,6 +235,7 @@ export class UI {
     if (name === 'options') this.syncOptions();
     if (name === 'news') this.buildNews();
     if (name === 'admin') this.buildAdminList();
+    if (name === 'adv') this.buildAdv();
     if (name === 'sign') this.openSign(data);
     if (name === 'pause') this.syncPause();
     if (name === 'mp') {
@@ -248,6 +254,63 @@ export class UI {
     if (G.state === 'playing') exitLock();
     this.updateTouchVisibility();
     this.hideTooltip();
+  }
+
+  // ---------------------------------------------------------------- achievements
+  // The note that slides in at the top right when one is made (they wait their turn)
+  achievement(a) {
+    (this.advQueue || (this.advQueue = [])).push(a);
+    if (!this.advShowing) this.nextAchievement();
+  }
+  nextAchievement() {
+    const a = this.advQueue.shift(), el = $('adv-toast');
+    this.advShowing = !!a;
+    if (!a) { el.hidden = true; return; }
+    $('adv-toast-icon').src = iconURL(ID[a.icon]);
+    $('adv-toast-head').textContent = a.hard ? 'Challenge complete!' : 'Achievement made!';
+    $('adv-toast-title').textContent = a.title;
+    el.classList.toggle('hard', !!a.hard);
+    el.hidden = true; void el.offsetWidth; el.hidden = false;   // (start the slide again)
+    clearTimeout(this.advTimer);
+    this.advTimer = setTimeout(() => this.nextAchievement(), 4200);
+  }
+
+  // The list: a tab for each part of the game, what is done in green, and how far along the long ones are
+  buildAdv(tab) {
+    const p = G.player;
+    if (!p) return;
+    this.advTab = tab || this.advTab || TABS[0][0];
+    const done = ADV.filter((a) => p.adv.has(a.key)).length;
+    $('adv-title').textContent = `Achievements · ${done} of ${ADV.length}`;
+    const tabs = $('adv-tabs'), list = $('adv-list');
+    tabs.innerHTML = ''; list.innerHTML = '';
+    for (const [key, name] of TABS) {
+      const of = ADV.filter((a) => a.tab === key);
+      const b = h('button', 'adv-tab' + (key === this.advTab ? ' sel' : ''), `${name} ${of.filter((a) => p.adv.has(a.key)).length}/${of.length}`);
+      b.type = 'button';
+      b.addEventListener('click', () => { sfx('click', null, { vol: 0.4 }); this.buildAdv(key); });
+      tabs.appendChild(b);
+    }
+    for (const a of ADV.filter((q) => q.tab === this.advTab)) {
+      const got = p.adv.has(a.key);
+      const row = h('div', 'adv-row' + (got ? ' done' : '') + (a.hard ? ' hard' : ''));
+      const img = document.createElement('img');
+      img.src = iconURL(ID[a.icon]); img.alt = '';
+      row.appendChild(img);
+      const txt = h('div');
+      txt.appendChild(h('div', 't', a.title));
+      let desc = a.desc;
+      if (a.all && !got) {
+        // the long ones say what is still to do
+        const [n, of] = G.adv.progress(a);
+        const left = G.adv.missing(a).map(a.names);
+        desc += ` (${n} of ${of}${left.length && left.length <= 8 ? ': still ' + left.join(', ') : ''})`;
+      }
+      txt.appendChild(h('div', 'd', desc));
+      row.appendChild(txt);
+      row.appendChild(h('div', 'x', got ? 'Done' : `${a.xp} experience`));
+      list.appendChild(row);
+    }
   }
 
   // Writing on a sign: the words are saved whenever the editor closes
@@ -840,7 +903,7 @@ export class UI {
 
   // ---------------------------------------------------------------- slots
   renderSlot(el, s) {
-    const key = s ? `${s.id}:${s.count}:${s.dmg || 0}` : '';
+    const key = s ? `${s.id}:${s.count}:${s.dmg || 0}${s.e ? ':' + JSON.stringify(s.e) : ''}` : '';
     if (el._key === key) return;
     el._key = key;
     el.innerHTML = '';
@@ -851,6 +914,8 @@ export class UI {
     img.alt = '';
     if (ICONS[s.id] && ICONS[s.id].width === 16) img.className = 'px';
     el.appendChild(img);
+    // enchanted things shimmer
+    if (isEnchanted(s)) { const g = h('span', 'glint'); g.style.setProperty('--icon', `url(${img.src})`); el.appendChild(g); }
     if (s.count > 1) el.appendChild(h('span', 'count', String(s.count)));
     const it = ITEMS[s.id];
     if (it && it.durability && s.dmg > 0) {
@@ -868,7 +933,7 @@ export class UI {
     this.hudDirty = true;
     if (selectionChanged) {
       const s = G.player.inv.held;
-      if (s) this.toast(itemName(s.id));
+      if (s) this.toast(this.describe(s));
     }
     if (CONTAINERS.includes(G.screen)) this.refreshContainer();
   }
@@ -900,7 +965,13 @@ export class UI {
       $('t-shield').hidden = !((held && held.id === ID.shield) || (off && off.id === ID.shield));
     }
     const survival = !p.creative;
-    if (c.survival !== survival) { c.survival = survival; $('stats').style.visibility = survival ? 'visible' : 'hidden'; }
+    if (c.survival !== survival) { c.survival = survival; $('stats').style.visibility = $('xp-bar').style.visibility = survival ? 'visible' : 'hidden'; }
+    const xpKey = p.xpLevel + ':' + Math.round(p.xp / xpForLevel(p.xpLevel) * 200);
+    if (c.xp !== xpKey) {
+      c.xp = xpKey;
+      $('xp-fill').style.width = Math.min(100, p.xp / xpForLevel(p.xpLevel) * 100).toFixed(1) + '%';
+      $('xp-level').textContent = p.xpLevel > 0 ? String(p.xpLevel) : '';
+    }
     const hp = Math.ceil(p.health), fd = Math.ceil(p.food);
     let shownHp = hp, flash = false;
     if (this.blinkTime > 0) {
@@ -1043,9 +1114,96 @@ export class UI {
     return el;
   }
 
+  // A faint picture of an item, for a slot that only takes that item
+  ghost(id) {
+    const c = document.createElement('canvas');
+    c.width = c.height = 32;
+    const g = c.getContext('2d');
+    g.imageSmoothingEnabled = false;
+    g.globalAlpha = 0.28;
+    if (ICONS[id]) g.drawImage(ICONS[id], 0, 0, 32, 32);
+    return c.toDataURL();
+  }
+
+  // What the anvil or the grindstone would make of what is in it: { out, cost | xp, ... } or null
+  made() {
+    const c = this.container;
+    if (!c) return null;
+    if (c.kind === 'anvil') return anvil(c.data.slots[0], c.data.slots[1], (a, b) => { const k = repairItem(a); return !!k && inTag(k, b); });
+    if (c.kind === 'grind') return grind(c.data.slots[0]);
+    return null;
+  }
+
+  // Taking the result out of the anvil (levels are paid) or the grindstone (experience comes back)
+  takeMade(shift) {
+    const c = this.container, p = G.player, m = this.made();
+    if (!m || this.cursor) return;
+    if (c.kind === 'anvil') {
+      if (m.tooExpensive && !p.creative) { this.toast('Too expensive!'); return; }
+      if (!p.creative && p.xpLevel < m.cost) { this.toast(`That takes ${m.cost} level${m.cost === 1 ? '' : 's'}`); return; }
+      p.spendLevels(m.cost);
+      c.data.slots[0] = null;
+      const b = c.data.slots[1];
+      b.count -= m.uses;
+      if (b.count <= 0) c.data.slots[1] = null;
+      sfx('anvil');
+      if (G.adv) G.adv.did('anvil');
+    } else {
+      c.data.slots[0] = null;
+      sfx('anvil', null, { vol: 0.5 });
+      G.entities.spawnXp(p.pos.x, p.pos.y + 1, p.pos.z, m.xp, 0);
+    }
+    if (shift) { const left = p.inv.add(m.out.id, 1, m.out.dmg, m.out.e); if (left) this.cursor = m.out; }
+    else this.cursor = m.out;
+    this.refreshContainer();
+  }
+
+  // The enchanting table's three offers: what each costs, a hint of what it gives, and the level it needs
+  renderEnchant() {
+    const c = this.container;
+    if (!c || c.kind !== 'enchant') return;
+    const p = G.player, item = c.data.slots[0], lapis = c.data.slots[1] ? c.data.slots[1].count : 0;
+    const levels = item && !isEnchanted(item) ? tableLevels(p.enchSeed, c.data.shelves, item.id) : [0, 0, 0];   // (what is already enchanted can't be again)
+    [...c.enchant.children].forEach((b, i) => {
+      const lvl = levels[i];
+      const offer = lvl ? tableOffer(p.enchSeed, i, lvl, item.id) : [];
+      const [cost, clue, need] = b.children;
+      const can = offer.length > 0 && (p.creative || (p.xpLevel >= lvl && lapis >= i + 1));
+      b.disabled = !offer.length;
+      b.classList.toggle('cant', offer.length > 0 && !can);
+      cost.textContent = String(i + 1);
+      clue.textContent = offer.length ? enchLine(offer[0][0], offer[0][1]) + ' . . . ?' : '';
+      need.textContent = offer.length ? `level ${lvl}` : '';
+      b.title = !offer.length ? '' : p.creative || can ? `Costs ${i + 1} level${i ? 's' : ''} and ${i + 1} lapis lazuli` : p.xpLevel < lvl ? `You need to be level ${lvl}` : `You need ${i + 1} lapis lazuli`;
+      b._offer = offer; b._lvl = lvl;
+    });
+  }
+
+  doEnchant(i) {
+    const c = this.container, p = G.player;
+    if (!c || c.kind !== 'enchant') return;
+    const b = c.enchant.children[i], item = c.data.slots[0];
+    if (!item || !b._offer || !b._offer.length) return;
+    const lapis = c.data.slots[1] ? c.data.slots[1].count : 0;
+    if (!p.creative) {
+      if (p.xpLevel < b._lvl) { this.toast(`You need to be level ${b._lvl}`); return; }
+      if (lapis < i + 1) { this.toast(`You need ${i + 1} lapis lazuli`); return; }
+      c.data.slots[1].count -= i + 1;
+      if (!c.data.slots[1].count) c.data.slots[1] = null;
+      p.spendLevels(i + 1);
+    }
+    c.data.slots[0] = enchanted(item, b._offer);
+    p.enchSeed = (Math.random() * 4294967296) >>> 0;   // the table offers something new next time
+    sfx('enchant');
+    if (G.adv) G.adv.did('enchant');
+    this.toast(this.describe(c.data.slots[0]));
+    this.refreshContainer();
+  }
+
   refGet(ref) {
     if (ref.kind === 'result') return this.craftResult();
-    if (ref.kind === 'palette') return stack(ref.id, 1);
+    if (ref.kind === 'made') { const m = this.made(); return m ? m.out : null; }
+    if (ref.kind === 'palette') return stack(ref.id, 1, 0, ref.e || null);
     return ref.arr[ref.i];
   }
 
@@ -1058,7 +1216,7 @@ export class UI {
     const add = (parent, ref) => { const el = this.slot(ref); parent.appendChild(el); this.container.els.push(el); return el; };
     const grid = (cols, cls) => { const g = h('div', 'grid ' + (cls || '')); g.style.setProperty('--cols', cols); return g; };
 
-    const titles = { inventory: 'Crafting', crafting: 'Crafting', furnace: 'Furnace', chest: 'Chest', creative: 'Creative Inventory' };
+    const titles = { inventory: 'Crafting', crafting: 'Crafting', furnace: 'Furnace', chest: 'Chest', creative: 'Creative Inventory', enchant: 'Enchant', anvil: 'Repair & Combine', grind: 'Grindstone' };
     const head = h('div', 'panel-head');
     head.appendChild(h('div', 'panel-title', titles[kind]));
     const close = h('button', 'close', '✕');
@@ -1117,11 +1275,59 @@ export class UI {
       this.updateFurnaceUI(true);
     } else if (kind === 'trade') {
       this.craft = null;
-      head.firstChild.textContent = (PROFESSIONS[data.prof] || { name: 'Villager' }).name;
+      // its name and how good a trader it has become; the bar fills as it nears the next level
+      const lvl = data.level;
+      head.firstChild.textContent = `${(PROFESSIONS[data.prof] || { name: 'Villager' }).name} · ${LEVEL_NAMES[lvl - 1]}`;
+      const bar = h('div', 'trade-level');
+      const fill = h('i');
+      fill.style.width = (levelProgress(data.vx || 0) * 100).toFixed(0) + '%';
+      bar.appendChild(fill);
+      bar.title = lvl >= 5 ? 'A Master: it has nothing more to learn' : `Trade with it and it becomes ${/^[AE]/.test(LEVEL_NAMES[lvl]) ? 'an' : 'a'} ${LEVEL_NAMES[lvl]}, with more to offer`;
+      panel.appendChild(bar);
       const list = h('div', 'offers');
       data.trades.forEach((tr, i) => list.appendChild(this.offerRow(data, tr, i)));
       panel.appendChild(list);
       this.container.offers = list;
+    } else if (kind === 'enchant') {
+      // an item and some lapis lazuli on the left, the table's three offers on the right
+      this.craft = null;
+      data.slots = [null, null];
+      data.shelves = countShelves(G.world, data.x, data.y, data.z, B.bookshelf, (x, y, z) => { const b = BLOCKS[G.world.getBlock(x, y, z)]; return !b.solid && !b.opaque; });
+      const row = h('div', 'ench-row');
+      const col = h('div', 'ench-slots');
+      add(col, { kind: 'normal', arr: data.slots, i: 0, max: 1, ok: (s) => enchantability(s.id) > 0 && !isEnchanted(s) });
+      const lap = add(col, { kind: 'normal', arr: data.slots, i: 1, ok: (s) => s.id === ID.lapis_lazuli });
+      lap.classList.add('armor-slot');
+      lap.style.backgroundImage = `url(${this.ghost(ID.lapis_lazuli)})`;
+      row.appendChild(col);
+      const offers = h('div', 'ench-offers');
+      for (let i = 0; i < 3; i++) {
+        const b = h('button', 'ench-offer');
+        b.type = 'button';
+        b.appendChild(h('span', 'ench-cost', String(i + 1)));
+        b.appendChild(h('span', 'ench-clue', ''));
+        b.appendChild(h('span', 'ench-need', ''));
+        b.addEventListener('click', () => this.doEnchant(i));
+        offers.appendChild(b);
+      }
+      row.appendChild(offers);
+      panel.appendChild(row);
+      panel.appendChild(h('div', 'hint', `Bookshelves around the table: ${data.shelves} of 15. ${data.shelves >= 15 ? 'It can reach level 30.' : 'More of them bring higher levels (15 for level 30).'}`));
+      this.container.enchant = offers;
+    } else if (kind === 'anvil' || kind === 'grind') {
+      // one or two things in, one out; the anvil asks for levels, the grindstone gives a little experience back
+      this.craft = null;
+      data.slots = kind === 'anvil' ? [null, null] : [null];
+      const row = h('div', 'craft-row anvil-row');
+      add(row, { kind: 'normal', arr: data.slots, i: 0, max: 1 });
+      if (kind === 'anvil') { row.appendChild(h('div', 'plus', '+')); add(row, { kind: 'normal', arr: data.slots, i: 1 }); }
+      row.appendChild(h('div', 'arrow'));
+      const res = add(row, { kind: 'made' });
+      res.classList.add('big');
+      panel.appendChild(row);
+      const note = h('div', 'hint anvil-cost', '');
+      panel.appendChild(note);
+      this.container.note = note;
     } else if (kind === 'chest') {
       this.craft = null;
       const g = grid(9);
@@ -1131,6 +1337,8 @@ export class UI {
       this.craft = null;
       const pal = grid(9, 'palette');
       for (const id of creativeList()) add(pal, { kind: 'palette', id });
+      // a book for every enchantment, at its highest level
+      for (const k of Object.keys(ENCH)) add(pal, { kind: 'palette', id: ID.enchanted_book, e: { [k]: ENCH[k].max } });
       panel.appendChild(pal);
       panel.appendChild(h('div', 'hint', G.touchMode ? 'Tap an item to put a full stack in the selected hotbar slot.' : 'Click an item to put a full stack in the selected hotbar slot. Right-click puts just one.'));
       const row = h('div', 'hotbar-edit');
@@ -1173,6 +1381,16 @@ export class UI {
     }
     this.renderRecipeBook();
     this.renderOffers();
+    this.renderEnchant();
+    if (this.container.note) {
+      // what the anvil asks for, or what the grindstone gives
+      const m = this.made(), p = G.player, n = this.container.note;
+      if (this.container.kind === 'grind') n.textContent = m ? 'Takes the enchantments off and gives some experience back.' : 'Put an enchanted item or book in to take its enchantments off.';
+      else if (!m) n.textContent = 'An item with a book, with another of its kind, or with what it is made of.';
+      else if (m.tooExpensive && !p.creative) n.textContent = 'Too expensive!';
+      else n.textContent = `Costs ${m.cost} level${m.cost === 1 ? '' : 's'}` + (!p.creative && p.xpLevel < m.cost ? ` (you have ${p.xpLevel})` : '');
+      n.classList.toggle('bad', !!m && !p.creative && (m.tooExpensive || p.xpLevel < m.cost));
+    }
     this.renderCursor();
     this.hudDirty = true;
   }
@@ -1181,12 +1399,14 @@ export class UI {
   offerRow(v, tr, i) {
     const row = h('button', 'offer');
     row.type = 'button';
+    row._i = i;
     const icon = (s) => { const b = h('span', 'offer-item'); const img = document.createElement('img'); img.src = iconURL(s.id); img.alt = ''; if (ICONS[s.id] && ICONS[s.id].width === 16) img.className = 'px'; b.appendChild(img); if (s.count > 1) b.appendChild(h('span', 'count', String(s.count))); b.title = itemName(s.id); return b; };
     row.appendChild(icon(tr.buy));
     if (tr.buy2) row.appendChild(icon(tr.buy2));
     row.appendChild(h('span', 'offer-arrow', '→'));
     row.appendChild(icon(tr.sell));
-    row.appendChild(h('span', 'offer-name', itemName(tr.sell.id)));
+    // (what the villager can't offer yet is shown too, so you can see what trading with it will unlock)
+    row.appendChild(h('span', 'offer-name', tr.lvl > v.level ? `Unlocks at ${LEVEL_NAMES[tr.lvl - 1]}` : this.describe(tr.sell)));
     let timer = 0, long = false;
     row.addEventListener('pointerdown', (e) => {
       if (e.pointerType === 'touch') { long = false; clearTimeout(timer); timer = setTimeout(() => { long = true; this.doTrade(v, tr, true); }, 450); }
@@ -1207,17 +1427,27 @@ export class UI {
     const p = G.player, inv = p.inv;
     let n = 0;
     do {
-      if (tr.uses >= tr.max) { if (!n) sfx('villager', v.pos, { pitch: 0.7 }); break; }
+      if (tr.lvl > v.level || tr.uses + n >= tr.max) { if (!n) sfx('villager', v.pos, { pitch: 0.7 }); break; }
       if (!this.canAfford(tr)) { if (!n) sfx('villager', v.pos, { pitch: 0.7 }); break; }
       inv.remove(tr.buy.id, tr.buy.count);
       if (tr.buy2) inv.remove(tr.buy2.id, tr.buy2.count);
-      const left = inv.add(tr.sell.id, tr.sell.count);
-      if (left) G.entities.dropItem(tr.sell.id, left, p.pos.x, p.pos.y + 1, p.pos.z);
-      tr.uses++;
+      const e = tr.sell.e ? { ...tr.sell.e } : null;
+      const left = inv.add(tr.sell.id, tr.sell.count, tr.sell.dmg || 0, e);
+      if (left) G.entities.dropItem(tr.sell.id, left, p.pos.x, p.pos.y + 1, p.pos.z, undefined, undefined, undefined, tr.sell.dmg || 0, e);
       n++;
-    } while (many && n < 64);
-    if (n) { sfx('villager', v.pos); sfx('pop', null, { vol: 0.5 }); }
-    this.refreshContainer();
+    } while (many && n < 64 && !tr.sell.e);
+    if (n) {
+      sfx('villager', v.pos); sfx('pop', null, { vol: 0.5 });
+      // the villager learns from every trade (the host keeps count), and you get a little experience too
+      let xp = 0;
+      for (let k = 0; k < n; k++) xp += 3 + Math.floor(Math.random() * 4);
+      G.entities.spawnXp(v.pos.x, v.pos.y + 1, v.pos.z, xp, 0.1);
+      if (G.adv) G.adv.traded(v, tr);
+      const i = v.trades.indexOf(tr);
+      if (v.proxy) { tr.uses += n; G.net.send({ k: 'tu', id: v.netId, i, n }); }
+      else { const up = v.traded(i, n); if (up) this.toast(up); }
+    }
+    if (this.container && this.container.kind === 'trade') this.refreshContainer();
   }
 
   renderOffers() {
@@ -1225,10 +1455,12 @@ export class UI {
     if (!c || c.kind !== 'trade' || !c.offers) return;
     for (const row of c.offers.children) {
       const tr = row._trade;
-      const out = tr.uses >= tr.max;
+      const locked = tr.lvl > c.data.level;
+      const out = !locked && tr.uses >= tr.max;
+      row.classList.toggle('locked', locked);
       row.classList.toggle('out', out);
-      row.classList.toggle('cant', !out && !this.canAfford(tr));
-      row.title = out ? 'Out of stock until tomorrow' : '';
+      row.classList.toggle('cant', !out && !locked && !this.canAfford(tr));
+      row.title = locked ? `Trade with this villager until it is ${/^[AE]/.test(LEVEL_NAMES[tr.lvl - 1]) ? 'an' : 'a'} ${LEVEL_NAMES[tr.lvl - 1]}` : out ? 'Out of stock until tomorrow' : '';
     }
   }
 
@@ -1350,8 +1582,8 @@ export class UI {
     const p = G.player;
     this.craft.slots.forEach((s, i) => {
       if (!s) return;
-      const left = p.inv.add(s.id, s.count, s.dmg);
-      if (left) G.entities.dropItem(s.id, left, p.pos.x, p.pos.y + 1, p.pos.z);
+      const left = p.inv.add(s.id, s.count, s.dmg, s.e);
+      if (left) G.entities.dropItem(s.id, left, p.pos.x, p.pos.y + 1, p.pos.z, undefined, undefined, undefined, s.dmg, s.e);
       this.craft.slots[i] = null;
     });
   }
@@ -1403,25 +1635,42 @@ export class UI {
     sfx('click', null, { vol: 0.4 });
     if (ref.kind === 'palette') {
       const n = shift || G.touchMode ? maxStack(ref.id) : (button === 2 ? 1 : maxStack(ref.id));
-      inv.slots[inv.selected] = stack(ref.id, n);
-      this.toast(itemName(ref.id));
+      inv.slots[inv.selected] = stack(ref.id, n, 0, ref.e ? { ...ref.e } : null);
+      this.toast(this.describe(inv.slots[inv.selected]));
       this.invChanged();
       return;
     }
     if (ref.kind === 'select') { inv.selected = ref.i; this.invChanged(true); return; }
     if (ref.kind === 'result') { this.takeResult(shift); return; }
+    if (ref.kind === 'made') { this.takeMade(shift); return; }
     const arr = ref.arr, i = ref.i;
     const s = arr[i];
     const c = this.cursor;
-    if (shift && s) { this.quickMove(ref); this.afterChange(ref); return; }
+    // armour with the Curse of Binding stays on until it breaks (or you die)
+    if (ref.kind === 'armor' && s && s.e && s.e.binding_curse && !G.player.creative) { this.toast('It is bound to you'); return; }
+    if (shift && s) {
+      this.quickMove(ref);
+      if (ref.kind === 'output' && !arr[i] && this.container && this.container.kind === 'furnace') { G.game.furnaceXp(this.container.data); if (G.adv) G.adv.smelted(s.id); }
+      this.afterChange(ref);
+      return;
+    }
     if (ref.kind === 'output') {
       if (!s) return;
       if (!c) { this.cursor = s; arr[i] = null; }
       else if (sameItem(c, s) && c.count + s.count <= maxStack(s.id)) { c.count += s.count; arr[i] = null; }
+      if (!arr[i] && this.container && this.container.kind === 'furnace') { G.game.furnaceXp(this.container.data); if (G.adv) G.adv.smelted(s.id); }
       this.afterChange(ref);
       return;
     }
     if (ref.kind === 'fuel' && c && !fuelValue(c.id)) return;
+    // slots that only take certain things, or only one of them (the enchanting table, the anvil)
+    if (ref.ok && c && !ref.ok(c)) return;
+    if (ref.max === 1 && c && c.count > 1) {
+      if (s) return;
+      arr[i] = { ...c, count: 1 }; c.count--;
+      this.afterChange(ref);
+      return;
+    }
     if (ref.kind === 'armor' && c && !(ITEMS[c.id].armor && ITEMS[c.id].armor.slot === ref.i)) return;
     if (button === 2) {
       if (!c) {
@@ -1442,6 +1691,8 @@ export class UI {
   }
 
   afterChange(ref) {
+    // (a touch screen has no pointer to hover with: picking up something enchanted says what it is)
+    if (G.touchMode && this.cursor && this.cursor.e && this.cursor !== this.toldOf) { this.toldOf = this.cursor; this.toast(this.describe(this.cursor)); }
     if (this.container && this.container.kind === 'furnace') this.container.data.changed = false;
     this.refreshContainer();
   }
@@ -1468,7 +1719,15 @@ export class UI {
     if (ref.arr === inv.slots && s.id === ID.shield && !G.player.off[0] && c && c.kind === 'inventory') {
       G.player.off[0] = s; ref.arr[ref.i] = null; sfx('armor'); return;   // a shield goes straight to the off hand
     }
-    if (ref.arr === inv.slots) {
+    if (ref.arr === inv.slots && c && TEMP.includes(c.kind)) {
+      // into the first slot of the table, anvil or grindstone that takes it
+      const slots = c.data.slots;
+      const refs = c.els.map((el) => el._ref).filter((r) => r.arr === slots);
+      const to = refs.find((r) => !slots[r.i] && (!r.ok || r.ok(s))) || refs.find((r) => slots[r.i] && r.max !== 1 && sameItem(slots[r.i], s) && (!r.ok || r.ok(s)));
+      if (to && !slots[to.i]) { const n = to.max === 1 ? 1 : s.count; slots[to.i] = { ...s, count: n }; left = s.count - n; }
+      else if (to) left = this.moveInto(s, slots, [to.i]);
+      else left = this.moveInto(s, inv.slots, ref.i < 9 ? range(9, 36) : range(0, 9));
+    } else if (ref.arr === inv.slots) {
       if (c && c.kind === 'chest') left = this.moveInto(s, c.data.slots, range(0, 27));
       else if (c && c.kind === 'furnace') {
         if (SMELTING.has(s.id)) left = this.moveInto(s, c.data.slots, [0]);
@@ -1516,7 +1775,7 @@ export class UI {
     if (!c) return;
     const p = G.player;
     const d = p.lookDir();
-    G.entities.dropItem(c.id, c.count, p.pos.x + d.x * 0.5, p.eyeY - 0.3, p.pos.z + d.z * 0.5, d.x * 5, 2, d.z * 5, c.dmg).pickupDelay = 1.5;
+    G.entities.dropItem(c.id, c.count, p.pos.x + d.x * 0.5, p.eyeY - 0.3, p.pos.z + d.z * 0.5, d.x * 5, 2, d.z * 5, c.dmg, c.e).pickupDelay = 1.5;
     this.cursor = null;
   }
 
@@ -1524,10 +1783,11 @@ export class UI {
     const p = G.player;
     const giveBack = (s) => {
       if (!s) return;
-      const left = p.inv.add(s.id, s.count, s.dmg);
-      if (left) G.entities.dropItem(s.id, left, p.pos.x, p.pos.y + 1, p.pos.z);
+      const left = p.inv.add(s.id, s.count, s.dmg, s.e);
+      if (left) G.entities.dropItem(s.id, left, p.pos.x, p.pos.y + 1, p.pos.z, undefined, undefined, undefined, s.dmg, s.e);
     };
     if (this.craft) { this.craft.slots.forEach(giveBack); this.craft = null; }
+    if (this.container && TEMP.includes(this.container.kind)) this.container.data.slots.forEach(giveBack);
     giveBack(this.cursor);
     this.cursor = null;
     this.renderCursor();
@@ -1557,13 +1817,26 @@ export class UI {
     const s = this.refGet(ref);
     const t = $('tooltip');
     if (!s || this.cursor) { t.hidden = true; return; }
-    const it = ITEMS[s.id];
-    let text = itemName(s.id);
-    if (it && it.durability) text += `\nDurability: ${it.durability - (s.dmg || 0)} / ${it.durability}`;
-    if (it && it.food) text += `\nRestores ${it.food / 2} food`;
-    t.textContent = text;
+    this.fillTooltip(t, s);
     t.hidden = false;
     t.style.transform = `translate(${e.clientX + 14}px, ${e.clientY - 30}px)`;
+  }
+
+  // The name of a stack, its enchantments (curses in red) and what it does
+  fillTooltip(t, s) {
+    const it = ITEMS[s.id];
+    t.textContent = '';
+    const name = h('div', isEnchanted(s) ? 'tip-name ench' : 'tip-name', itemName(s.id));
+    t.appendChild(name);
+    for (const [k, l] of enchList(s)) t.appendChild(h('div', ENCH[k].curse ? 'tip-ench curse' : 'tip-ench', enchLine(k, l)));
+    if (it && it.durability) t.appendChild(h('div', 'tip-line', `Durability: ${it.durability - (s.dmg || 0)} / ${it.durability}`));
+    if (it && it.food) t.appendChild(h('div', 'tip-line', `Restores ${it.food / 2} food`));
+  }
+
+  // What a stack says about itself in one line (the toast when you select it)
+  describe(s) {
+    const list = enchList(s);
+    return itemName(s.id) + (list.length ? ' (' + list.map(([k, l]) => enchLine(k, l)).join(', ') + ')' : '');
   }
 
   hideTooltip() { $('tooltip').hidden = true; }

@@ -184,6 +184,15 @@ export function sfx(name, pos, opts = {}) {
     case 'travel': tone(d, t, 1.2, 'sine', 140, 900, 0.4); noise(d, t, 1.2, 'bandpass', 1200, 2, 0.3); break;
     case 'eye': tone(d, t, 0.3, 'triangle', 900, 1400, 0.2); break;
     case 'frame': tone(d, t, 0.25, 'triangle', 500, 700, 0.3); noise(d, t, 0.1, 'bandpass', 2000, 3, 0.2); break;
+    case 'xp': tone(d, t, 0.09, 'sine', 1200 * (opts.pitch || 1), 1900 * (opts.pitch || 1), 0.22); break;
+    case 'levelup': for (let i = 0; i < 4; i++) tone(d, t + i * 0.09, 0.35, 'triangle', [523, 659, 784, 1047][i], [523, 659, 784, 1047][i] * 1.01, 0.2); break;
+    case 'enchant': for (let i = 0; i < 6; i++) tone(d, t + i * 0.05, 0.3, 'sine', 900 + Math.random() * 1800, 600 + Math.random() * 900, 0.1); tone(d, t, 0.7, 'sine', 110, 220, 0.2); break;
+    case 'anvil': tone(d, t, 0.5, 'triangle', 820, 780, 0.3); noise(d, t, 0.12, 'bandpass', 2400, 4, 0.5); tone(d, t + 0.02, 0.4, 'square', 1640, 1600, 0.06); break;
+    case 'achieve': for (let i = 0; i < 3; i++) tone(d, t + i * 0.12, 0.5, 'triangle', [659, 880, 1319][i], [659, 880, 1319][i], 0.22); break;
+    case 'thunder': noise(d, t, 2.2, 'lowpass', 900, 0.7, 1.0, 70); noise(d, t, 0.25, 'highpass', 2000, 0.8, 0.5); break;
+    case 'cast': noise(d, t, 0.2, 'highpass', 1800, 1, 0.25, 4000); break;
+    case 'bite': noise(d, t, 0.3, 'lowpass', 1500, 0.8, 0.45, 500); tone(d, t, 0.1, 'sine', 500, 300, 0.2); break;
+    case 'load': noise(d, t, 0.08, 'bandpass', 900, 3, 0.4); tone(d, t + 0.05, 0.08, 'square', 300, 240, 0.15, 900); break;
     case 'portal_open': for (let i = 0; i < 5; i++) tone(d, t + i * 0.12, 0.9, 'sine', 220 * (1 + i * 0.25), 330 * (1 + i * 0.25), 0.18); break;
     default: if (MOB[name]) MOB[name](d, t, opts);
   }

@@ -10,6 +10,7 @@ import { R, showHighlight, swingHand, setHeldItem, setOffItem, updateHand, brigh
 import { sfx, blockSound } from './audio.js';
 import { hitParticles } from './entities.js';
 import { iconColors } from './textures.js';
+import { ench, bonusDamage, wears, protection, xpForLevel } from './enchant.js';
 
 const GRAVITY = 32;
 const JUMP_V = 9.0;
@@ -21,7 +22,8 @@ const tmpV = new THREE.Vector3();
 const toolOf = (it) => (it && !it.isBlock ? it.tool : null);
 
 // Items with a use of their own on right-click; anything else in the main hand lets an off-hand shield come up
-const USES = ['bow', 'bucket', 'water_bucket', 'lava_bucket', 'flint_and_steel', 'shade_pearl', 'shade_eye', 'wheat_seeds'];
+const USES = ['bow', 'bucket', 'water_bucket', 'lava_bucket', 'flint_and_steel', 'shade_pearl', 'shade_eye', 'wheat_seeds', 'crossbow', 'trident', 'fishing_rod', 'experience_bottle'];
+let shotSeq = 0;   // numbers crossbow shots, so one shot's kills can be counted together
 const noUse = (st) => { if (!st) return true; const it = ITEMS[st.id]; return !(it.isBlock || it.food || it.armor || USES.includes(it.key)); };
 const SHIELD_STOPS = ['mob', 'arrow', 'fireball', 'explosion', 'player'];
 
@@ -86,6 +88,48 @@ export class Player {
     this.burning = 0;
     this.fireTick = 0;
     this.placeBlocked = false;
+    this.xpLevel = 0;         // experience: the level, and the points gathered toward the next one
+    this.xp = 0;
+    this.enchSeed = (Math.random() * 4294967296) >>> 0;   // what an enchanting table offers; it changes with every enchantment
+    this.adv = new Set();     // achievements made
+    this.advData = {};        // and how far along the ones with several parts are
+  }
+
+  // ------------------------------------------------------------ experience
+  // Mending comes first: a worn item that has it is mended, two points of wear for each point of experience
+  addXp(n) {
+    n = Math.floor(n);
+    if (!(n > 0) || this.dead) return;
+    const worn = [this.inv.held, this.off[0], ...this.armor].filter((s) => s && s.dmg > 0 && ench(s, 'mending'));
+    if (worn.length) {
+      const s = worn[Math.floor(Math.random() * worn.length)];
+      const fix = Math.min(s.dmg, n * 2);
+      s.dmg -= fix;
+      n -= Math.ceil(fix / 2);
+    }
+    this.xp += n;
+    while (this.xp >= xpForLevel(this.xpLevel)) {
+      this.xp -= xpForLevel(this.xpLevel);
+      this.xpLevel++;
+      if (this.xpLevel % 5 === 0) sfx('levelup', null, { vol: 0.7 });
+    }
+    G.ui.invChanged();
+  }
+
+  // Enchanting and the anvil are paid for in whole levels
+  spendLevels(n) {
+    if (this.creative) return;
+    const part = this.xp / xpForLevel(this.xpLevel);
+    this.xpLevel = Math.max(0, this.xpLevel - n);
+    this.xp = Math.floor(part * xpForLevel(this.xpLevel));
+    G.ui.invChanged();
+  }
+
+  // The most any armour piece has of an enchantment (helmet for breathing, boots for walking on water...)
+  worn(key) {
+    let l = 0;
+    for (const s of this.armor) l = Math.max(l, ench(s, key));
+    return l;
   }
 
   // Flint and steel: light the block face you are looking at
@@ -115,7 +159,7 @@ export class Player {
     if (this.creative || this.dead) return;
     if (G.clock - this.blockedAt < 0.2) return;   // it came with a hit the shield just stopped
     if (name === 'hunger') { this.hungerEffect = Math.max(this.hungerEffect, secs); return; }
-    if (name === 'burn') { this.burning = Math.max(this.burning, secs); return; }
+    if (name === 'burn') { this.burning = Math.max(this.burning, secs * (1 - 0.15 * this.worn('fire_protection'))); return; }
     this.effects[name] = Math.max(this.effects[name] || 0, secs);
     G.ui.invChanged();
   }
@@ -169,7 +213,7 @@ export class Player {
     const inMain = !!inv.slots[i] && inv.slots[i].id === ID.shield;
     const sh = inMain ? inv.slots[i] : this.off[0];
     if (!sh || sh.id !== ID.shield) return;
-    sh.dmg = (sh.dmg || 0) + n;
+    for (let k = 0; k < n; k++) if (wears(sh)) sh.dmg = (sh.dmg || 0) + 1;
     if (sh.dmg >= ITEMS[ID.shield].durability) { if (inMain) inv.slots[i] = null; else this.off[0] = null; sfx('break_tool'); }
     G.ui.invChanged();
   }
@@ -265,12 +309,19 @@ export class Player {
     if ((input.sprint || input.sprintLatch) && fwd > 0.5 && !this.sneaking && canSprint && !this.eating) this.sprinting = true;
     if (fwd <= 0.1 || this.sneaking || !canSprint || this.eating || this.shieldUp) this.sprinting = false;
 
-    let speed = this.flying ? (this.sprinting ? FLY_SPRINT : FLY) : this.sneaking ? SNEAK : this.sprinting ? SPRINT : WALK;
+    // (Swift Sneak leggings: sneaking gets closer to walking speed)
+    const sneakSpeed = Math.min(WALK, SNEAK + WALK * 0.15 * ench(this.armor[2], 'swift_sneak'));
+    let speed = this.flying ? (this.sprinting ? FLY_SPRINT : FLY) : this.sneaking ? sneakSpeed : this.sprinting ? SPRINT : WALK;
     if (this.effects.slow > 0) speed *= 0.7;
+    // Soul Speed boots: quick over soul sand and soul soil
+    const under = w.getBlock(bx, Math.floor(this.pos.y - 0.1), bz);
+    const soul = ench(this.armor[3], 'soul_speed');
+    if (soul && this.onGround && (under === B.soul_sand || under === B.soul_soil)) speed *= 1.3 + 0.105 * soul;
     const inWeb = BLOCKS[w.getBlock(bx, Math.floor(this.pos.y + 0.2), bz)].slow || BLOCKS[w.getBlock(bx, Math.floor(this.pos.y + 1.2), bz)].slow;
     if (inWeb && !this.flying) { speed *= inWeb; this.vel.y = Math.max(this.vel.y, -1.5); }
     if ((this.eating || this.shieldUp) && !this.flying) speed *= 0.35;
-    if (this.inWater && !this.flying) speed *= this.sprinting ? 0.8 : 0.55;
+    // (Depth Strider boots: each level takes away a third of the water's drag)
+    if (this.inWater && !this.flying) { const drag = this.sprinting ? 0.8 : 0.55; speed *= drag + (1 - drag) * Math.min(3, ench(this.armor[3], 'depth_strider')) / 3; }
     if (this.inLava && !this.flying) speed *= 0.35;
     const sy = Math.sin(this.yaw), cy = Math.cos(this.yaw);
     const wx = (-sy * fwd + cy * str) * speed;
@@ -354,6 +405,8 @@ export class Player {
 
     // Walking effects
     const moved = Math.hypot(this.pos.x - ox, this.pos.z - oz);
+    const frost = ench(this.armor[3], 'frost_walker');
+    if (frost && this.onGround && moved > 0.001) G.game.frostWalk(this, frost);
     if (this.onGround && !this.flying) {
       this.stepDist += moved;
       this.bob += moved * 1.6;
@@ -459,6 +512,25 @@ export class Player {
     this.blockT = this.shieldUp ? this.blockT + dt : 0;
     this.blocking = this.blockT >= 0.25;
     this.shieldHand = this.shieldUp ? (shieldMain ? 1 : 2) : 0;
+
+    // Crossbow: hold use to draw it (Quick Charge is faster; a tap draws it by itself on a touch screen).
+    // It stays loaded until the next press.
+    const ch = this.charging;
+    if (ch) {
+      if (held !== ch.s || this.dead || !(input.useHeld || ch.auto)) this.charging = null;
+      else {
+        ch.t += dt;
+        if (ch.t >= ch.need) {
+          this.charging = null;
+          held.ch = 1;
+          if (!this.creative) this.inv.remove(ID.arrow, 1);
+          sfx('load');
+          G.ui.toast('Crossbow loaded');
+          G.ui.invChanged();
+          this.useCd = 0.3;
+        }
+      }
+    }
 
     // Eating: hold right mouse with food in hand. On touch, a tap starts eating (auto),
     // so holding the screen always mines, whatever you are holding.
@@ -576,6 +648,7 @@ export class Player {
     this.inv.consumeHeld();
     this.eating = null;
     this.useCd = 0.3;
+    if (G.adv) G.adv.ate(it.id);
     sfx('burp');
     G.ui.invChanged();
   }
@@ -586,9 +659,13 @@ export class Player {
     const held = this.inv.held;
     const it = held ? ITEMS[held.id] : null;
     let speed = 1;
-    if (toolOf(it) && toolOf(it) === def.tool) speed = it.speed;
+    if (toolOf(it) && toolOf(it) === def.tool) {
+      speed = it.speed;
+      const eff = ench(held, 'efficiency');
+      if (eff) speed += eff * eff + 1;
+    }
     if (toolOf(it) === 'sword' && def.cutout && def.atten) speed = 1.5;
-    if (this.headInWater) speed /= 5;
+    if (this.headInWater && !ench(this.armor[0], 'aqua_affinity')) speed /= 5;
     if (!this.onGround && !this.flying && !this.inWater) speed /= 5;
     // without a good enough pickaxe, stone and ores take much longer (and drop nothing)
     return def.hardness * (canHarvest(def, held) ? 1.5 : 5) / speed;
@@ -620,9 +697,13 @@ export class Player {
     let dmg = base * (0.55 + strength * strength * 0.45);
     const crit = strength > 0.9 && !this.onGround && this.vel.y < 0 && !this.flying && !this.inWater;
     if (crit) dmg *= 1.5;
+    // what the weapon's enchantments add (a weak swing gets less of it)
+    const impale = ench(held, 'impaling');
+    dmg += (bonusDamage(held, mob.def) + (impale && (mob.inWater || (mob.def && mob.def.aquatic)) ? 2.5 * impale : 0)) * strength;
+    const fire = ench(held, 'fire_aspect') * 4;
     this.swing();
     if (mob.isPlayer) {
-      G.net.pvp(mob, dmg, this.pos.x, this.pos.z);
+      G.net.pvp(mob, dmg, this.pos.x, this.pos.z, fire);
       sfx('attack', mob.pos);
       if (!this.creative) {
         this.exhaustion += 0.1;
@@ -630,9 +711,14 @@ export class Player {
       }
       return;
     }
-    const kb = (strength > 0.9 ? 1 : 0.5) + (this.sprinting && strength > 0.9 ? 0.6 : 0);
-    if (mob.hurt(dmg, this.pos.x, this.pos.z, true, kb)) {
+    const kb = (strength > 0.9 ? 1 : 0.5) + (this.sprinting && strength > 0.9 ? 0.6 : 0) + 0.75 * ench(held, 'knockback');
+    const fx = { fire, loot: ench(held, 'looting') };
+    // a full swing of a sword while standing still-ish also sweeps whatever stands beside the target
+    const sweep = toolOf(it) === 'sword' && strength > 0.9 && this.onGround && !this.sprinting && !crit;
+    if (mob.hurt(dmg, this.pos.x, this.pos.z, true, kb, null, fx)) {
       sfx('attack', mob.pos);
+      if (G.adv) G.adv.hit(mob, dmg, held);
+      if (sweep) this.sweep(mob, base, held, fx);
       if (this.sprinting && strength > 0.9) this.sprinting = false;
       if (crit) {
         for (let i = 0; i < 10; i++) G.entities.particles.spawn(mob.pos.x, mob.pos.y + mob.h * 0.7, mob.pos.z, (Math.random() - 0.5) * 4, Math.random() * 3, (Math.random() - 0.5) * 4, 0.95, 0.95, 1, 0.06, 0.5, 0.5);
@@ -644,13 +730,34 @@ export class Player {
     }
   }
 
+  // The sweep of a sword: everything within a block of the target takes a little damage (more with Sweeping Edge)
+  sweep(target, base, held, fx) {
+    const l = ench(held, 'sweeping_edge');
+    const dmg = 1 + base * (l / (l + 1));
+    let any = false;
+    for (const m of G.entities.mobs) {
+      if (m === target || m.dead || m.def.villager) continue;
+      if (Math.abs(m.pos.x - target.pos.x) > 1 + m.hw || Math.abs(m.pos.z - target.pos.z) > 1 + m.hw || Math.abs(m.pos.y - target.pos.y) > 1) continue;
+      if (Math.hypot(m.pos.x - this.pos.x, m.pos.z - this.pos.z) > 3.5) continue;
+      if (m.hurt(dmg, this.pos.x, this.pos.z, true, 0.4, null, fx)) any = true;
+    }
+    if (any || l) {
+      const d = this.lookDir();
+      for (let i = -3; i <= 3; i++) {
+        const a = Math.atan2(d.x, d.z) + i * 0.22;
+        G.entities.particles.spawn(this.pos.x + Math.sin(a) * 1.6, this.pos.y + 1, this.pos.z + Math.cos(a) * 1.6, Math.sin(a) * 1.5, 0.2, Math.cos(a) * 1.5, 0.95, 0.95, 0.95, 0.07, 0.25, 0);
+      }
+    }
+  }
+
   use(target, fromTap) {
     const held = this.inv.held;
     const it = held ? ITEMS[held.id] : null;
     const t = target && target.block;
     const mob = target && target.mob;
     if (mob && mob.def.villager && !mob.dead) {
-      if (mob.prof === 'nitwit' || !mob.trades.length) { sfx('villager', mob.pos, { pitch: 0.7 }); this.hint("This villager doesn't trade"); return true; }
+      if (mob.sleeping) { this.hint('This villager is asleep'); return true; }
+      if (mob.prof === 'nitwit' || !mob.trades.length) { sfx('villager', mob.pos, { pitch: 0.7 }); this.hint('This villager has no work. Put a job block nearby, like a composter or a lectern'); return true; }
       sfx('villager', mob.pos);
       G.ui.openScreen('trade', mob);
       return true;
@@ -662,6 +769,9 @@ export class Player {
       if (BLOCKS[id].trapdoor) { G.game.toggleTrapdoor(t.x, t.y, t.z); swingHand(); return true; }
       if (BLOCKS[id].sign) { G.ui.openScreen('sign', { x: t.x, y: t.y, z: t.z }); return true; }
       if (id === B.crafting_table) { G.ui.openScreen('crafting'); return true; }
+      if (id === B.enchanting_table) { G.ui.openScreen('enchant', { x: t.x, y: t.y, z: t.z }); return true; }
+      if (id === B.anvil) { G.ui.openScreen('anvil', {}); return true; }
+      if (id === B.grindstone) { G.ui.openScreen('grind', {}); return true; }
       if (id === B.furnace || id === B.furnace_lit) { G.ui.openScreen('furnace', G.game.container(t.x, t.y, t.z, 'furnace')); return true; }
       if (id === B.chest) { sfx('chest', t); G.ui.openScreen('chest', G.game.container(t.x, t.y, t.z, 'chest')); return true; }
       if (id === B.tnt && held && held.id === ID.flint_and_steel) {
@@ -702,6 +812,7 @@ export class Player {
     if (held.id === ID.wheat_seeds) {
       if (!t || t.id !== B.farmland || t.ny !== 1 || G.world.getBlock(t.x, t.y + 1, t.z) !== 0) return false;
       G.game.placeBlock(t.x, t.y + 1, t.z, B.wheat_0, 0);
+      if (G.adv) G.adv.did('seed');
       blockSound('grass', 'place', { x: t.x + 0.5, y: t.y + 1, z: t.z + 0.5 });
       swingHand();
       if (!this.creative) { this.inv.consumeHeld(); G.ui.invChanged(); }
@@ -725,10 +836,80 @@ export class Player {
       const hasArrow = this.creative || this.inv.count(ID.arrow) > 0;
       if (!hasArrow) { this.hint('You need arrows'); return false; }
       const r = this.pickRay(this.lastInput || {});
-      G.entities.spawnArrow(this.pos.x + r.dx * 0.4, this.eyeY - 0.1 + r.dy * 0.4, this.pos.z + r.dz * 0.4, r.dx * 34, r.dy * 34, r.dz * 34, 'player');
+      // Power: harder hits; Punch: knocks back; Flame: burning arrows; Infinity: the arrow isn't used up
+      const power = ench(held, 'power');
+      G.entities.spawnArrow(this.pos.x + r.dx * 0.4, this.eyeY - 0.1 + r.dy * 0.4, this.pos.z + r.dz * 0.4, r.dx * 34, r.dy * 34, r.dz * 34, 'player',
+        { mul: power ? 1 + 0.25 * (power + 1) : 1, punch: ench(held, 'punch'), flame: ench(held, 'flame'), keep: !!ench(held, 'infinity') || this.creative });
       sfx('bow');
       swingHand();
-      if (!this.creative) { this.inv.remove(ID.arrow, 1); this.inv.damageHeld(1); G.ui.invChanged(); }
+      if (!this.creative) { if (!ench(held, 'infinity')) this.inv.remove(ID.arrow, 1); this.inv.damageHeld(1); G.ui.invChanged(); }
+      return true;
+    }
+    if (held.id === ID.crossbow) {
+      if (held.ch) {
+        if (!fromTap && !(this.lastInput && this.lastInput.usePressed)) return true;   // loaded: it waits for a fresh press
+        const r = this.pickRay(this.lastInput || {});
+        const multi = ench(held, 'multishot'), shot = ++shotSeq;
+        // Multishot: two more to the sides (they can't be picked up); Piercing: through several mobs
+        for (const a of multi ? [0, -0.17, 0.17] : [0]) {
+          const dx = r.dx * Math.cos(a) - r.dz * Math.sin(a), dz = r.dz * Math.cos(a) + r.dx * Math.sin(a);
+          G.entities.spawnArrow(this.pos.x + dx * 0.4, this.eyeY - 0.1 + r.dy * 0.4, this.pos.z + dz * 0.4, dx * 40, r.dy * 40, dz * 40, 'player',
+            { bolt: true, shot, pierce: ench(held, 'piercing'), keep: a !== 0 || this.creative });
+        }
+        held.ch = 0;
+        sfx('bow', null, { vol: 1.2 });
+        swingHand();
+        if (G.adv) G.adv.did('crossbow');
+        if (!this.creative) this.inv.damageHeld(multi ? 3 : 1);
+        G.ui.invChanged();
+        this.useCd = 0.4;
+        return true;
+      }
+      if (this.charging) return true;
+      if (!this.creative && this.inv.count(ID.arrow) < 1) { this.hint('You need arrows'); return false; }
+      this.charging = { s: held, t: 0, need: Math.max(0.25, 1.25 - 0.25 * ench(held, 'quick_charge')), auto: !!fromTap };
+      return true;
+    }
+    if (held.id === ID.trident) {
+      const rip = ench(held, 'riptide');
+      if (rip) {
+        // Riptide: in water the trident carries you with it instead of being thrown
+        if (!this.inWater) { this.hint('Riptide only works in water'); return false; }
+        const d = this.lookDir(), v = 10 + 5 * rip;
+        this.vel.x = d.x * v; this.vel.y = d.y * v + 3; this.vel.z = d.z * v;
+        this.fallDist = 0;
+        sfx('splash', null, { vol: 0.8 });
+        swingHand();
+        if (!this.creative) { this.inv.damageHeld(1); G.ui.invChanged(); }
+        this.useCd = 0.6;
+        return true;
+      }
+      const r = this.pickRay(this.lastInput || {});
+      const st = { id: held.id, count: 1, dmg: (held.dmg || 0) + (this.creative || !wears(held) ? 0 : 1), ...(held.e ? { e: { ...held.e } } : {}) };
+      this.inv.slots[this.inv.selected] = null;
+      if (st.dmg < ITEMS[st.id].durability) {
+        G.entities.spawnArrow(this.pos.x + r.dx * 0.5, this.eyeY - 0.1 + r.dy * 0.5, this.pos.z + r.dz * 0.5, r.dx * 30, r.dy * 30, r.dz * 30, 'player', { trident: st, damage: 11 });
+      } else sfx('break_tool');
+      sfx('bow', null, { vol: 0.9 });
+      swingHand();
+      if (G.adv) G.adv.did('trident');
+      G.ui.invChanged();
+      this.useCd = 0.5;
+      return true;
+    }
+    if (held.id === ID.fishing_rod) {
+      const wear = G.entities.fish(this, held, this.pickRay(this.lastInput || {}));
+      swingHand();
+      if (wear && !this.creative) { if (this.inv.damageHeld(wear)) sfx('break_tool'); G.ui.invChanged(); }
+      this.useCd = 0.4;
+      return true;
+    }
+    if (held.id === ID.experience_bottle) {
+      const r = this.pickRay(this.lastInput || {});
+      G.entities.throwBottle(this.pos.x + r.dx * 0.5, this.eyeY + r.dy * 0.5, this.pos.z + r.dz * 0.5, r.dx * 16, r.dy * 16 + 3, r.dz * 16);
+      sfx('bow', null, { vol: 0.6 });
+      swingHand();
+      if (!this.creative) { this.inv.consumeHeld(); G.ui.invChanged(); }
       return true;
     }
     if (it.isBlock && t) return this.place(t, held);
@@ -885,6 +1066,7 @@ export class Player {
   fillFrame(t) {
     const w = G.world;
     w.setBlock(t.x, t.y, t.z, B.end_portal_frame_filled);
+    if (G.adv) G.adv.did('eye');
     if (!this.creative) { this.inv.consumeHeld(); G.ui.invChanged(); }
     sfx('frame', t);
     swingHand();
@@ -897,7 +1079,7 @@ export class Player {
     if (!s) return;
     const n = all ? s.count : 1;
     const d = this.lookDir();
-    G.entities.dropShared(s.id, n, this.pos.x + d.x * 0.3, this.eyeY - 0.3, this.pos.z + d.z * 0.3, d.x * 6, d.y * 6 + 2, d.z * 6, s.dmg).pickupDelay = 1.5;
+    G.entities.dropShared(s.id, n, this.pos.x + d.x * 0.3, this.eyeY - 0.3, this.pos.z + d.z * 0.3, d.x * 6, d.y * 6 + 2, d.z * 6, s.dmg, s.e).pickupDelay = 1.5;
     this.inv.consumeHeld(n);
     swingHand();
     G.ui.invChanged();
@@ -961,7 +1143,7 @@ export class Player {
     } else this.regenTimer = Math.min(this.regenTimer, 0.5);
 
     if (this.headInWater) {
-      this.air -= dt;
+      this.air -= dt / (1 + ench(this.armor[0], 'respiration'));   // Respiration: each level a breath as long again
       if (this.air <= 0) {
         this.air = 0;
         this.airTick += dt;
@@ -975,8 +1157,8 @@ export class Player {
     G.ui.invChanged();
   }
 
-  // axe: the blow came from an axe, which knocks a shield down for a while
-  hurt(amount, fromX, fromZ, kind, axe = false) {
+  // axe: the blow came from an axe, which knocks a shield down for a while; by: the mob that struck it
+  hurt(amount, fromX, fromZ, kind, axe = false, by = null) {
     if (this.dead) return;
     if (this.creative && kind !== 'void') return;
     if (this.invul > 0 && kind !== 'void') return;
@@ -986,6 +1168,7 @@ export class Player {
       const look = this.lookDir();
       if (d < 0.05 || dx * look.x + dz * look.z > 0) {
         sfx('shield', null, { vol: 0.9 });
+        if (G.adv && (kind === 'arrow' || kind === 'fireball')) G.adv.did('deflect');
         this.blockedAt = G.clock;
         this.invul = HURT_TIME;
         this.wearShield(amount >= 3 ? 1 + Math.floor(amount) : 0);
@@ -1003,11 +1186,18 @@ export class Player {
         const wear = Math.max(1, Math.floor(amount / 4));
         this.armor.forEach((s, i) => {
           if (!s) return;
-          s.dmg = (s.dmg || 0) + wear;
+          for (let k = 0; k < wear; k++) if (wears(s, true)) s.dmg = (s.dmg || 0) + 1;   // (Unbreaking shrugs some of it off)
           if (s.dmg >= ITEMS[s.id].durability) { this.armor[i] = null; sfx('break_tool'); }
         });
         amount = reduced;
       }
+    }
+    // the Protection enchantments take off up to four fifths of what is left (falls and fire included)
+    if (kind !== 'void' && kind !== 'starve' && kind !== 'admin') amount *= 1 - protection(this.armor, kind);
+    // Thorns: whoever struck you may get hurt back
+    if (by && by.hurt && !by.dead && (kind === 'mob')) {
+      const th = this.worn('thorns');
+      if (th && Math.random() < 0.15 * th) { by.invul = 0; by.hurt(1 + Math.floor(Math.random() * 4), this.pos.x, this.pos.z, true, 0.3); }
     }
     this.health = Math.max(0, this.health - amount);
     if (G.sleeping) G.game.wakeUp();
@@ -1033,6 +1223,7 @@ export class Player {
   }
 
   die(kind) {
+    if (G.adv) G.adv.died();
     this.dead = true;
     this.health = 0;
     this.mining = null;
@@ -1040,11 +1231,16 @@ export class Player {
     if (!this.creative) {
       const all = [...this.inv.slots, ...this.armor, ...this.off];
       for (const s of all) {
-        if (s) G.entities.dropShared(s.id, s.count, this.pos.x, this.pos.y + 1, this.pos.z, (Math.random() - 0.5) * 6, 3 + Math.random() * 3, (Math.random() - 0.5) * 6, s.dmg);
+        // (anything with the Curse of Vanishing is gone for good)
+        if (s && !ench(s, 'vanishing_curse')) G.entities.dropShared(s.id, s.count, this.pos.x, this.pos.y + 1, this.pos.z, (Math.random() - 0.5) * 6, 3 + Math.random() * 3, (Math.random() - 0.5) * 6, s.dmg, s.e);
       }
       this.inv.clear();
       this.armor = [null, null, null, null];
       this.off[0] = null;
+      // some of your experience is left where you fell
+      const lost = Math.min(100, this.xpLevel * 7);
+      this.xpLevel = 0; this.xp = 0;
+      if (lost) G.entities.spawnXp(this.pos.x, this.pos.y + 0.5, this.pos.z, lost, 4);
     }
     const msgs = { lava: 'You tried to swim in lava', fireball: 'You were fireballed', wither: 'You withered away', fall: 'You hit the ground too hard', drown: 'You drowned', starve: 'You starved to death', void: 'You fell out of the world', explosion: 'You blew up', fire: 'You burned to death', magic: 'You were killed by magic', arrow: 'You were shot', pearl: 'You hit the ground too hard' };
     if (kind === 'player' && this.lastAttacker) msgs.player = `You were slain by ${this.lastAttacker}`;

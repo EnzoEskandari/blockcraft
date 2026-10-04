@@ -46,7 +46,7 @@ const waitPlaying = async (G) => {
 async function check(fx) {
   const { f, G, B, ITEMS, ckey } = await openGame();
   const e = fx.expect, bad = [];
-  const slot = (s) => (s ? `${ITEMS[s.id].key} x${s.count}${s.dmg ? ' /' + s.dmg : ''}` : 'nothing');
+  const slot = (s) => (s ? `${ITEMS[s.id].key} x${s.count}${s.dmg ? ' /' + s.dmg : ''}${s.e ? ' ' + JSON.stringify(s.e) : ''}` : 'nothing');
   try {
     const meta = G.game.listWorlds()[0];
     if (!meta) throw new Error('the world is not in the list');
@@ -57,15 +57,36 @@ async function check(fx) {
     if (G.dim !== e.dim) bad.push(`opened in ${G.dim}, expected ${e.dim}`);
     for (const k of ['inv0', 'inv1', 'inv5']) if (e[k] && slot(p.inv.slots[+k.slice(3)]) !== e[k]) bad.push(`slot ${k.slice(3)} has ${slot(p.inv.slots[+k.slice(3)])}, expected ${e[k]}`);
     if (p.health !== e.health) bad.push(`health ${p.health}, expected ${e.health}`);
+    if (e.off && slot(p.off[0]) !== e.off) bad.push(`the off hand holds ${slot(p.off[0])}, expected ${e.off}`);
+    if (e.armor0 && slot(p.armor[0]) !== e.armor0) bad.push(`the helmet slot holds ${slot(p.armor[0])}, expected ${e.armor0}`);
+    // experience and achievements (1.7 on)
+    if (e.level !== undefined && p.xpLevel !== e.level) bad.push(`experience level ${p.xpLevel}, expected ${e.level}`);
+    for (const k of e.adv || []) if (!p.adv.has(k)) bad.push(`the achievement "${k}" is gone`);
     if (e.nether) { const [x, y, z] = e.nether; if (G.world.getBlock(x, y, z) !== B.gold_block) bad.push('the gold block in the Nether is gone'); }
     if (G.dim !== 'overworld') { G.game.travel('overworld', 'spawn'); await waitPlaying(G); }
     const [x, y, z] = e.pos;
     // worlds from before the Caves & Ores update keep their old caves and ores where the player had been
     const old = G.world.legacy && G.world.legacy.has(ckey(x >> 4, z >> 4));
     if (e.newCaves ? old : !old) bad.push(e.newCaves ? 'a world made with the new caves went back to the old ones' : 'the land around the build would get the new caves');
+    // and every chunk people had been to is made by the generator version it was first seen with
+    const gen = G.world.genAt(x >> 4, z >> 4), want = e.gen || (e.newCaves ? 2 : 1);
+    if (gen !== want) bad.push(`the land around the build is made by generator ${gen}, expected ${want}`);
     if (![0, 1, 2, 3].every((k) => G.world.getBlock(x, y + k, z) === B.oak_planks)) bad.push('the plank tower is gone');
     if (G.world.getBlock(x, y, z + 2) !== B.chest) bad.push('the chest is gone');
     else if (slot(G.game.container(x, y, z + 2, 'chest').slots[3]) !== e.chest) bad.push(`the chest holds ${slot(G.game.container(x, y, z + 2, 'chest').slots[3])}, expected ${e.chest}`);
+    // building blocks keep their shape and the way they face, signs their words, villagers their jobs
+    for (const [bx, by, bz, key, meta] of e.blocks || []) {
+      if (G.world.getBlock(bx, by, bz) !== B[key] || G.world.getMeta(bx, by, bz) !== meta) bad.push(`the ${key} at ${bx},${by},${bz} is now ${G.world.getBlock(bx, by, bz)}:${G.world.getMeta(bx, by, bz)}`);
+    }
+    for (const [sx, sy, sz, lines] of e.signs || []) {
+      if (JSON.stringify(G.game.signText(sx, sy, sz)) !== JSON.stringify(lines)) bad.push(`the sign at ${sx},${sy},${sz} says ${JSON.stringify(G.game.signText(sx, sy, sz))}`);
+    }
+    if (e.villager) {
+      const v = G.entities.mobs.find((m) => m.key === e.villager.key);
+      if (!v) bad.push('the villager is gone');
+      else if (v.prof !== e.villager.prof) bad.push(`the ${e.villager.prof} became a ${v.prof}`);
+      else if (e.villager.level && v.level !== e.villager.level) bad.push(`the villager is level ${v.level}, expected ${e.villager.level}`);
+    }
     // leave from the dimension it was saved in, so the second round opens there too
     if (e.dim !== 'overworld') { G.game.travel(e.dim, 'portal'); await waitPlaying(G); }
     G.game.quitToTitle();

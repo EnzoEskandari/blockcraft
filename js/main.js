@@ -2,8 +2,10 @@
 import { G, loadSettings, store, load, remove, isTouchDevice } from './game.js';
 import { cleanSign, signMesh, disposeSignMesh } from './signs.js';
 import { buildTextures, buildIcons } from './textures.js';
-import { BLOCKS, B, ID, RENDER, SMELTING, fuelValue, maxStack, canHarvest } from './blocks.js';
-import { World, ckey, CH } from './world.js';
+import { BLOCKS, ITEMS, B, ID, RENDER, SMELTING, fuelValue, maxStack, canHarvest } from './blocks.js';
+import { World, ckey, CH, GEN } from './world.js';
+import { ench } from './enchant.js';
+import { Advancements } from './advancements.js';
 import { initMesher, buildChunkMesh, computeLight } from './mesher.js';
 import { R, initRenderer, setChunkMeshes, disposeChunkMeshes, updateSky, render } from './render.js';
 import { Player } from './player.js';
@@ -26,6 +28,20 @@ const isNight = () => G.time > 0.52 && G.time < 0.98;
 const isGuest = () => !!(G.net && G.net.role === 'client');
 const SIM_R = 4;   // the host keeps chunks this far around each guest loaded and running
 
+// Frosted ice (Frost Walker) melts back into water: "x,y,z" -> when
+function tickFrost() {
+  if (!S.frost.size) return;
+  const w = G.world, p = G.player;
+  for (const [key, t] of S.frost) {
+    if (G.clock < t) continue;
+    const [x, y, z] = key.split(',').map(Number);
+    // (not from under the feet of whoever is standing on it)
+    if (p && Math.floor(p.pos.x) === x && Math.floor(p.pos.z) === z && Math.floor(p.pos.y - 0.1) === y) { S.frost.set(key, G.clock + 1); continue; }
+    S.frost.delete(key);
+    if (w.getBlock(x, y, z) === B.frosted_ice) Game.placeBlock(x, y, z, B.water, 0);
+  }
+}
+
 const S = {
   offsets: [],
   lastCX: null, lastCZ: null,
@@ -33,6 +49,7 @@ const S = {
   updates: [],
   water: new Map(),   // liquid blocks due for another look: "x,y,z" -> { x, y, z, t }
   saplings: new Map(),
+  frost: new Map(),   // frosted ice due to melt: "x,y,z" -> when
   saveTimer: 0,
 };
 
@@ -447,6 +464,7 @@ function tickFurnaces(dt) {
         inp.count--;
         if (!inp.count) c.slots[0] = null;
         if (out) out.count++; else c.slots[2] = stack(result, 1);
+        c.xp = (c.xp || 0) + smeltXp(result);
         c.changed = true;
       }
     } else c.cook = Math.max(0, c.cook - dt * 2);
@@ -549,6 +567,12 @@ function tickSaplings() {
 }
 
 // ---------------------------------------------------------------- game API used by the UI and player
+// Blocks Silk Touch can't bring home whole
+const NO_SILK = new Set([B.spawner, B.farmland, B.dirt_path, B.bedrock, B.end_portal_frame, B.end_portal_frame_filled]);
+// Experience kept in a furnace for each thing it smelts, handed over when the result is taken out
+const SMELT_XP = { iron_ingot: 0.7, gold_ingot: 1, copper_ingot: 0.7, diamond: 1, emerald: 1, coal: 0.1, lapis_lazuli: 0.2, redstone: 0.3, nether_quartz: 0.2, charcoal: 0.15, brick: 0.3, glass: 0.1, stone: 0.1, deepslate: 0.1, terracotta: 0.35, nether_brick: 0.1 };
+const smeltXp = (id) => { const it = ITEMS[id]; return it ? SMELT_XP[it.key] ?? (it.food ? 0.35 : 0.1) : 0; };
+
 export const Game = {
   removeBlock(x, y, z, drop, byPlayer) {
     const w = G.world;
@@ -570,15 +594,26 @@ export const Game = {
       for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (BLOCKS[w.getBlock(x + dx, y, z + dz)].bed) { w.setBlock(x + dx, y, z + dz, 0); break; }
     }
     // a player needs a good enough pickaxe for stone, ores and obsidian to drop anything
-    if (drop && (!byPlayer || canHarvest(def, G.player && G.player.inv.held))) {
-      const drops = def.drops ? def.drops(Math.random) : [[id, 1]];
+    const held = byPlayer && G.player ? G.player.inv.held : null;
+    if (drop && (!byPlayer || canHarvest(def, held))) {
+      // Silk Touch brings the block itself; Fortune more of what ores (and gravel) give
+      const silk = !!ench(held, 'silk_touch') && !def.noItem && !NO_SILK.has(id);
+      const fortune = silk ? 0 : ench(held, 'fortune');
+      let drops = silk ? [[id, 1]] : def.drops ? def.drops(Math.random) : [[id, 1]];
+      if (fortune && def.fortune) {
+        const more = Math.max(0, Math.floor(Math.random() * (fortune + 2)) - 1);
+        drops = drops.map(([did, n]) => [did, n * (more + 1)]);
+      } else if (fortune && id === B.gravel) drops = [[Math.random() < [0.12, 0.14, 0.25, 1][fortune] ? ID.flint : B.gravel, 1]];
       for (const [did, n] of drops) G.entities.dropItem(did, n, x + 0.5, y + 0.3, z + 0.5, (Math.random() - 0.5) * 2, 3, (Math.random() - 0.5) * 2);
+      // ores leave experience when they give up their gems
+      if (byPlayer && def.xp && !silk) G.entities.spawnXp(x + 0.5, y + 0.4, z + 0.5, def.xp[0] + Math.floor(Math.random() * (def.xp[1] - def.xp[0] + 1)), 0.2);
+      if (byPlayer && G.adv) G.adv.mined(id, drops);
     }
     const key = `${x},${y},${z}`;
     const c = w.containers.get(key);
     if (c) {
       // a guest's copy may be out of date, so the host sends the real contents
-      if (!isGuest()) for (const s of c.slots) if (s) G.entities.dropItem(s.id, s.count, x + 0.5, y + 0.5, z + 0.5, undefined, undefined, undefined, s.dmg);
+      if (!isGuest()) for (const s of c.slots) if (s) G.entities.dropStack(s, x + 0.5, y + 0.5, z + 0.5);
       w.containers.delete(key);
       if (G.ui.container && G.ui.container.data === c) G.ui.back();
     }
@@ -596,6 +631,29 @@ export const Game = {
     if (id === B.oak_sapling) S.saplings.set(key, G.clock + 60 + Math.random() * 120);
     if (id >= B.wheat_0 && id <= B.wheat_2) G.world.crops.set(key, 0);
     if (id === B.fire && !G.world.fires.has(key)) G.world.fires.set(key, { t: 0, age: 0 });
+  },
+
+  // Taking smelted things out of a furnace hands over the experience it has kept (parts of a point by chance)
+  furnaceXp(c) {
+    const xp = c.xp || 0;
+    if (!xp) return;
+    c.xp = 0;
+    const n = Math.floor(xp) + (Math.random() < xp % 1 ? 1 : 0);
+    const p = G.player;
+    if (n) G.entities.spawnXp(p.pos.x, p.pos.y + 1, p.pos.z, n, 0);
+    if (G.net && G.net.role === 'client') G.net.send({ k: 'fx0', key: `${c.x},${c.y},${c.z}` });   // the host forgets it too
+  },
+
+  // Frost Walker boots: still water around your feet freezes for a few seconds
+  frostWalk(p, level) {
+    const w = G.world, r = 2 + level, by = Math.floor(p.pos.y - 0.1), cx = Math.floor(p.pos.x), cz = Math.floor(p.pos.z);
+    for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) {
+      if (dx * dx + dz * dz > r * r + 1) continue;
+      const x = cx + dx, z = cz + dz;
+      if (w.getBlock(x, by, z) !== B.water || w.getMeta(x, by, z) !== 0 || w.getBlock(x, by + 1, z) !== 0) continue;
+      this.placeBlock(x, by, z, B.frosted_ice, 0);
+      S.frost.set(`${x},${by},${z}`, G.clock + 4 + Math.random() * 4);
+    }
   },
 
   // Fire needs something solid under it or something flammable beside it
@@ -662,9 +720,12 @@ export const Game = {
       return;
     }
     p.bedSpawn = { x, y, z };
+    // (a villager asleep in it gets up and finds another)
+    if (isGuest()) G.net.send({ k: 'vw', x, y, z }); else G.entities.wakeVillagerAt(x, y, z);
     if (!isNight()) { G.ui.toast('Respawn point set. You can only sleep at night'); return; }
     if (G.entities.hostilesNear(x + 0.5, y, z + 0.5, 8)) { G.ui.toast('You may not rest now, there are monsters nearby'); return; }
     G.ui.toast('Respawn point set');
+    G.adv.did('sleep');
     G.sleeping = { t: 0, x: x + 0.5, y: y + 0.6, z: z + 0.5 };
     p.pos = { x: x + 0.5, y: y + 0.56, z: z + 0.5 };
     p.vel = { x: 0, y: 0, z: 0 };
@@ -693,7 +754,7 @@ export const Game = {
       c.x = x; c.y = y; c.z = z;
       // structure chests are filled the first time they are opened
       const loot = w.lootChests.get(key);
-      if (loot && type === 'chest') { c.slots = rollLoot(loot, hash3(w.seed, x, y, z) * 4294967296); w.lootChests.delete(key); }
+      if (loot && type === 'chest') { c.slots = rollLoot(loot, hash3(w.seed, x, y, z) * 4294967296); w.lootChests.delete(key); if (loot === 'bastion') G.adv.did('bastion_loot'); }
       w.containers.set(key, c);
     }
     return c;
@@ -802,6 +863,7 @@ export const Game = {
       arrival = { type: 'spawn' };
       pos = respawnPoint(p);
     }
+    arrival.from = G.dim;   // (where you came from, for the achievements)
     const carry = playerData(p);
     carry.pos = pos;
     carry.dim = to;
@@ -1034,7 +1096,7 @@ export const Game = {
       k: 'world', host: G.net.name, name: G.worldMeta.name, seed: w.seed, mode: G.worldMeta.mode,
       time: G.time, day: G.day || 0, nns: G.nightsNoSleep || 0,
       spawn: w.worldSpawn || p.spawn, edits: packEdits(w), guest: playerRecord(w.guests, account, name),
-      legacy: w.legacy ? [...w.legacy] : null, signs: Object.fromEntries(w.signs),
+      legacy: w.legacy ? [...w.legacy] : null, gens: packGens(w), signs: Object.fromEntries(w.signs),
     };
   },
 
@@ -1057,14 +1119,39 @@ const dimKey = (id, dim) => (dim && dim !== 'overworld' ? `${id}~${dim}` : id);
 // Worlds from before the Caves & Ores update keep their old caves and ores wherever anyone had been: every
 // chunk that was ever loaded, everything built or dug and the land around it, the world spawn, beds and
 // where the players were. The rest of the world gets the new caves, deepslate and ores.
-function legacyChunks(data, g, me) {
+function legacyChunks(data, g, me, dim = 'overworld') {
   const out = new Set((data.spawned || []).filter(Number.isFinite));
   const add = (cx, cz, r) => { for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) out.add(ckey(cx + dx, cz + dz)); };
   for (const k of Object.keys(data.edits || {})) { const [cx, cz] = k.split(',').map(Number); if (Number.isFinite(cx + cz)) add(cx, cz, 3); }
   for (const k of Object.keys(data.entities || {})) { const n = Number(k); if (Number.isFinite(n)) add(Math.floor(n / 65536) - 32768, (n % 65536) - 32768, 1); }
   const people = [g && g.player, me, ...Object.values(data.guests || {})].filter((q) => q && typeof q === 'object');
-  const spots = [g && g.worldSpawn, data.worldSpawn, ...people.map((q) => (!q.dim || q.dim === 'overworld') && q.pos), ...people.map((q) => q.bed)];
+  const here = (q) => (q.dim || 'overworld') === dim;
+  const spots = dim === 'overworld' ? [g && g.worldSpawn, data.worldSpawn, ...people.map((q) => here(q) && q.pos), ...people.map((q) => q.bed)] : people.map((q) => here(q) && q.pos);
   for (const p of spots) if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) add(Math.floor(p.x) >> 4, Math.floor(p.z) >> 4, 5);
+  return out;
+}
+
+// Every later update works the same way: a save says which generator version it was last played with
+// (gen), and the chunks made by older ones (gens). Opening a save from an older version marks everywhere
+// people had been as made by that version, so only land nobody has seen gets what the update adds.
+function rememberGens(w, data, g, me) {
+  w.gens = new Map();
+  for (const [v, list] of Object.entries(data.gens || {})) {
+    const n = Number(v);
+    if (n >= 2 && n < GEN && Array.isArray(list)) for (const k of list) if (Number.isFinite(k)) w.gens.set(k, n);
+  }
+  const was = data.gen >= 2 ? data.gen : w.dim === 'overworld' ? 1 : 2;   // (other dimensions' saves had no number before 1.7)
+  if (was >= 2 && was < GEN) {
+    for (const k of legacyChunks(data, g, me, w.dim)) {
+      if (!(w.legacy && w.legacy.has(k)) && !w.gens.has(k)) w.gens.set(k, was);
+      if (w.dim !== 'overworld') w.spawned.add(k);   // these dimensions did not keep a list of chunks until now
+    }
+  }
+}
+
+function packGens(w) {
+  const out = {};
+  for (const [k, v] of w.gens) (out[v] || (out[v] = [])).push(k);
   return out;
 }
 
@@ -1164,6 +1251,8 @@ function playerData(p) {
     pos: { ...p.pos }, yaw: p.yaw, pitch: p.pitch, health: p.health, food: p.food, saturation: p.saturation,
     inv: packSlots(p.inv.slots), selected: p.inv.selected, spawn: p.spawn, flying: p.flying,
     armor: packSlots(p.armor), off: packSlots(p.off)[0], bed: p.bedSpawn, dim: G.dim || 'overworld',
+    // experience (level, points toward the next), what the enchanting table offers, and achievements
+    xl: p.xpLevel, xp: p.xp, es: p.enchSeed, adv: [...p.adv], advp: p.advData,
   };
 }
 
@@ -1178,6 +1267,10 @@ function applyPlayerData(p, d) {
   p.armor = unpackSlots(d.armor, 4);
   p.off[0] = unpackSlots([d.off || 0], 1)[0];
   p.bedSpawn = d.bed || null;
+  p.xpLevel = Math.max(0, d.xl | 0); p.xp = Math.max(0, +d.xp || 0);
+  if (Number.isFinite(d.es)) p.enchSeed = d.es >>> 0;
+  p.adv = new Set(Array.isArray(d.adv) ? d.adv.filter((k) => typeof k === 'string') : []);
+  p.advData = d.advp && typeof d.advp === 'object' ? d.advp : {};
   if (p.health <= 0) { p.health = 20; p.pos = { ...p.spawn }; }
 }
 
@@ -1189,6 +1282,7 @@ function startRemoteWorld(snap, onlineId, dim = 'overworld', me = null) {
   G.dim = dim;
   const w = new World(snap.seed, dim);
   if (Array.isArray(snap.legacy) && snap.legacy.length) w.legacy = new Set(snap.legacy);   // the host's old-cave chunks
+  for (const [v, list] of Object.entries(snap.gens || {})) if (Array.isArray(list)) for (const k of list) w.gens.set(k, Number(v));   // and chunks from other older versions
   if (snap.signs && typeof snap.signs === 'object') w.signs = new Map(Object.entries(snap.signs).map(([k, v]) => [k, cleanSign(v)]));
   S.signsDirty = true;
   w.onChange = onBlockChange;
@@ -1238,6 +1332,7 @@ function teardown() {
   S.updates.length = 0;
   S.water.clear();
   S.saplings.clear();
+  S.frost.clear();
   G.sleeping = null;
 }
 
@@ -1261,6 +1356,7 @@ function startWorld(meta, data, opts = {}) {
     w.legacy = data.gen >= 2 ? (data.legacy && data.legacy.length ? new Set(data.legacy) : null)
       : legacyChunks(data, opts.globals || data, opts.me || opts.player);
   }
+  if (data) rememberGens(w, data, opts.globals || data, opts.me || opts.player);
   G.world = w;
   const p = new Player();
   p.mode = meta.mode;
@@ -1270,10 +1366,12 @@ function startWorld(meta, data, opts = {}) {
   const g = opts.globals || data;   // time of day, the world spawn and (singleplayer) the player
   if (data) {
     unpackEdits(w, data.edits);
+    // (frosted ice that never got to melt, because the game was closed, is water again)
+    for (const m of w.edits.values()) for (const [i, v] of m) if ((v & 255) === B.frosted_ice) m.set(i, B.water);
     for (const c of data.containers || []) {
       const [x, y, z] = c.k.split(',').map(Number);
       const n = c.type === 'chest' ? 27 : 3;
-      w.containers.set(c.k, { type: c.type, slots: unpackSlots(c.slots, n), burn: c.burn || 0, burnMax: c.burnMax || 0, cook: c.cook || 0, x, y, z });
+      w.containers.set(c.k, { type: c.type, slots: unpackSlots(c.slots, n), burn: c.burn || 0, burnMax: c.burnMax || 0, cook: c.cook || 0, xp: +c.xp || 0, x, y, z });
     }
     for (const k of data.saplings || []) S.saplings.set(k, 30 + Math.random() * 120);
   }
@@ -1316,7 +1414,7 @@ function saveWorld(playerOverride) {
   G.entities.saveVillagers();
   const edits = packEdits(w);
   const containers = [];
-  for (const [k, c] of w.containers) containers.push({ k, type: c.type, slots: packSlots(c.slots), burn: c.burn, burnMax: c.burnMax, cook: c.cook });
+  for (const [k, c] of w.containers) containers.push({ k, type: c.type, slots: packSlots(c.slots), burn: c.burn, burnMax: c.burnMax, cook: c.cook, ...(c.xp ? { xp: Math.round(c.xp * 100) / 100 } : {}) });
   // this dimension's blocks and creatures
   const data = {
     v: 2,
@@ -1330,7 +1428,8 @@ function saveWorld(playerOverride) {
     edits, containers, saplings: [...S.saplings.keys()],
     signs: Object.fromEntries(w.signs),
     // made by the Caves & Ores generator, except these chunks (older worlds' places people had been)
-    gen: 2, legacy: w.legacy ? [...w.legacy] : [],
+    // and by the current generator, except the chunks first seen with an older one
+    gen: GEN, legacy: w.legacy ? [...w.legacy] : [], gens: packGens(w),
   };
   // the time of day, the world spawn, and the player
   const globals = {
@@ -1377,7 +1476,7 @@ function frame(dt) {
       G.ui.startPlaying();
       G.ui.invChanged();
       if (!G.touchMode) requestLock();
-      if (S.arrival) { const a = S.arrival; S.arrival = null; arrive(a); }
+      if (S.arrival) { const a = S.arrival; S.arrival = null; arrive(a); if (a.from) G.adv.entered(G.dim, a.from); if (a.type === 'gateway') G.adv.did('gateway'); }
       // an online world is on the server from the moment someone is in it
       if (G.worldMeta && G.worldMeta.online && !G.worldMeta.remote) saveWorld();
       if (S.outdated && !S.toldOutdated) {
@@ -1431,6 +1530,8 @@ function frame(dt) {
       tickCrops();
     }
     tickFires(host);
+    tickFrost();
+    G.adv.tick(dt);
     updateSigns(dt);
   }
   if (G.net) {
@@ -1456,6 +1557,7 @@ function boot(hotData) {
   initRenderer(document.getElementById('app'));
   G.canvas = R.renderer.domElement;
   G.game = Game;
+  G.adv = new Advancements();
   G.step = frame;
   G.startPanorama = startPanorama;
   G.ui = new UI();

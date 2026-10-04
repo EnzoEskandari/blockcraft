@@ -5,8 +5,9 @@
 // checks the biome there, and builds a plan (a list of parts with bounding boxes). When a chunk
 // generates, every part that overlaps it is stamped with writes clipped to that chunk, so a
 // structure comes out identical no matter which chunk loads first.
-import { B, ID, BLOCKS, ITEMS } from './blocks.js';
+import { B, ID, BLOCKS, ITEMS, JOB_BLOCKS } from './blocks.js';
 import { hash3, mulberry32 } from './noise.js';
+import { randomBook, randomlyEnchanted } from './enchant.js';
 import { CS, CH, SEA, BIOME } from './constants.js';
 import { NB, NETHER_LAVA, strongholds } from './dims.js';
 
@@ -127,6 +128,14 @@ const LOOT = {
   },
 };
 
+// Enchantments in loot: [chance a tool or armour piece is enchanted, lowest and highest level it is
+// enchanted with, weight of a book of enchantment among the table's items]
+const BOOK_LOOT = {
+  blacksmith: [0.15, 5, 15, 0], outpost: [0.2, 5, 15, 2], igloo: [0.3, 10, 25, 4], ruined_portal: [0.5, 10, 25, 3], mansion: [0.4, 15, 30, 6],
+  pyramid: [0.4, 15, 30, 10], jungle_temple: [0.4, 15, 30, 10], shipwreck_supply: [0.2, 5, 15, 0], shipwreck_treasure: [0.5, 15, 30, 6],
+  stronghold_corridor: [0.4, 15, 30, 5], stronghold_library: [0, 0, 0, 30], fortress: [0.3, 10, 25, 3], bastion: [0.6, 20, 30, 8], end_city: [1, 20, 30, 6],
+};
+
 // Items for a structure chest, spread over 27 slots
 export function rollLoot(table, seed) {
   const T = LOOT[table];
@@ -143,14 +152,22 @@ export function rollLoot(table, seed) {
     if (def && def.durability && T.wear) dmg = Math.floor(def.durability * (T.wear[0] + r() * (T.wear[1] - T.wear[0])));
     let slot = Math.floor(r() * 27);
     for (let t = 0; t < 27 && slots[slot]; t++) slot = (slot + 7) % 27;
-    if (!slots[slot]) slots[slot] = { id, count, dmg };
+    if (slots[slot]) return;
+    slots[slot] = { id, count, dmg };
+    // books of enchantment, and in the better places gear that is already enchanted
+    const E = BOOK_LOOT[table];
+    if (key === 'enchanted_book') slots[slot] = randomBook(r, true);
+    else if (E && def && def.durability && r() < E[0]) slots[slot] = { ...randomlyEnchanted(r, id, E[1] + Math.floor(r() * (E[2] - E[1] + 1)), true), dmg };
   };
   for (const [key, min, max] of T.sure || []) put(key, min, max);
-  const total = T.items.reduce((n, it) => n + it[3], 0);
+  // (how often a roll turns up a book of enchantment, on top of the table's own things)
+  const E = BOOK_LOOT[table];
+  const items = E && E[3] ? [...T.items, ['enchanted_book', 1, 1, E[3]]] : T.items;
+  const total = items.reduce((n, it) => n + it[3], 0);
   const rolls = T.rolls[0] + Math.floor(r() * (T.rolls[1] - T.rolls[0] + 1));
   for (let k = 0; k < rolls; k++) {
     let pick = r() * total;
-    const it = T.items.find((x) => (pick -= x[3]) < 0) || T.items[0];
+    const it = items.find((x) => (pick -= x[3]) < 0) || items[0];
     put(it[0], it[1], it[2]);
   }
   return slots;
@@ -228,6 +245,22 @@ function local(ctx, part) {
     },
     // A short path from the front door to the road
     doorstep(hd, len, pathId) {
+      // Villages in land first seen from 1.7 on: the path meets the door at the level of the floor and
+      // goes up or down a block at a time to the ground, so a house on a slope can always be walked into
+      if (ctx.plan.gen >= 3) {
+        const f = oy - 1;
+        for (let k = 1; k <= 3; k++) {   // (no further than the road, so nothing across it is cut into)
+          const [wx, wz] = L.w(0, -hd - k);
+          const g = ctx.ground(wx, wz);
+          const t = f + Math.max(-(k - 1), Math.min(k - 1, g - f));
+          if (t < SEA) break;
+          for (let y = Math.min(g, t); y < t; y++) ctx.set(wx, y, wz, B.cobblestone);
+          ctx.set(wx, t, wz, pathId);
+          for (let y = t + 1; y <= Math.max(t + 3, g); y++) ctx.set(wx, y, wz, 0);   // (room to walk, and no higher: the eaves stay)
+          if (t === g && k > len) break;
+        }
+        return;
+      }
       for (let k = 1; k <= len; k++) {
         const [wx, wz] = L.w(0, -hd - k);
         const g = ctx.ground(wx, wz);
@@ -498,6 +531,18 @@ function buildRoad(ctx, part) {
   }
 }
 
+// Villages in land first seen from 1.7 on: the house of every villager with a trade holds its job block,
+// and the buildings that had no bed get one. [x, y, z] inside each kind of building.
+const JOB_SPOT = { small: [1, 0, -1], big: [2, 0, -1], tall: [-1, 0, 0], longhouse: [-1, 0, -1], hut: [-1, 0, 0], porch: [-2, 0, 1], library: [0, 0, 2], blacksmith: [0, 0, 2], church: [1, 0, 3], butcher: [0, 0, 2], farm: [-4, 0, -3] };
+const EXTRA_BED = { library: [-1, 0, -3], blacksmith: [2, 0, -1], church: [-1, 0, 1], butcher: [-1, 0, -1], porch: [1, 0, 1] };   // (the porch house gets a spare one, for the farm hands)
+function furnish(ctx, part) {
+  const L = local(ctx, part);
+  const spot = JOB_SPOT[part.kind], job = part.prof && JOB_BLOCKS[part.prof];
+  if (spot && job) L.set(spot[0], spot[1], spot[2], job, 2);
+  const bed = EXTRA_BED[part.kind];
+  if (bed) L.bed(bed[0], bed[1], bed[2], 0);
+}
+
 const HOUSE_KINDS = [['small', 15], ['big', 10], ['tall', 10], ['longhouse', 8], ['hut', 8], ['porch', 9], ['farm', 18], ['blacksmith', 6], ['library', 6], ['church', 4], ['butcher', 6], ['pen', 8]];
 const PROF_FOR = {
   small: ['fletcher', 'shepherd', 'leatherworker', 'mason', 'nitwit'],
@@ -527,9 +572,13 @@ function planVillage(world, plan, x, z, col, rng) {
     if (g < SEA + 1) return null;
     const corners = [[box.minX, box.minZ], [box.maxX, box.minZ], [box.minX, box.maxZ], [box.maxX, box.maxZ]].map(([a, b]) => plan.ground(a, b));
     if (Math.max(...corners) - Math.min(...corners) > 6) return null;
-    const p = { ...box, x: bx, z: bz, y: g + 1, rot, style, kind, build: (ctx, pp) => K.build(ctx, pp) };
+    const p = { ...box, x: bx, z: bz, y: g + 1, rot, style, kind, build: (ctx, pp) => { K.build(ctx, pp); if (ctx.plan.gen >= 3) furnish(ctx, pp); } };
     occupied.push(box);
     plan.add(p);
+    // (the steps in front of a door reach a few blocks further out than the building itself)
+    p.stamp = bboxOf(bx, bz, hw, hd, rot, 7);
+    plan.minX = Math.min(plan.minX, p.stamp.minX); plan.maxX = Math.max(plan.maxX, p.stamp.maxX);
+    plan.minZ = Math.min(plan.minZ, p.stamp.minZ); plan.maxZ = Math.max(plan.maxZ, p.stamp.maxZ);
     return p;
   };
   const well = addBuilding('well', x, z, 0);
@@ -574,7 +623,8 @@ function planVillage(world, plan, x, z, col, rng) {
         } else {
           const profs = PROF_FOR[kind];
           const [fx, fz] = rotVec(0, -1, rot);
-          villager(profs[Math.floor(rng() * profs.length)], bx + fx * (hd + 2), p.y, bz + fz * (hd + 2));
+          p.prof = profs[Math.floor(rng() * profs.length)];   // (its job block goes in this building)
+          villager(p.prof, bx + fx * (hd + 2), p.y, bz + fz * (hd + 2));
         }
       }
     }
@@ -1171,6 +1221,8 @@ function regionPlan(world, T, rx, rz) {
   };
   const rng = mulberry32((hash3(world.seed ^ salt, rx, 3, rz) * 4294967296) >>> 0);
   if (!T.plan(world, plan, x, z, col, rng)) return null;
+  // built the way the oldest chunk it covers was made, so nothing people have seen changes under them
+  plan.gen = world.genOver(plan.minX, plan.maxX, plan.minZ, plan.maxZ);
   cache.set(key, plan);
   return plan;
 }
@@ -1209,7 +1261,7 @@ export function stampStructures(world, chunk) {
       const plan = regionPlan(world, T, rx, rz);
       if (!plan || !overlaps(plan, cbox)) continue;
       const ctx = makeCtx(world, chunk, plan);
-      for (const p of plan.parts) if (overlaps(p, cbox)) p.build(ctx, p);
+      for (const p of plan.parts) if (overlaps(plan.gen >= 3 && p.stamp ? p.stamp : p, cbox)) p.build(ctx, p);
       for (const m of plan.mobs) {
         if (m.x >= cminX && m.x < cmaxX + 1 && m.z >= cminZ && m.z < cmaxZ + 1) {
           const k = ckey(cx, cz);

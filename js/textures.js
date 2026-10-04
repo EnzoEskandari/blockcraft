@@ -809,6 +809,123 @@ Object.assign(PAINTERS, {
   }),
 });
 
+// 1.7: the enchanting table, the anvil and the blocks villagers work at
+Object.assign(PAINTERS, {
+  enchanting_table_top: (p) => p.each((x, y) => {
+    if (x === 0 || y === 0 || x === 15 || y === 15) return jit([28, 22, 44], 5, p.r);
+    if ((x < 4 || x > 11) && (y < 4 || y > 11)) return jit([92, 224, 216], 10, p.r);        // diamond corners
+    if (x === 1 || y === 1 || x === 14 || y === 14) return jit([214, 174, 62], 8, p.r);     // gold trim
+    if (x >= 5 && x <= 10 && y >= 5 && y <= 10) return (x === 7 || x === 8) ? [150, 120, 70] : jit([238, 230, 206], 5, p.r);   // the open book
+    return jit([156, 30, 36], 8, p.r);
+  }),
+  // (the table is 12 high: only the lower twelve rows of its side show)
+  enchanting_table_side: (p) => p.each((x, y) => {
+    if (y < 4) return [0, 0, 0, 0];
+    if (y < 7) return (x % 5 === 2 && y === 5) ? jit([92, 224, 216], 8, p.r) : jit([156, 30, 36], 8, p.r);
+    if (y === 7) return jit([214, 174, 62], 8, p.r);
+    const v = p.r();
+    return v > 0.9 ? [70, 50, 104] : v > 0.6 ? [34, 24, 54] : [20, 16, 32];
+  }),
+  anvil: (p) => metal(p, [74, 74, 80]),
+  composter: (p) => {
+    planks(p, [136, 100, 58]);
+    for (let x = 0; x < 16; x++) for (const y of [0, 5, 10, 15]) p.set(x, y, jit([84, 58, 30], 5, p.r));
+    for (let y = 0; y < 16; y++) { p.set(0, y, [92, 64, 34]); p.set(15, y, [92, 64, 34]); }
+  },
+  compost: (p) => p.each(() => { const v = p.r(); return v > 0.7 ? jit([92, 110, 44], 10, p.r) : v > 0.35 ? jit([84, 62, 34], 8, p.r) : jit([58, 42, 24], 6, p.r); }),
+  lectern_top: (p) => {
+    planks(p, [168, 134, 80]);
+    for (let y = 3; y < 13; y++) for (let x = 2; x < 14; x++) {
+      const spine = x === 7 || x === 8;
+      p.set(x, y, spine ? [120, 60, 40] : (y % 2 && x > 2 && x < 13 && !(x === 6 || x === 9)) ? [150, 150, 150] : [240, 236, 222]);
+    }
+  },
+  lectern_side: (p) => {
+    planks(p, [168, 134, 80]);
+    for (let x = 0; x < 16; x++) { p.set(x, 0, [100, 74, 40]); p.set(x, 15, [100, 74, 40]); }
+    const cols = [[140, 40, 40], [40, 70, 140], [50, 110, 50], [150, 120, 40]];
+    for (let x = 5; x < 11; x++) for (let y = 5; y < 11; y++) p.set(x, y, jit(cols[(x - 5) >> 1 & 3], 8, p.r));
+  },
+  blast_furnace_side: (p) => p.each((x, y) => {
+    if (y === 0 || y === 15 || y === 7 || y === 8) return jit([70, 70, 76], 5, p.r);
+    if ((x === 2 || x === 13) && (y === 3 || y === 11)) return [176, 176, 184];   // rivets
+    return jit(x === 0 || x === 15 ? [92, 92, 98] : [118, 118, 126], 6, p.r);
+  }),
+  blast_furnace_front: (p) => {
+    p.each((x, y) => (y === 0 || y === 15 ? jit([70, 70, 76], 5, p.r) : jit(x === 0 || x === 15 ? [92, 92, 98] : [118, 118, 126], 6, p.r)));
+    for (let y = 3; y < 13; y++) for (let x = 3; x < 13; x++) {
+      const border = y === 3 || y === 12 || x === 3 || x === 12;
+      p.set(x, y, border ? [58, 58, 64] : y > 8 ? [[255, 200, 60], [255, 140, 20], [230, 80, 10]][Math.floor(p.r() * 3)] : (x % 2 ? [40, 40, 44] : [24, 24, 26]));
+    }
+  },
+  grindstone: (p) => p.each((x, y) => {
+    const d = Math.hypot(x - 7.5, y - 7.5);
+    if (d < 1.6) return [96, 70, 40];   // the axle
+    const ring = Math.sin(d * 2.2) * 6;
+    return jit([150 + ring, 150 + ring, 152 + ring], 7, p.r);
+  }),
+  smithing_table_top: (p) => p.each((x, y) => {
+    if (x === 0 || y === 0 || x === 15 || y === 15) return jit([44, 44, 50], 4, p.r);
+    if ((x === 2 || x === 13) && (y === 2 || y === 13)) return [170, 170, 178];
+    return jit([70, 72, 82], 6, p.r);
+  }),
+  smithing_table_side: (p) => {
+    planks(p, [76, 54, 34]);
+    for (let x = 0; x < 16; x++) for (let y = 0; y < 4; y++) p.set(x, y, y === 3 ? [40, 40, 46] : jit([70, 72, 82], 6, p.r));
+    for (const x of [2, 7, 12]) p.set(x, 1, [170, 170, 178]);
+  },
+  smoker_side: (p) => {
+    furnaceSide(p);
+    for (let x = 0; x < 16; x++) for (const y of [0, 1, 14, 15]) p.set(x, y, jit(y === 0 || y === 15 ? [84, 62, 36] : [112, 86, 52], 6, p.r));
+  },
+  smoker_front: (p) => {
+    furnaceSide(p);
+    for (let x = 0; x < 16; x++) for (const y of [0, 1, 14, 15]) p.set(x, y, jit(y === 0 || y === 15 ? [84, 62, 36] : [112, 86, 52], 6, p.r));
+    for (let y = 4; y < 12; y++) for (let x = 3; x < 13; x++) p.set(x, y, y === 4 || y === 11 || x === 3 || x === 12 ? [66, 66, 66] : (y % 2 ? [30, 30, 30] : [96, 60, 30]));
+  },
+  fletching_table_top: (p) => {
+    planks(p, [206, 190, 134]);
+    for (let i = 0; i < 16; i++) for (const [x, y] of [[i, 0], [i, 15], [0, i], [15, i]]) p.set(x, y, [150, 132, 84]);
+    for (let k = 3; k < 13; k++) p.set(k, k, [120, 90, 50]);                 // an arrow laid across it
+    for (const [x, y] of [[12, 11], [11, 12], [13, 12], [12, 13]]) p.set(x, y, [236, 236, 236]);
+    for (const [x, y] of [[3, 2], [2, 3], [2, 2]]) p.set(x, y, [150, 150, 156]);
+  },
+  fletching_table_side: (p) => {
+    planks(p, [206, 190, 134]);
+    for (let x = 0; x < 16; x++) { p.set(x, 0, [150, 132, 84]); p.set(x, 1, [176, 158, 104]); }
+    for (let y = 4; y < 13; y++) p.set(4 + Math.round(Math.sin((y - 4) / 8 * Math.PI) * 3), y, [108, 78, 40]);   // a bow
+    for (let y = 4; y < 13; y++) p.set(4, y, [236, 236, 236]);
+    for (let x = 9; x < 14; x++) p.set(x, 8, [120, 90, 50]);
+    p.set(14, 8, [150, 150, 156]); p.set(9, 7, [236, 236, 236]); p.set(9, 9, [236, 236, 236]);
+  },
+  brewing_stand: (p) => metal(p, [206, 172, 64]),
+  loom_side: (p) => {
+    planks(p, [168, 134, 80]);
+    for (let i = 0; i < 16; i++) for (const [x, y] of [[i, 0], [i, 15], [0, i], [15, i]]) p.set(x, y, [112, 84, 46]);
+  },
+  loom_front: (p) => {
+    planks(p, [168, 134, 80]);
+    for (let i = 0; i < 16; i++) for (const [x, y] of [[i, 0], [i, 15], [0, i], [15, i]]) p.set(x, y, [112, 84, 46]);
+    for (let y = 2; y < 14; y++) for (let x = 2; x < 14; x++) p.set(x, y, y > 8 ? jit(x % 4 < 2 ? [176, 40, 40] : [60, 90, 180], 8, p.r) : (x % 2 ? [236, 232, 220] : [70, 52, 30]));
+  },
+  cauldron: (p) => metal(p, [62, 62, 68]),
+  stonecutter_top: (p) => {
+    stone(p);
+    for (let x = 1; x < 15; x++) { p.set(x, 7, [40, 40, 40]); p.set(x, 8, [40, 40, 40]); }
+  },
+  stonecutter_side: (p) => {
+    stone(p);
+    for (let x = 0; x < 16; x++) for (let y = 7; y < 10; y++) p.set(x, y, jit([150, 118, 70], 6, p.r));
+  },
+  // (the saw stands in a box 14 wide and 6 high: the lower rows of the middle of the tile)
+  stonecutter_saw: (p) => p.each((x, y) => {
+    const d = Math.hypot(x - 7.5, y - 15);
+    if (d > 7 || y < 9) return [0, 0, 0, 0];
+    if (d > 6 && (x + y) % 2) return [0, 0, 0, 0];   // teeth
+    return d < 1.5 ? [90, 90, 96] : jit([196, 196, 204], 8, p.r);
+  }),
+});
+
 // Block-breaking crack stages
 function crackPixels() {
   const r = mulberry32(4242);
@@ -1110,11 +1227,54 @@ Object.assign(ART, {
     '..OPPOOOOOOPPO..', '..OPPO....OPPO..', '..OPPO....OPPO..', '..OOOO....OOOO..',
   ],
 });
+// 1.7: fishing, the crossbow and the trident
+Object.assign(ART, {
+  fishing_rod: [
+    '..............SO', '.............SOW', '............SO.W', '...........SO..W',
+    '..........SO...W', '.........SO....W', '........SO.....W', '.......SO......W',
+    '......SO.......W', '.....SO......ORO', '....SO.......ORO', '...SO.........O.',
+    '..SO............', '.SO.............', 'SO..............',
+  ],
+  crossbow: [
+    '.OOOOOOOOO......', 'OSSSSSSSSSO.....', 'OSOWWWWWWOSO....', 'OSW.OIIO.WSO....',
+    'OSW..OSO..WO....', 'OSW..OSSO.W.....', 'OSW...OSSOW.....', 'OSW....OSSO.....',
+    'OSOW....OSSO....', '.OSOWWWW.OSSO...', '..OSSSO...OSSO..', '...OOO.....OSSO.',
+    '............OSO.', '.............O..',
+  ],
+  trident: [
+    '..........O..O.O', '.........OLO.OLO', '..........OLOLHO', '.......O...OLHO.',
+    '......OLO.OLHO..', '.......OLOLHHO..', '........OLHHOO..', '.......OSOLO....',
+    '......OSO.OLO...', '.....OSO...O....', '....OSO.........', '...OSO..........',
+    '..OSO...........', '.OSO............', '.OO.............',
+  ],
+  fish: [
+    '.....OOOOOO.....', '...OOHHHHHHOO.OO', '..OHLHHHHHHHHOHO', '.OHEHHHHHHHHHHHO',
+    '..OHHHHHHHHHHOHO', '...OOhhhhhhOO.OO', '.....OOOOOO.....',
+  ],
+  anvil: [
+    '.OOOOOOOOOOOOOO.', '.OLLLLLLLLLLLhO.', '.OHHHHHHHHHHHhO.', '..OOhHHHHHhOOO..',
+    '....OHHHHhO.....', '....OHHHHhO.....', '...OHHHHHHhO....', '..OLLLLLLLLhO...',
+    '..OHHHHHHHHhO...', '..OOOOOOOOOOO...',
+  ],
+  cauldron: [
+    '.OOOOOOOOOOOOOO.', '.OLO........OhO.', '.OHO........OhO.', '.OHO........OhO.',
+    '.OHO........OhO.', '.OHO........OhO.', '.OHOOOOOOOOOOhO.', '.OHHHHHHHHHHHhO.',
+    '.OhhhhhhhhhhhhO.', '.OOO........OOO.', '.OhO........OhO.', '.OOO........OOO.',
+  ],
+  brewing_stand: [
+    '.......OO.......', '......OYYO......', '......OYYO......', '..OO..OYYO..OO..',
+    '.OWWO.OYYO.OWWO.', '.OWWO.OYYO.OWWO.', 'OPPPPOOYYOOPPPPO', 'OPLPPOOYYOOPLPPO',
+    'OPPPPOOYYOOPPPPO', '.OOOOOOOOOOOOOO.', '.OGGGGGGGGGGGGO.', '.OOOOOOOOOOOOOO.',
+  ],
+});
 const BLOCK_ART_PAL = {
   bed: { O: [60, 30, 20], W: [236, 236, 230], R: [176, 34, 32], B: [120, 88, 50] },
   door: { O: [80, 58, 32], P: [168, 134, 80], W: [190, 220, 230], K: [60, 60, 60] },
   fence: { O: [80, 58, 32], P: [168, 134, 80] },
   sign: { O: [80, 58, 32], P: [176, 142, 88], K: [70, 52, 30], S: [137, 103, 55] },
+  anvil: { O: [22, 22, 26], H: [74, 74, 80], h: [50, 50, 56], L: [110, 110, 118] },
+  cauldron: { O: [20, 20, 24], H: [62, 62, 68], h: [42, 42, 48], L: [96, 96, 104] },
+  brewing_stand: { O: [40, 34, 20], Y: [226, 190, 70], W: [200, 220, 232], P: [150, 40, 160], L: [232, 124, 242], G: [128, 128, 128] },
 };
 const ARMOR_PAL = {
   leather: [[150, 86, 44], [100, 56, 26], [192, 122, 72]],
@@ -1192,6 +1352,15 @@ const ITEM_ART = {
   wailer_tear: ['tear', { O: [150, 180, 190], W: [240, 252, 255], L: [200, 230, 240] }],
   clamper_shell: ['shell', { O: [60, 30, 70], H: [170, 110, 180], h: [120, 70, 130], L: [214, 170, 220] }],
   charred_skull: ['skull', { O: [16, 16, 16], H: [52, 52, 54], h: [30, 30, 32], E: [8, 8, 8] }],
+  enchanted_book: ['book', { O: [40, 16, 60], R: [134, 62, 196], G: [250, 220, 90], W: [240, 234, 220] }],
+  experience_bottle: ['potion', { O: [40, 50, 30], W: [200, 220, 232], P: [150, 214, 40], L: [236, 255, 150] }],
+  fishing_rod: ['fishing_rod', { O: OUT, ...STICK, W: [226, 226, 226], R: [200, 40, 40] }],
+  crossbow: ['crossbow', { O: OUT, ...STICK, W: [222, 222, 222], I: [176, 176, 180] }],
+  trident: ['trident', { O: [16, 60, 56], S: [60, 150, 140], L: [150, 232, 220], H: [84, 190, 178] }],
+  cod: ['fish', pal3([196, 170, 126], [150, 124, 86], [230, 212, 176], { E: [20, 20, 20], O: [84, 66, 40] })],
+  cooked_cod: ['fish', pal3([226, 214, 190], [186, 170, 140], [246, 240, 226], { E: [60, 50, 40], O: [120, 104, 80] })],
+  salmon: ['fish', pal3([214, 92, 76], [160, 60, 52], [240, 150, 130], { E: [20, 20, 20], O: [96, 34, 30] })],
+  cooked_salmon: ['fish', pal3([232, 142, 96], [186, 100, 62], [246, 186, 146], { E: [60, 40, 30], O: [120, 62, 34] })],
 };
 const TOOL_PAL = {
   wooden: [[150, 112, 60], [104, 76, 38], [190, 152, 96]],
@@ -1233,13 +1402,13 @@ export function buildIcons() {
     if (it.isBlock && it.art) {
       canvas = drawAscii(ART[it.art], BLOCK_ART_PAL[it.art]);
     } else if (it.isBlock) {
-      if (it.render === RENDER.CUBE || it.render === RENDER.SLAB) {
+      if (it.render === RENDER.CUBE || it.render === RENDER.SLAB || it.render === RENDER.MODEL) {
         const f = it.faces;
         canvas = isoIcon(TILES[f[2]], TILES[it.facing ? it.front : f[4]], TILES[f[0]], it.render === RENDER.SLAB);
       } else {
         canvas = TILES[it.faces[0]];
       }
-    } else if (it.tool) {
+    } else if (it.tool && TOOL_PAL[it.material]) {
       const [H, h, L] = TOOL_PAL[it.material];
       canvas = drawAscii(ART[it.tool], { O: OUT, H, h, L, ...STICK });
     } else if (it.armor) {

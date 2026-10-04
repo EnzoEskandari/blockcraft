@@ -5,7 +5,8 @@ A block-building survival game that runs in the browser, on laptop or iPad. Feat
 - Procedural worlds
 - Crafting
 - Armor
-- Villages with traders
+- Villages with traders who level up, take jobs and go to bed at night
+- Enchanting, experience levels and achievements
 - Structures
 - Night mobs
 - The Nether and the End, with their mobs, fortresses, bastions, strongholds, end cities and the Void Dragon
@@ -52,6 +53,19 @@ How it works:
 - Each dimension runs on its own, so friends can be in the Overworld, the Nether and the End at the same time. You come back wherever you left.
 - Animals, villagers and dropped items are kept when you walk away.
 - Press **T** (or the **T** button on iPad) to chat.
+
+## Trades & Enchantments (1.7)
+
+- **Experience:** killing monsters, mining ores, smelting, fishing, trading and achievements leave green orbs that fill the bar over the hotbar. Dying leaves some of it where you fell.
+- **Enchanting table** (a book, two diamonds, four obsidian): put in an item and lapis lazuli and pick one of three offers; it costs one to three levels. Bookshelves two blocks from the table, with nothing in between, raise the level it can reach: fifteen bring the best offer to level 30, the most there is. Books can be enchanted too.
+- **Enchantments:** all 39 from Minecraft's table, bow, crossbow, trident and fishing rod, with its numbers: Sharpness, Smite, Bane of Arthropods, Knockback, Fire Aspect, Looting, Sweeping Edge, Efficiency, Silk Touch, Fortune, Unbreaking, Mending, the four Protections, Feather Falling, Thorns, Respiration, Aqua Affinity, Depth Strider, Frost Walker, Soul Speed, Swift Sneak, Power, Punch, Flame, Infinity, Multishot, Piercing, Quick Charge, Loyalty, Impaling, Riptide, Channeling, Luck of the Sea, Lure and the two curses. (There is no weather here, so Channeling calls its lightning under any open sky, and Riptide works in water.)
+- **Anvil** (three iron blocks over four ingots): put a book on an item, join two items of a kind, or mend an item with what it is made of, for levels. **Grindstone:** takes enchantments off and gives some experience back.
+- **Villagers** start as Novices and rise to Apprentice, Journeyman, Expert and Master as you trade with them; each level adds trades (the list shows what is still locked). Librarians sell enchanted books, smiths enchanted tools and armour.
+- **Job blocks:** a villager with no work walks to a free composter (farmer), lectern (librarian), blast furnace (armorer), grindstone (weaponsmith), smithing table (toolsmith), smoker (butcher), fletching table (fletcher), brewing stand (cleric), loom (shepherd), cauldron (leatherworker) or stonecutter (mason) within 16 blocks and takes up its trade. Break the block before it has ever traded and it is out of work again.
+- **Bedtime:** from sunset villagers walk to a bed near home, opening and shutting doors on the way, and sleep until morning. Using a bed one is asleep in sends it to find another.
+- **New items:** fishing rod (cast into water, pull in when the bobber dips), crossbow (hold use to load, press again to shoot), trident (dropped by the Drowned; thrown with use), experience bottles.
+- **Achievements:** 53 of them, in five groups, each worth experience. Press **L** or open them from the game menu. They follow the goals of Minecraft's advancements that can be done here, under Blockcraft's own names.
+- **Diamonds:** half as many veins again, everywhere.
 
 ## Shields and the off hand (1.6.1)
 
@@ -119,7 +133,8 @@ Caves are winding tunnels that slope down gently, branch and open onto the surfa
 
 Updating the game never deletes worlds:
 
-- **Old saves keep loading.** Every block and item keeps its number forever (`tools/ids.json`), and worlds saved by every earlier version are checked against each new one before it ships (`tools/check-saves.html`).
+- **Old saves keep loading.** Every block and item keeps its number forever, and every enchantment, profession and achievement its name (`tools/ids.json`); worlds saved by every earlier version are checked against each new one before it ships (`tools/check-saves.html`).
+- **Explored land is left alone**, the way Minecraft leaves the chunks it has saved. A world remembers which version of the generator first made every chunk anyone has been to (`World.gens`, saved as `gens`), and those chunks are always made that way again. What an update adds to the land (new caves in 1.6, job blocks and door steps in villages in 1.7) only appears in places nobody has seen; a village someone has seen part of is finished the way it was begun. When the generator changes, raise `GEN` in `js/world.js` and make the new part depend on `world.genAt(cx, cz)` (or `plan.gen` for structures).
 - **Updates don't interrupt players.** When Render restarts the server for an update, whoever is running each world sends one last save first. Everyone reconnects by themselves a few seconds later, with the same items. If the page is out of date, the game says to reload it.
 - **The database is never skipped.** If the database can't be reached, the server waits for it instead of saving anywhere temporary. The game still loads, and online worlds open again as soon as the database answers.
 - **Daily backups.** Before each online world's first save of the day, the server keeps a copy of it and of everyone's items, for the last 7 days. To roll a world back, run `node tools/restore.mjs` with your `DATABASE_URL` (instructions at the top of that file).

@@ -19,11 +19,14 @@ export function startPanorama() {
   // where the view is from: a set spot, or (for a scene that is built) the world's spawn, with the scene around it
   P.at = { x: sc.x, y: sc.y, z: sc.z };
   if (sc.build) {
-    const sp = w.findSpawn(), ox = Math.floor(sp.x), oz = Math.floor(sp.z), g = sp.h;
+    // built around the world's spawn, or around a spot the scene names (`at`: the middle of a village, say)
+    const sp = sc.at ? { x: sc.at[0], z: sc.at[1], h: w.column(sc.at[0], sc.at[1]).h } : w.findSpawn();
+    const ox = Math.floor(sp.x), oz = Math.floor(sp.z), g = sp.h;
     sc.build((dx, dy, dz, key, meta = 0) => w.setBlockAnywhere(ox + dx, g + dy, oz + dz, key ? B[key] : 0, meta),
-      (dx, dy, dz, lines) => w.signs.set(`${ox + dx},${g + dy},${oz + dz}`, lines));
-    const v = sc.view || [0, 0];   // where in the scene the view stands
-    P.at = { x: ox + v[0] + 0.5, y: g + 2.62, z: oz + v[1] + 0.5 };
+      (dx, dy, dz, lines) => w.signs.set(`${ox + dx},${g + dy},${oz + dz}`, lines),
+      (dx, dz) => w.column(ox + dx, oz + dz).h - g);   // how much higher the ground is there
+    const v = sc.view || [0, 0];   // where in the scene the view stands (and how high above the ground)
+    P.at = { x: ox + v[0] + 0.5, y: g + (v[2] ?? 2.62), z: oz + v[1] + 0.5 };
   }
   P.world = w;
   P.yaw = sc.yaw || 0;

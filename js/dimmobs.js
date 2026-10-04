@@ -232,7 +232,7 @@ class Fireball {
       e.hurt(dmg, this.pos.x, this.pos.z, 'fireball');
       if (this.kind === 'small') e.addEffect('burn', 5);
     } else if (this.kind === 'large' && this.owner === 'player' && e.type === 'wailer') {
-      e.invul = 0; e.hurt(1000, this.pos.x, this.pos.z, true);   // sending a wailer's fireball back kills it
+      e.invul = 0; e.hurt(1000, this.pos.x, this.pos.z, true, 1, null, { fb: 1 });   // sending a wailer's fireball back kills it
     } else {
       e.invul = 0; e.hurt(dmg, this.pos.x, this.pos.z, this.owner === 'player');
       if (this.kind === 'small' && !e.def.fireImmune) e.fire = 5;
@@ -760,6 +760,18 @@ Object.assign(MOB_TYPES, {
   void_dragon: { name: 'Void Dragon', hp: 200, w: 5, h: 3, speed: 11, persistent: true, heavy: true, boss: true, fireImmune: true, ai: dragonAI, animate: anims.dragon, anim: 'dragon', sound: 'dragon', pitch: 1,
     init: scaled(3), dispose: cleanup, drops: [] },
 });
+// What each mob counts as for Smite (undead), Bane of Arthropods and Impaling, and the experience the
+// special ones leave (other monsters leave 5, animals 1 to 3)
+for (const k of ['zombie', 'husk', 'drowned', 'zombie_villager', 'skeleton', 'stray', 'gloomwing', 'charred_skeleton', 'rotting_snoutling', 'rotting_tusker']) MOB_TYPES[k].undead = true;
+for (const k of ['spider', 'shademite']) MOB_TYPES[k].arthropod = true;
+for (const k of ['drowned', 'clamper']) MOB_TYPES[k].aquatic = true;
+Object.assign(MOB_TYPES.cinder, { xp: 10 });
+Object.assign(MOB_TYPES.snoutling_brute, { xp: 20 });
+Object.assign(MOB_TYPES.shademite, { xp: 3 });
+Object.assign(MOB_TYPES.strider, { xp: [1, 2] });
+Object.assign(MOB_TYPES.void_crystal, { xp: 0 });
+Object.assign(MOB_TYPES.void_dragon, { xp: 1000 });
+
 // Drops with a chance (the charred skull) are rolled here, since the base code only knows min/max
 for (const t of Object.values(MOB_TYPES)) {
   for (const d of t.drops || []) if (d.chance !== undefined && d.chance < 1) { d.roll = d.chance; d.min = 1; d.max = 1; }

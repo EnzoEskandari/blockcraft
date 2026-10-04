@@ -5,10 +5,12 @@ import { R, itemModel, tintModel, brightness } from './render.js';
 import { BLOCKS, ITEMS, ID, B, WOOL_COLORS } from './blocks.js';
 import { moveBox, raycast, rayBox, boxBlocked, touching } from './physics.js';
 import { sfx } from './audio.js';
-import { mulberry32 } from './noise.js';
+import { mulberry32, hashString } from './noise.js';
 import { tileColors } from './textures.js';
 import { CH, SEA, BIOME } from './constants.js';
-import { makeTrades } from './villagers.js';
+import { makeTrades, levelOf, LEVEL_NAMES, PROFESSIONS } from './villagers.js';
+import { villagerPlan, villagerSleep, wake } from './villagerai.js';
+import { cleanEnch, ench, randomBook, randomlyEnchanted } from './enchant.js';
 
 const rand = Math.random;
 const TAU = Math.PI * 2;
@@ -501,7 +503,7 @@ export const MOB_TYPES = {
   chicken: { name: 'Chicken', hp: 4, w: 0.4, h: 0.7, speed: 1.4, sound: 'chicken', pitch: 1.6, drops: [drop('chicken', 1, 1), drop('feather', 0, 2)], anim: 'biped' },
   zombie: { name: 'Zombie', hp: 20, w: 0.6, h: 1.95, speed: 2.4, hostile: true, damage: 3, burns: true, zombieLike: true, sound: 'zombie', pitch: 0.8, drops: [drop('rotten_flesh', 0, 2)], anim: 'human' },
   husk: { name: 'Husk', hp: 20, w: 0.6, h: 1.95, speed: 2.4, hostile: true, damage: 3, hungerHit: true, zombieLike: true, sound: 'zombie', pitch: 0.65, drops: [drop('rotten_flesh', 0, 2)], anim: 'human' },
-  drowned: { name: 'Drowned', hp: 20, w: 0.6, h: 1.95, speed: 1.9, hostile: true, damage: 3, burns: true, swims: true, zombieLike: true, sound: 'zombie', pitch: 1.0, drops: [drop('rotten_flesh', 0, 2)], anim: 'human' },
+  drowned: { name: 'Drowned', hp: 20, w: 0.6, h: 1.95, speed: 1.9, hostile: true, damage: 3, burns: true, swims: true, zombieLike: true, sound: 'zombie', pitch: 1.0, drops: [drop('rotten_flesh', 0, 2), { key: 'trident', min: 1, max: 1, chance: 0.08 }], anim: 'human' },
   zombie_villager: { name: 'Zombie Villager', hp: 20, w: 0.6, h: 1.95, speed: 2.3, hostile: true, damage: 3, burns: true, zombieLike: true, sound: 'zombie', pitch: 0.9, drops: [drop('rotten_flesh', 0, 2)], anim: 'human' },
   skeleton: { name: 'Skeleton', hp: 20, w: 0.6, h: 1.99, speed: 2.5, hostile: true, ranged: 'bow', burns: true, sound: 'skeleton', pitch: 1.3, drops: [drop('bone', 0, 2), drop('arrow', 0, 2)], anim: 'human' },
   stray: { name: 'Stray', hp: 20, w: 0.6, h: 1.99, speed: 2.5, hostile: true, ranged: 'bow', slowArrows: true, burns: true, sound: 'skeleton', pitch: 1.1, drops: [drop('bone', 0, 2), drop('arrow', 0, 2)], anim: 'human' },
@@ -511,7 +513,7 @@ export const MOB_TYPES = {
   slime: { name: 'Slime', hp: 16, w: 2, h: 2, speed: 2.2, hostile: true, slime: true, sound: 'slime', pitch: 1, drops: [], anim: 'slime' },
   shade: { name: 'Shade', hp: 40, w: 0.6, h: 2.6, speed: 3.4, hostile: true, neutral: true, damage: 6, teleports: true, sound: 'shade', pitch: 0.8, drops: [drop('shade_pearl', 0, 1)], anim: 'shade' },
   gloomwing: { name: 'Gloomwing', hp: 20, w: 0.9, h: 0.5, speed: 7, hostile: true, flies: true, sight: 32, burns: true, damage: 2, sound: 'gloomwing', pitch: 1, drops: [drop('gloom_membrane', 0, 1)], anim: 'wing' },
-  pillager: { name: 'Pillager', hp: 24, w: 0.6, h: 1.95, speed: 2.3, hostile: true, always: true, ranged: 'crossbow', persistent: true, sound: 'illager', pitch: 1, drops: [drop('arrow', 0, 2)], anim: 'illager' },
+  pillager: { name: 'Pillager', hp: 24, w: 0.6, h: 1.95, speed: 2.3, hostile: true, always: true, ranged: 'crossbow', persistent: true, sound: 'illager', pitch: 1, drops: [drop('arrow', 0, 2), { key: 'crossbow', min: 1, max: 1, chance: 0.1 }], anim: 'illager' },
   vindicator: { name: 'Vindicator', hp: 24, w: 0.6, h: 1.95, speed: 2.7, hostile: true, always: true, damage: 8, axe: true, huntsVillagers: true, persistent: true, sound: 'illager', pitch: 0.85, drops: [drop('emerald', 0, 1)], anim: 'illager' },
   iron_golem: { name: 'Iron Golem', hp: 100, w: 1.4, h: 2.7, speed: 1.5, golem: true, damage: 12, persistent: true, sound: 'golem', pitch: 0.5, drops: [drop('iron_ingot', 3, 5), drop('poppy', 0, 2)], anim: 'golem' },
   villager: { name: 'Villager', hp: 20, w: 0.6, h: 1.95, speed: 1.5, villager: true, persistent: true, sound: 'villager', pitch: 1, drops: [], anim: 'villager' },
@@ -604,16 +606,93 @@ class Mob {
     if (type === 'vindicator') hold(ID.iron_axe);
     if (def.zombieLike && m.parts.arm0) { m.parts.arm0.rotation.x = -1.5; m.parts.arm1.rotation.x = -1.5; }
     if (type === 'villager') {
-      this.trades = makeTrades(this.prof);
-      const saved = this.key && G.world && G.world.villagerTrades && G.world.villagerTrades.get(this.key);
-      if (saved) saved.forEach((u, i) => { if (this.trades[i]) this.trades[i].uses = u; });
+      m.root.rotation.order = 'YXZ';   // so it can lie down along a bed whichever way the bed points
+      // What it has become: kept with the mob when its chunk unloads, and by its key for villagers the
+      // village brings back (older saves kept only how often each trade was used: those start as Novices)
+      const kept = this.key && G.world && G.world.villagerTrades && G.world.villagerTrades.get(this.key);
+      const st = opts.vst || (kept && !Array.isArray(kept) && typeof kept === 'object' ? kept : null) || {};
+      if (st.p && PROFESSIONS[st.p] && st.p !== this.prof) { this.prof = this.variant = st.p; this.swapModel(); }
+      this.vs = Number.isFinite(st.s) ? st.s >>> 0 : this.key ? (hashString(this.key) ^ ((G.world && G.world.seed) || 0)) >>> 0 : (rand() * 4294967296) >>> 0;   // what its trades are rolled from
+      this.vx = Math.max(0, +st.x || 0);          // its experience as a trader
+      this.job = Array.isArray(st.j) ? st.j.slice(0, 3) : null;    // the job block it works at
+      this.bed = Array.isArray(st.b) ? st.b.slice(0, 3) : null;    // the bed it sleeps in
+      this.sleeping = false;
+      this.trades = makeTrades(this.prof, this.vs);
+      if (Array.isArray(st.u)) st.u.forEach((u, i) => { if (this.trades[i]) this.trades[i].uses = u | 0; });
       this.restockDay = G.day || 0;
     }
   }
 
+  // ------------------------------------------------------------ villagers
+  get level() { return levelOf(this.vx || 0); }
+  villagerState() {
+    const o = { p: this.prof, x: this.vx, s: this.vs, u: this.trades.map((t) => t.uses) };
+    if (this.job) o.j = this.job;
+    if (this.bed) o.b = this.bed;
+    return o;
+  }
+  // Its state changed: remembered under its key, and guests are sent it again
+  villagerChanged() {
+    if (this.proxy) return;
+    if (this.key && G.world && G.world.villagerTrades) G.world.villagerTrades.set(this.key, this.villagerState());
+    this.vDirty = true;
+    this.tradeUI(false);
+  }
+  // Whoever has its trades open sees them change (built again when it has a new level or trade)
+  tradeUI(rebuild) {
+    const c = G.ui && G.ui.container;
+    if (!c || c.kind !== 'trade' || c.data !== this) return;
+    if (rebuild) G.ui.buildContainer('trade', this); else G.ui.refreshContainer();
+  }
+  swapModel() {
+    const old = this.model;
+    if (old) { R.scene.remove(old.root); old.mat.dispose(); }
+    this.model = buildModel('villager', this.prof);
+    this.model.root.rotation.order = 'YXZ';
+    this.model.root.position.set(this.pos.x, this.pos.y, this.pos.z);
+    this.model.root.rotation.y = this.yaw;
+    R.scene.add(this.model.root);
+  }
+  // Takes up a trade (or loses it): new clothes, new things to trade, starting over as a Novice
+  setProf(prof) {
+    if (prof === this.prof) return;
+    this.prof = this.variant = prof;
+    this.vx = 0;
+    this.swapModel();
+    this.trades = makeTrades(prof, this.vs);
+    this.villagerChanged();
+    this.tradeUI(true);
+  }
+  // A trade was made n times: it wears the offer out for the day and earns the villager experience
+  traded(i, n) {
+    const tr = this.trades[i];
+    if (!tr || !(n > 0)) return;
+    const before = this.level;
+    tr.uses = Math.min(tr.max, tr.uses + n);
+    this.vx += tr.xp * n;
+    if (this.level > before) {
+      sfx('levelup', this.pos, { vol: 0.6 });
+      for (let k = 0; k < 20; k++) G.entities.particles.spawn(this.pos.x + (rand() - 0.5) * 0.8, this.pos.y + 0.6 + rand() * 1.4, this.pos.z + (rand() - 0.5) * 0.8, 0, 0.5 + rand(), 0, 0.3, 0.95, 0.35, 0.08, 1, -0.1);
+    }
+    this.villagerChanged();
+    if (this.level > before) this.tradeUI(true);
+    return this.level > before ? `The ${PROFESSIONS[this.prof].name} is now ${/^[AE]/.test(LEVEL_NAMES[this.level - 1]) ? 'an' : 'a'} ${LEVEL_NAMES[this.level - 1]}` : null;
+  }
+  // A guest's copy is told what the host's villager has become
+  applyVillager(o) {
+    if (!o || !this.def.villager) return;
+    const was = this.prof + this.level;
+    if (o.p && o.p !== this.prof && PROFESSIONS[o.p]) { this.prof = this.variant = o.p; this.swapModel(); this.trades = makeTrades(this.prof, this.vs); }
+    if (Number.isFinite(o.vs) && o.vs !== this.vs) { this.vs = o.vs >>> 0; this.trades = makeTrades(this.prof, this.vs); }
+    this.vx = +o.vx || 0;
+    if (Array.isArray(o.u)) o.u.forEach((u, i) => { if (this.trades[i]) this.trades[i].uses = u | 0; });
+    this.tradeUI(was !== this.prof + this.level);
+  }
+
   get center() { return { x: this.pos.x, y: this.pos.y + this.h / 2, z: this.pos.z }; }
 
-  hurt(amount, fromX, fromZ, byPlayer, kb = 1, attacker = null) {
+  // fx: what the weapon adds { fire: seconds of burning, loot: Looting level, arrow: how far the shot flew }
+  hurt(amount, fromX, fromZ, byPlayer, kb = 1, attacker = null, fx = null) {
     if (this.dead || this.invul > 0) return false;
     if (this.proxy) {
       this.invul = 0.5;
@@ -621,10 +700,14 @@ class Mob {
       this.hp = Math.max(0, this.hp - amount);
       sfx('mobhurt', this.pos, { pitch: this.def.pitch });
       if (byPlayer) { G.lastHitMob = this; G.lastHitTime = G.clock; }
-      G.net.send({ k: 'hit', id: this.netId, d: amount, x: fromX, z: fromZ, kb, p: byPlayer ? 1 : 0 });
+      G.net.send({ k: 'hit', id: this.netId, d: amount, x: fromX, z: fromZ, kb, p: byPlayer ? 1 : 0, ...(fx && (fx.fire || fx.loot || fx.arrow || fx.fb) ? { f: fx } : {}) });
       return true;
     }
     if (this.def.damageScale) amount *= this.def.damageScale(this);
+    if (this.sleeping) wake(this);
+    if (fx && fx.fire && !this.def.fireImmune) this.fire = Math.max(this.fire, fx.fire);
+    // whoever hit it last gets its experience (and the luck of their Looting)
+    if (byPlayer) { this.hitBy = byPlayer === 'remote' ? attacker : 'local'; this.hitAt = G.clock; this.hitFx = fx; }
     this.hp -= amount;
     this.invul = 0.5;
     this.hurtTime = 0.35;
@@ -656,11 +739,16 @@ class Mob {
     if (this.def.onDie) this.def.onDie(this, killer);
     if (this.key && G.world) G.world.deadMobs.add(this.key);
     const dropItem = (id, n, x, y, z) => G.entities.dropItem(id, n, x, y, z);
+    // killed by a player a moment ago: they get the experience, and Looting brings more drops
+    const by = this.hitBy && G.clock - this.hitAt < 8 ? this.hitBy : null;
+    const fx = (by && this.hitFx) || {};
+    const loot = fx.loot || 0;
     for (const d of this.def.drops) {
-      if (d.roll !== undefined && rand() >= d.roll) continue;
-      const n = d.min + Math.floor(rand() * (d.max - d.min + 1));
+      if (d.roll !== undefined && rand() >= d.roll + 0.01 * loot) continue;
+      const n = d.roll !== undefined ? 1 : d.min + Math.floor(rand() * (d.max + loot - d.min + 1));
       if (n > 0) dropItem(ID[d.key], n, this.pos.x, this.pos.y + 0.5, this.pos.z);
     }
+    if (by) G.entities.awardKill(by, this, mobXp(this), fx);
     if (this.type === 'sheep') dropItem(55 + this.variant, 1, this.pos.x, this.pos.y + 0.5, this.pos.z);
     if (this.def.slime) {
       if (this.size > 1) {
@@ -711,7 +799,7 @@ class Mob {
 
   hit(t, dmg) {
     if (t.isPlayer) {
-      t.hurt(dmg, this.pos.x, this.pos.z, 'mob', !!this.def.axe);   // an axe knocks a shield down
+      t.hurt(dmg, this.pos.x, this.pos.z, 'mob', !!this.def.axe, this);   // an axe knocks a shield down
       if (this.def.hungerHit) t.addEffect('hunger', 7);
     } else t.hurt(dmg, this.pos.x, this.pos.z, false, 1, this);
   }
@@ -722,7 +810,7 @@ class Mob {
     const r = (v) => Math.round(v * 100) / 100;
     const t = this.target;
     const flags = (this.dead ? 1 : 0) | (this.onGround ? 2 : 0) | (this.angry ? 4 : 0) | (this.drinking > 0 ? 8 : 0)
-      | (this.fire > 0 ? 16 : 0) | (this.mount ? 32 : 0) | (t ? 64 : 0);
+      | (this.fire > 0 ? 16 : 0) | (this.mount ? 32 : 0) | (t ? 64 : 0) | (this.sleeping ? 128 : 0);
     return [this.netId, r(this.pos.x), r(this.pos.y), r(this.pos.z), r(this.yaw), flags, Math.ceil(this.hp), Math.round(this.fuse * 10) / 10,
       t && t.isPlayer ? t.netId ?? -1 : -1];
   }
@@ -733,7 +821,7 @@ class Mob {
     if (this.prof) o.p = this.prof;
     if (this.def.slime) o.s = this.size;
     if (this.baby) o.b = 1;
-    if (this.trades) o.u = this.trades.map((tr) => tr.uses);
+    if (this.trades) { o.u = this.trades.map((tr) => tr.uses); o.vx = this.vx; o.vs = this.vs; }
     o.m = this.maxHp;
     return o;
   }
@@ -749,6 +837,7 @@ class Mob {
     this.drinking = f & 8 ? 1 : 0;
     this.fire = f & 16 ? 1 : 0;
     this.mount = f & 32 ? true : null;
+    this.sleeping = !!(f & 128);
     if (a[6] < this.hp - 0.01 && !this.dead) this.hurtTime = 0.35;
     this.hp = a[6];
     this.fuse = a[7];
@@ -806,6 +895,12 @@ class Mob {
         this.removed = true;
       }
       return;
+    }
+
+    // a villager asleep stays in its bed until morning
+    if (this.sleeping) {
+      villagerSleep(this);
+      if (this.sleeping) { this.animate(dt, 0, 99); return; }
     }
 
     this.retarget -= dt;
@@ -912,10 +1007,15 @@ class Mob {
           }
         }
       }
+      // villagers have places to be: a job block to claim or work at, a bed at night
+      const plan = def.villager && ai.panic <= 0 ? villagerPlan(this, dt) : null;
+      this.planned = plan;
       if (ai.panic > 0) {
         ai.panic -= dt;
         if (ai.t <= 0) { ai.dir = rand() * TAU; ai.t = 0.6 + rand() * 0.6; }
         mx = Math.sin(ai.dir); mz = Math.cos(ai.dir); speed = def.speed * 1.9;
+      } else if (plan) {
+        mx = plan.mx; mz = plan.mz; speed = plan.speed;
       } else {
         if (ai.t <= 0) {
           ai.walk = rand() < (def.golem ? 0.3 : 0.45);
@@ -931,7 +1031,7 @@ class Mob {
           if (this.onGround && this.hopCd <= 0 && ai.walk) { this.hopCd = 1.5 + rand() * 2; this.vel.y = 5 + this.size * 0.5; this.vel.x = Math.sin(ai.dir) * 2; this.vel.z = Math.cos(ai.dir) * 2; }
         } else if (ai.walk) { mx = Math.sin(ai.dir); mz = Math.cos(ai.dir); speed = def.speed * 0.6; }
       }
-      if (speed && this.onGround && !this.safeAhead(mx, mz)) { ai.dir += Math.PI; ai.t = 1; mx = -mx; mz = -mz; }
+      if (!plan && speed && this.onGround && !this.safeAhead(mx, mz)) { ai.dir += Math.PI; ai.t = 1; mx = -mx; mz = -mz; }
       if (speed) this.yaw = Math.atan2(mx, mz);
       this.fuse = Math.max(0, this.fuse - dt);
     }
@@ -939,7 +1039,7 @@ class Mob {
     // Villagers restock their trades each morning
     if (def.villager && (G.day || 0) !== this.restockDay && G.time < 0.1) {
       this.restockDay = G.day || 0;
-      this.trades.forEach((tr) => { tr.uses = 0; });
+      if (this.trades.some((tr) => tr.uses)) { this.trades.forEach((tr) => { tr.uses = 0; }); this.villagerChanged(); }
     }
 
     this.burnCheck(dt);
@@ -977,9 +1077,10 @@ class Mob {
     let jump = false;
     if ((res.x || res.z) && speed) {
       if (def.climbs) this.vel.y = 4;
-      else if (this.onGround || this.inWater) jump = true;
+      else if ((this.onGround || this.inWater) && !(this.planned && !this.planned.jump && !this.inWater)) jump = true;
     }
-    if (jump) this.vel.y = 8.6;
+    // (a villager on its way somewhere jumps a little higher, so a slow frame rate never keeps it off a step)
+    if (jump) this.vel.y = def.villager && this.planned ? 9.3 : 8.9;   // (8.9: enough to clear a block even at 20 frames a second)
     if (res.x) this.vel.x = 0;
     if (res.z) this.vel.z = 0;
 
@@ -1149,6 +1250,15 @@ class Mob {
     this.phase += hs * dt * 5;
     const sw = Math.sin(this.phase) * Math.min(1, hs / 1.5) * 0.9;
     const root = m.root;
+    if (this.sleeping) {
+      // flat on its back along the bed, head on the pillow
+      root.position.set(this.pos.x + Math.sin(this.yaw) * 0.85, this.pos.y + 0.12, this.pos.z + Math.cos(this.yaw) * 0.85);
+      root.rotation.set(-Math.PI / 2, this.yaw, 0);
+      if (P.leg0) { P.leg0.rotation.x = 0; P.leg1.rotation.x = 0; }
+      tintModel(root, lightAt(this.pos.x, this.pos.y + 0.5, this.pos.z), this.hurtTime > 0 ? 0.6 : 0);
+      return;
+    }
+    if (root.rotation.x && def.villager) root.rotation.x = 0;
     root.position.set(this.pos.x, this.pos.y, this.pos.z);
     let d = this.yaw - (root.rotation.y || 0);
     d = Math.atan2(Math.sin(d), Math.cos(d));
@@ -1229,8 +1339,9 @@ class Mob {
 
 // ---------------------------------------------------------------- dropped items
 class ItemEntity {
-  constructor(id, count, x, y, z, vx, vy, vz, dmg) {
+  constructor(id, count, x, y, z, vx, vy, vz, dmg, e) {
     this.id = id; this.count = count; this.dmg = dmg || 0;
+    this.e = e || null;   // its enchantments
     this.pos = { x, y, z };
     this.vel = { x: vx, y: vy, z: vz };
     this.hw = 0.125; this.h = 0.25;
@@ -1278,7 +1389,7 @@ class ItemEntity {
             if (room > 0) { this.askT = G.clock; G.net.send({ k: 'pick', n: this.netId, r: room }); }
           }
         } else {
-          const left = p.inv.add(this.id, this.count, this.dmg);
+          const left = p.inv.add(this.id, this.count, this.dmg, this.e);
           if (left < this.count) {
             sfx('pop', null, { vol: 0.5 });
             G.ui && G.ui.invChanged();
@@ -1308,6 +1419,7 @@ class ItemEntity {
 // ---------------------------------------------------------------- arrows
 const arrowGeo = new THREE.BoxGeometry(0.05, 0.05, 0.55);
 const arrowHeadGeo = new THREE.BoxGeometry(0.09, 0.09, 0.1);
+const tridentGeo = [new THREE.BoxGeometry(0.06, 0.06, 1.4), new THREE.BoxGeometry(0.42, 0.06, 0.06), new THREE.BoxGeometry(0.06, 0.06, 0.38)];
 class Arrow {
   constructor(x, y, z, vx, vy, vz, owner, opts = {}) {
     this.pos = { x, y, z };
@@ -1316,16 +1428,33 @@ class Arrow {
     this.shooter = opts.shooter || null;
     this.damage = opts.damage || null;
     this.effect = opts.effect || null;
+    // from the bow or crossbow that shot it: harder hits, knockback, fire, arrows that go through mobs,
+    // and ones that can't be picked up again (Infinity, Multishot's extra two)
+    this.mul = opts.mul || 1; this.punch = opts.punch || 0; this.flame = !!opts.flame; this.pierce = opts.pierce || 0; this.keep = !!opts.keep;
+    this.from = { x, y, z };
+    this.hits = null;
+    this.bolt = !!opts.bolt;          // shot from a crossbow
+    this.shot = opts.shot || 0;       // which shot it belongs to (one crossbow shot can kill several)
+    this.trident = opts.trident || null;   // a thrown trident: the stack itself, picked up again where it lands
     this.stuck = false;
     this.age = 0;
     this.removed = false;
     const g = new THREE.Group();
-    this.mat = new THREE.MeshBasicMaterial({ color: this.effect === 'slow' ? 0x6a7a8a : 0x8a6a3a });
-    this.headMat = new THREE.MeshBasicMaterial({ color: 0x9a9a9a });
-    const shaft = new THREE.Mesh(arrowGeo, this.mat);
-    const head = new THREE.Mesh(arrowHeadGeo, this.headMat);
-    head.position.z = 0.3;
-    g.add(shaft, head);
+    this.mat = new THREE.MeshBasicMaterial({ color: this.trident ? 0x4fb8aa : this.effect === 'slow' ? 0x6a7a8a : 0x8a6a3a });
+    this.headMat = new THREE.MeshBasicMaterial({ color: this.trident ? 0x8fe6da : 0x9a9a9a });
+    if (this.trident) {
+      // a long shaft with a crossbar and three prongs
+      g.add(new THREE.Mesh(tridentGeo[0], this.mat));
+      const bar = new THREE.Mesh(tridentGeo[1], this.mat);
+      bar.position.z = 0.5;
+      g.add(bar);
+      for (const px of [-0.17, 0, 0.17]) { const pr = new THREE.Mesh(tridentGeo[2], this.headMat); pr.position.set(px, 0, 0.7); g.add(pr); }
+    } else {
+      const shaft = new THREE.Mesh(arrowGeo, this.mat);
+      const head = new THREE.Mesh(arrowHeadGeo, this.headMat);
+      head.position.z = 0.3;
+      g.add(shaft, head);
+    }
     this.mesh = g;
     R.scene.add(g);
     this.orient();
@@ -1338,10 +1467,11 @@ class Arrow {
   update(dt) {
     this.age += dt;
     const p = G.player;
+    if (this.trident && (this.returning || this.stuck) && this.tridentRest(dt, p)) return;
     if (this.stuck) {
       if (this.owner === 'player' && !p.dead && this.age > 0.5) {
         const dx = p.pos.x - this.pos.x, dy = p.pos.y + 0.8 - this.pos.y, dz = p.pos.z - this.pos.z;
-        if (dx * dx + dy * dy + dz * dz < 2.5 && p.inv.add(ID.arrow, 1) === 0) { sfx('pop', null, { vol: 0.4 }); G.ui.invChanged(); this.removed = true; }
+        if (!this.keep && dx * dx + dy * dy + dz * dz < 2.5 && p.inv.add(ID.arrow, 1) === 0) { sfx('pop', null, { vol: 0.4 }); G.ui.invChanged(); this.removed = true; }
       }
       if (this.age > 40) this.removed = true;
       return;
@@ -1352,14 +1482,23 @@ class Arrow {
     if (len < 1e-6) return;
     const dx = sx / len, dy = sy / len, dz = sz / len;
     const speed = Math.hypot(this.vel.x, this.vel.y, this.vel.z);
-    const dmg = this.damage || Math.round(speed * 0.2) + 1;
+    const dmg = (this.damage || Math.round(speed * 0.2) + 1) * this.mul;
     for (const m of G.entities.mobs) {
-      if (this.owner === 'fx') break;
-      if (m.dead || m === this.shooter || m === (this.shooter && this.shooter.mount)) continue;
+      if (this.owner === 'fx' || this.spent) break;
+      if (m.dead || m === this.shooter || m === (this.shooter && this.shooter.mount) || (this.hits && this.hits.has(m))) continue;
       const t = rayBox(this.pos.x, this.pos.y, this.pos.z, dx, dy, dz, m.pos.x - m.hw, m.pos.y, m.pos.z - m.hw, m.pos.x + m.hw, m.pos.y + m.h, m.pos.z + m.hw);
       if (t >= 0 && t <= len) {
-        m.hurt(this.owner === 'player' ? dmg : Math.min(dmg, 5), this.pos.x, this.pos.z, this.owner === 'player', 1, this.shooter);
+        const mine = this.owner === 'player';
+        const far = Math.hypot(m.pos.x - this.from.x, m.pos.z - this.from.z);
+        // (a trident with Impaling hits harder what lives in, or stands in, water)
+        const imp = this.trident ? ench(this.trident, 'impaling') : 0;
+        m.hurt((mine ? dmg : Math.min(dmg, 5)) + (imp && (m.inWater || m.def.aquatic) ? 2.5 * imp : 0), this.pos.x, this.pos.z, mine, 1 + 0.75 * this.punch, this.shooter,
+          mine ? { fire: this.flame ? 5 : 0, arrow: far, bolt: this.bolt ? 1 : 0, shot: this.shot } : null);
         sfx('arrowhit', m.pos);
+        if (mine && G.adv) G.adv.shot(m, far, this);
+        if (this.trident) { this.tridentHit(m); return; }
+        // Piercing: it flies on through this many more
+        if (this.pierce > 0) { this.pierce--; (this.hits || (this.hits = new Set())).add(m); continue; }
         this.removed = true;
         return;
       }
@@ -1399,9 +1538,237 @@ class Arrow {
       this.pos.x += sx; this.pos.y += sy; this.pos.z += sz;
     }
     this.orient();
-    if (this.age > 20 || this.pos.y < -20) this.removed = true;
+    if (this.trident && this.pos.y < -10 && ench(this.trident, 'loyalty')) { this.returning = true; return; }
+    if ((this.age > 20 && !this.trident) || this.pos.y < -20) this.removed = true;
+  }
+
+  // A trident that has hit something: Channeling calls lightning down on a mob under the open sky, then it
+  // drops (or, with Loyalty, flies back)
+  tridentHit(m) {
+    if (ench(this.trident, 'channeling') && G.world.getLight(Math.floor(m.pos.x), Math.floor(m.pos.y + m.h), Math.floor(m.pos.z))[0] >= 15) {
+      G.entities.lightning(m.pos.x, m.pos.y, m.pos.z);
+      m.invul = 0;
+      m.hurt(5, this.pos.x, this.pos.z, true, 0.2, null, { fire: 5 });
+      if (G.adv && m.def.villager) G.adv.did('lightning_villager');
+    }
+    this.spent = true;
+    if (ench(this.trident, 'loyalty')) this.returning = true;
+    else this.tridentDrop();
+  }
+
+  // Without Loyalty it lies where it fell as an item, kept with the world like any other
+  tridentDrop() {
+    const st = this.trident;
+    G.entities.dropItem(st.id, 1, this.pos.x, this.pos.y + 0.1, this.pos.z, 0, 1.5, 0, st.dmg, st.e).pickupDelay = 0.4;
+    this.removed = true;
+  }
+
+  // A trident at rest waits to be picked up; one with Loyalty flies back to the hand. True: nothing more to do this frame
+  tridentRest(dt, p) {
+    const st = this.trident;
+    const back = () => {
+      const left = p.inv.add(st.id, 1, st.dmg, st.e);
+      if (left) G.entities.dropItem(st.id, 1, p.pos.x, p.pos.y + 1, p.pos.z, 0, 2, 0, st.dmg, st.e);
+      sfx('pop', null, { vol: 0.4 });
+      G.ui.invChanged();
+      this.removed = true;
+    };
+    const dx = p.pos.x - this.pos.x, dy = p.pos.y + 1 - this.pos.y, dz = p.pos.z - this.pos.z, d = Math.hypot(dx, dy, dz) || 1;
+    if (this.returning) {
+      if (p.dead) { this.returning = false; this.stuck = true; return true; }
+      const v = (14 + 5 * ench(st, 'loyalty')) * dt;
+      if (d < 1.2 || d < v) { back(); return true; }
+      this.pos.x += dx / d * v; this.pos.y += dy / d * v; this.pos.z += dz / d * v;
+      this.vel.x = -dx; this.vel.y = -dy; this.vel.z = -dz;   // it flies back handle first
+      this.orient();
+      return true;
+    }
+    if (ench(st, 'loyalty')) { if (this.age > 0.3) this.returning = true; }
+    else this.tridentDrop();
+    return true;
   }
   dispose() { R.scene.remove(this.mesh); this.mat.dispose(); this.headMat.dispose(); }
+}
+
+// A flash of lightning (Channeling): a jagged white column that lasts a moment
+class Lightning {
+  constructor(x, y, z) {
+    this.age = 0; this.removed = false;
+    this.mat = new THREE.MeshBasicMaterial({ color: 0xe8f0ff, fog: false });
+    this.mesh = new THREE.Group();
+    let ox = 0, oz = 0;
+    for (let k = 0; k < 8; k++) {
+      const seg = new THREE.Mesh(new THREE.BoxGeometry(0.22, 6.2, 0.22), this.mat);
+      const nx = (rand() - 0.5) * 1.6, nz = (rand() - 0.5) * 1.6;
+      seg.position.set(x + (ox + nx) / 2, y + 3 + k * 6, z + (oz + nz) / 2);
+      seg.rotation.z = Math.atan2(ox - nx, 6); seg.rotation.x = Math.atan2(nz - oz, 6);
+      ox = nx; oz = nz;
+      this.mesh.add(seg);
+    }
+    R.scene.add(this.mesh);
+    sfx('thunder', { x, y, z }, { vol: 1.2 });
+    G.shake = Math.max(G.shake || 0, 0.5);
+  }
+  update(dt) {
+    this.age += dt;
+    this.mesh.visible = Math.floor(this.age * 30) % 2 === 0;
+    if (this.age > 0.35) this.removed = true;
+  }
+  dispose() { R.scene.remove(this.mesh); this.mesh.children.forEach((c) => c.geometry.dispose()); this.mat.dispose(); }
+}
+
+// ---------------------------------------------------------------- fishing
+// The bobber of a fishing rod: thrown out, it floats until something bites; reel it in while it is pulled under
+const bobGeo = new THREE.BoxGeometry(0.14, 0.14, 0.14);
+const JUNK = ['leather_boots', 'leather', 'bone', 'string', 'stick', 'rotten_flesh'];
+class Bobber {
+  constructor(p, rod, dir) {
+    this.rod = rod;
+    this.pos = { x: p.pos.x + dir.dx * 0.6, y: p.eyeY - 0.1 + dir.dy * 0.6, z: p.pos.z + dir.dz * 0.6 };
+    this.vel = { x: dir.dx * 13, y: dir.dy * 13 + 2.5, z: dir.dz * 13 };
+    this.state = 'fly';
+    this.wait = 0; this.bite = 0;
+    this.age = 0; this.removed = false;
+    this.mesh = new THREE.Group();
+    this.mats = [new THREE.MeshBasicMaterial({ color: 0xd83a2e }), new THREE.MeshBasicMaterial({ color: 0xf2f2f2 }), new THREE.LineBasicMaterial({ color: 0x2a2a2a })];
+    const top = new THREE.Mesh(bobGeo, this.mats[0]), bottom = new THREE.Mesh(bobGeo, this.mats[1]);
+    top.position.y = 0.07; bottom.position.y = -0.07;
+    this.mesh.add(top, bottom);
+    this.lineGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+    this.line = new THREE.Line(this.lineGeo, this.mats[2]);
+    this.line.frustumCulled = false;
+    R.scene.add(this.mesh, this.line);
+    sfx('cast', null, { vol: 0.6 });
+  }
+  newWait() { this.wait = Math.max(1, 5 + rand() * 25 - 5 * ench(this.rod, 'lure')); }
+  update(dt) {
+    const w = G.world, p = G.player;
+    this.age += dt;
+    const far = Math.hypot(p.pos.x - this.pos.x, p.pos.y - this.pos.y, p.pos.z - this.pos.z);
+    if (p.dead || p.inv.held !== this.rod || far > 33) { this.removed = true; if (G.entities.bobber === this) G.entities.bobber = null; return; }
+    const here = () => w.getBlock(Math.floor(this.pos.x), Math.floor(this.pos.y), Math.floor(this.pos.z));
+    if (this.state === 'fly') {
+      this.vel.y -= 22 * dt;
+      const sx = this.vel.x * dt, sy = this.vel.y * dt, sz = this.vel.z * dt, len = Math.hypot(sx, sy, sz) || 1e-6;
+      const hit = raycast(w, this.pos.x, this.pos.y, this.pos.z, sx / len, sy / len, sz / len, len, (id) => BLOCKS[id].solid);
+      if (hit) { this.pos.x += sx / len * hit.dist; this.pos.y += sy / len * hit.dist + 0.08; this.pos.z += sz / len * hit.dist; this.state = 'land'; }
+      else { this.pos.x += sx; this.pos.y += sy; this.pos.z += sz; }
+      if (here() === B.water) { this.state = 'float'; this.newWait(); sfx('splash', this.pos, { vol: 0.4 }); }
+    } else if (this.state === 'float') {
+      // up to the surface, then waiting; a bite pulls it under for a moment
+      if (here() !== B.water) this.state = 'land';
+      else {
+        let top = Math.floor(this.pos.y);
+        while (top < CH - 1 && w.getBlock(Math.floor(this.pos.x), top + 1, Math.floor(this.pos.z)) === B.water) top++;
+        const rest = top + 0.82 - (this.bite > 0 ? 0.3 : 0) + Math.sin(this.age * 3) * 0.02;
+        this.pos.y += (rest - this.pos.y) * Math.min(1, dt * 6);
+        if (this.bite > 0) { this.bite -= dt; if (this.bite <= 0) this.newWait(); }
+        else {
+          this.wait -= dt;
+          if (this.wait <= 0) {
+            this.bite = 1.3;
+            sfx('bite', this.pos, { vol: 0.9 });
+            for (let i = 0; i < 12; i++) G.entities.particles.spawn(this.pos.x + (rand() - 0.5) * 0.5, this.pos.y + 0.1, this.pos.z + (rand() - 0.5) * 0.5, (rand() - 0.5) * 2, 1.5 + rand() * 1.5, (rand() - 0.5) * 2, 0.7, 0.8, 1, 0.06, 0.5, 1);
+          }
+        }
+      }
+    }
+    this.mesh.position.set(this.pos.x, this.pos.y, this.pos.z);
+    // the line, from the tip of the rod
+    const d = p.lookDir(), a = this.lineGeo.attributes.position;
+    a.setXYZ(0, p.pos.x + d.x * 0.7 + Math.cos(p.yaw) * 0.3, p.eyeY - 0.25 + d.y * 0.4, p.pos.z + d.z * 0.7 - Math.sin(p.yaw) * 0.3);
+    a.setXYZ(1, this.pos.x, this.pos.y + 0.1, this.pos.z);
+    a.needsUpdate = true;
+  }
+  // What comes up when the line is pulled in: a stack if something was biting, else nothing
+  reel() {
+    if (this.state !== 'float' || this.bite <= 0) return null;
+    const luck = ench(this.rod, 'luck_of_the_sea');
+    const treasure = 0.05 + 0.021 * luck, junk = Math.max(0, 0.1 - 0.0195 * luck);
+    const r = rand();
+    if (r < treasure) {
+      const k = Math.floor(rand() * 3);
+      if (k === 0) return randomBook(rand, true);
+      return randomlyEnchanted(rand, k === 1 ? ID.bow : ID.fishing_rod, 22 + Math.floor(rand() * 9), true);
+    }
+    if (r < treasure + junk) {
+      const id = ID[JUNK[Math.floor(rand() * JUNK.length)]];
+      return { id, count: 1, dmg: ITEMS[id].durability ? Math.floor(ITEMS[id].durability * (0.5 + rand() * 0.4)) : 0 };
+    }
+    return { id: rand() < 0.7 ? ID.cod : ID.salmon, count: 1, dmg: 0 };
+  }
+  dispose() { R.scene.remove(this.mesh, this.line); this.lineGeo.dispose(); this.mats.forEach((m) => m.dispose()); }
+}
+
+// ---------------------------------------------------------------- experience orbs
+// Each player sees their own: a kill, an ore or a trade leaves orbs that drift to you and fill the level bar
+let orbMat = null;
+function orbMaterial() {
+  if (orbMat) return orbMat;
+  const c = document.createElement('canvas');
+  c.width = c.height = 16;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(8, 8, 0.5, 8, 8, 8);
+  grad.addColorStop(0, 'rgba(255,255,255,1)'); grad.addColorStop(0.35, 'rgba(255,255,255,0.9)'); grad.addColorStop(0.7, 'rgba(255,255,255,0.35)'); grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad; g.fillRect(0, 0, 16, 16);
+  const tex = new THREE.CanvasTexture(c);
+  tex.magFilter = THREE.NearestFilter;
+  orbMat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, fog: false });
+  return orbMat;
+}
+class XpOrb {
+  constructor(x, y, z, value, wait = 0.4) {
+    this.pos = { x, y, z };
+    this.vel = { x: (rand() - 0.5) * 3, y: 2 + rand() * 2.5, z: (rand() - 0.5) * 3 };
+    this.hw = 0.1; this.h = 0.2;
+    this.value = value;
+    this.wait = wait;
+    this.age = 0;
+    this.removed = false;
+    this.mesh = new THREE.Sprite(orbMaterial());
+    this.mesh.scale.setScalar(0.22 + Math.min(0.3, Math.sqrt(value) * 0.03));
+    R.scene.add(this.mesh);
+  }
+  update(dt) {
+    const w = G.world, p = G.player;
+    this.age += dt;
+    const dx = p.pos.x - this.pos.x, dy = p.pos.y + 0.9 - this.pos.y, dz = p.pos.z - this.pos.z;
+    const d = Math.hypot(dx, dy, dz) || 1;
+    const drawn = !p.dead && this.age > this.wait && d < 7.25;
+    if (drawn) {
+      // drawn to the player, faster the closer it gets
+      const pull = (1 - d / 7.25) * 70 * dt;
+      this.vel.x += (dx / d) * pull; this.vel.y += (dy / d) * pull; this.vel.z += (dz / d) * pull;
+      const sp = Math.hypot(this.vel.x, this.vel.y, this.vel.z);
+      if (sp > 11) { this.vel.x *= 11 / sp; this.vel.y *= 11 / sp; this.vel.z *= 11 / sp; }
+      if (d < 1.2) {
+        p.addXp(this.value);
+        sfx('xp', null, { vol: 0.45, pitch: 0.8 + rand() * 0.6 });
+        this.removed = true;
+        return;
+      }
+    }
+    this.vel.y -= (drawn ? 6 : 20) * dt;
+    const res = moveBox(w, this, this.vel.x * dt, this.vel.y * dt, this.vel.z * dt);
+    if (res.y) this.vel.y = res.ground ? Math.abs(this.vel.y) * 0.3 : 0;
+    const f = res.ground ? Math.max(0, 1 - 6 * dt) : Math.max(0, 1 - 0.6 * dt);
+    this.vel.x *= f; this.vel.z *= f;
+    if (res.x) this.vel.x = 0;
+    if (res.z) this.vel.z = 0;
+    if (this.age > 300 || this.pos.y < -20) this.removed = true;
+    this.mesh.position.set(this.pos.x, this.pos.y + 0.12 + Math.sin(this.age * 5) * 0.03, this.pos.z);
+  }
+  dispose() { R.scene.remove(this.mesh); }
+}
+
+// What a mob leaves when a player kills it
+function mobXp(m) {
+  const d = m.def;
+  if (d.slime) return m.size;
+  if (d.xp !== undefined) return Array.isArray(d.xp) ? d.xp[0] + Math.floor(rand() * (d.xp[1] - d.xp[0] + 1)) : d.xp;
+  if (d.villager || d.golem) return 0;
+  if (d.hostile) return m.baby ? 12 : 5;
+  return 1 + Math.floor(rand() * 3);
 }
 
 // ---------------------------------------------------------------- thrown potions and pearls
@@ -1426,7 +1793,7 @@ class Thrown {
     const dx = sx / len, dy = sy / len, dz = sz / len;
     const p = G.player;
     let impact = null;
-    if (this.kind !== 'pearl' && !p.dead) {
+    if (this.kind !== 'pearl' && this.kind !== 'xp' && !p.dead) {
       const t = rayBox(this.pos.x, this.pos.y, this.pos.z, dx, dy, dz, p.pos.x - p.hw, p.pos.y, p.pos.z - p.hw, p.pos.x + p.hw, p.pos.y + p.h, p.pos.z + p.hw);
       if (t >= 0 && t <= len) impact = t;
     }
@@ -1459,6 +1826,13 @@ class Thrown {
         p.hurt(5, null, null, 'pearl');
       }
       sfx('teleport', this.pos);
+      return;
+    }
+    if (this.kind === 'xp') {
+      // an experience bottle bursts into orbs
+      for (let i = 0; i < 16; i++) P.spawn(this.pos.x, this.pos.y + 0.2, this.pos.z, (rand() - 0.5) * 4, rand() * 3, (rand() - 0.5) * 4, 0.6, 1, 0.3, 0.08, 0.6, 0.4);
+      sfx('splash_potion', this.pos);
+      G.entities.spawnXp(this.pos.x, this.pos.y + 0.3, this.pos.z, 3 + Math.floor(rand() * 9), 0.2);
       return;
     }
     const c = POTION_COLORS[this.kind];
@@ -1579,6 +1953,7 @@ export class Entities {
     this.tnts = [];
     this.thrown = [];
     this.projectiles = [];   // fireballs, clamper bullets, thrown eyes (dimmobs.js)
+    this.orbs = [];          // experience orbs (this player's own)
     this.particles = new Particles();
     this.spawnTimer = 0;
   }
@@ -1594,19 +1969,45 @@ export class Entities {
   }
 
   // In multiplayer every item lives on the host, so everyone sees the same items; a guest asks the host to drop one
-  dropItem(id, count, x, y, z, vx, vy, vz, dmg) {
+  dropItem(id, count, x, y, z, vx, vy, vz, dmg, e) {
     if (!id || count <= 0) return { pickupDelay: 0.6 };
     vx = vx ?? (rand() - 0.5) * 3; vy = vy ?? 3 + rand() * 2; vz = vz ?? (rand() - 0.5) * 3;
-    if (isClient()) return G.net.requestDrop(id, count, x, y, z, vx, vy, vz, dmg || 0);
-    const it = new ItemEntity(id, count, x, y, z, vx, vy, vz, dmg);
+    if (isClient()) return G.net.requestDrop(id, count, x, y, z, vx, vy, vz, dmg || 0, e || null);
+    const it = new ItemEntity(id, count, x, y, z, vx, vy, vz, dmg, e);
     this.items.push(it);
     return it;
   }
-  dropShared(id, count, x, y, z, vx, vy, vz, dmg) { return this.dropItem(id, count, x, y, z, vx, vy, vz, dmg); }
+  dropShared(id, count, x, y, z, vx, vy, vz, dmg, e) { return this.dropItem(id, count, x, y, z, vx, vy, vz, dmg, e); }
 
-  // A guest's copy of one of the host's items: [id, x, y, z, count, itemId, dmg, pickup delay left]
+  // Experience for this player, as orbs to walk into (a handful at most; the bigger the amount, the bigger the orbs)
+  spawnXp(x, y, z, amount, wait) {
+    amount = Math.floor(amount);
+    if (!(amount > 0) || !G.player || G.player.creative) return;
+    const sizes = [149, 73, 37, 17, 7, 3, 1];
+    let n = 0;
+    while (amount > 0) {
+      const v = n >= 9 ? amount : sizes.find((q) => q <= amount);
+      this.orbs.push(new XpOrb(x, y, z, v, wait));
+      amount -= v; n++;
+    }
+  }
+
+  // A mob was killed by a player: that player gets its experience (and it counts for their achievements)
+  awardKill(by, mob, xp, fx) {
+    const info = { t: mob.type, x: Math.round(mob.pos.x * 10) / 10, y: Math.round(mob.pos.y * 10) / 10, z: Math.round(mob.pos.z * 10) / 10, n: xp, a: fx.arrow || 0, b: fx.bolt || 0, s: fx.shot || 0, f: fx.fb || 0 };
+    if (by === 'local') this.gotKill(info);
+    else if (by && by.id != null && G.net) G.net.sendTo(by.id, { k: 'xp', ...info });
+  }
+  gotKill(info) {
+    if (info.n) this.spawnXp(info.x, info.y + 0.4, info.z, info.n);
+    if (G.adv) G.adv.kill(info);
+  }
+  // a whole stack, enchantments and all
+  dropStack(s, x, y, z, vx, vy, vz) { return this.dropItem(s.id, s.count, x, y, z, vx, vy, vz, s.dmg, s.e); }
+
+  // A guest's copy of one of the host's items: [id, x, y, z, count, itemId, dmg, pickup delay left, enchantments]
   spawnItemProxy(a) {
-    const it = new ItemEntity(a[5], a[4], a[1], a[2], a[3], 0, 0, 0, a[6]);
+    const it = new ItemEntity(a[5], a[4], a[1], a[2], a[3], 0, 0, 0, a[6], cleanEnch(a[8]));
     it.proxy = true;
     it.netId = a[0];
     it.net = { x: a[1], y: a[2], z: a[3] };
@@ -1626,7 +2027,7 @@ export class Entities {
 
   entityData(e) {
     const r = (v) => Math.round(v * 100) / 100;
-    if (e instanceof ItemEntity) return { i: e.id, c: e.count, d: e.dmg || 0, x: r(e.pos.x), y: r(e.pos.y), z: r(e.pos.z) };
+    if (e instanceof ItemEntity) return { i: e.id, c: e.count, d: e.dmg || 0, x: r(e.pos.x), y: r(e.pos.y), z: r(e.pos.z), ...(e.e ? { e: e.e } : {}) };
     const d = { t: e.type, x: r(e.pos.x), y: r(e.pos.y), z: r(e.pos.z), yaw: r(e.yaw), hp: e.hp };
     if (e.type === 'sheep') d.v = e.variant;
     if (e.prof) d.p = e.prof;
@@ -1635,7 +2036,7 @@ export class Entities {
     if (e.key) d.k = e.key;
     if (e.home) d.h = { x: r(e.home.x), y: r(e.home.y), z: r(e.home.z) };
     if (e.persistent) d.P = 1;
-    if (e.trades) d.u = e.trades.map((t) => t.uses);
+    if (e.trades) d.vst = e.villagerState();
     return d;
   }
 
@@ -1664,13 +2065,12 @@ export class Entities {
     w.stored.delete(k);
     for (const d of st.m || []) {
       if (d.k && (w.deadMobs.has(d.k) || this.mobs.some((m) => m.key === d.k))) continue;
-      const m = this.spawnMob(d.t, d.x, d.y, d.z, { variant: d.v, prof: d.p, size: d.s, baby: !!d.b, key: d.k, home: d.h, persistent: !!d.P });
+      const m = this.spawnMob(d.t, d.x, d.y, d.z, { variant: d.v, prof: d.p, size: d.s, baby: !!d.b, key: d.k, home: d.h, persistent: !!d.P, vst: d.vst && typeof d.vst === 'object' ? d.vst : null });
       if (d.hp) m.hp = Math.min(m.maxHp, d.hp);
       m.yaw = d.yaw || 0;
-      if (d.u && m.trades) d.u.forEach((u, i) => { if (m.trades[i]) m.trades[i].uses = u; });
     }
     for (const d of st.i || []) {
-      const it = new ItemEntity(d.i, d.c, d.x, d.y, d.z, 0, 0, 0, d.d);
+      const it = new ItemEntity(d.i, d.c, d.x, d.y, d.z, 0, 0, 0, d.d, cleanEnch(d.e));
       it.age = 5;
       this.items.push(it);
     }
@@ -1701,11 +2101,10 @@ export class Entities {
   // A guest's copy of one of the host's mobs
   spawnProxy(a) {
     const o = a[9];
-    const m = new Mob(o.t, a[1], a[2], a[3], { variant: o.v, prof: o.p, size: o.s, baby: !!o.b });
+    const m = new Mob(o.t, a[1], a[2], a[3], { variant: o.v, prof: o.p, size: o.s, baby: !!o.b, vst: o.t === 'villager' ? { p: o.p, x: o.vx, s: o.vs, u: o.u } : null });
     m.proxy = true;
     m.netId = a[0];
     if (o.m) m.maxHp = o.m;
-    if (o.u && m.trades) o.u.forEach((u, i) => { if (m.trades[i]) m.trades[i].uses = u; });
     m.applyNet(a);
     m.pos.x = a[1]; m.pos.y = a[2]; m.pos.z = a[3];
     m.model.root.rotation.y = m.yaw;
@@ -1713,6 +2112,30 @@ export class Entities {
     return m;
   }
   throwPearl(x, y, z, vx, vy, vz) { this.thrown.push(new Thrown(x, y, z, vx, vy, vz, 'pearl', ID.shade_pearl)); }
+  throwBottle(x, y, z, vx, vy, vz) { this.thrown.push(new Thrown(x, y, z, vx, vy, vz, 'xp', ID.experience_bottle)); }
+  lightning(x, y, z) { this.thrown.push(new Lightning(x, y, z)); }
+
+  // The fishing rod: the first use casts the bobber, the next pulls it in (with whatever was biting).
+  // Returns how much the rod wears.
+  fish(p, rod, dir) {
+    const b = this.bobber;
+    if (b && !b.removed) {
+      const got = b.reel();
+      b.removed = true;
+      this.bobber = null;
+      if (!got) return 0;
+      const left = p.inv.add(got.id, got.count, got.dmg, got.e);
+      if (left) this.dropItem(got.id, left, p.pos.x, p.pos.y + 1, p.pos.z, 0, 2, 0, got.dmg, got.e);
+      sfx('pop', null, { vol: 0.6 });
+      G.ui.toast('You caught ' + G.ui.describe(got));
+      this.spawnXp(p.pos.x, p.pos.y + 1, p.pos.z, 1 + Math.floor(rand() * 6), 0);
+      if (G.adv) G.adv.fished(got);
+      return 1;
+    }
+    this.bobber = new Bobber(p, rod, dir);
+    this.thrown.push(this.bobber);
+    return 0;
+  }
   primeTNT(x, y, z) { this.tnts.push(new PrimedTNT(x + 0.5, y, z + 0.5, 4)); sfx('fuse', { x, y, z }); }
 
   pickMob(ox, oy, oz, dx, dy, dz, maxDist) {
@@ -1745,6 +2168,8 @@ export class Entities {
     sweep(this.tnts);
     sweep(this.thrown);
     sweep(this.projectiles);
+    sweep(this.orbs);
+    if (orbMat) { const k = 0.5 + 0.5 * Math.sin(performance.now() / 160); orbMat.color.setRGB(0.55 + 0.45 * k, 1, 0.25 * (1 - k)); }
     this.particles.update(dt);
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0) {
@@ -1770,9 +2195,11 @@ export class Entities {
       }
     }
     if (w.dim === 'end' && this.onEndChunk) this.onEndChunk(chunk);
-    // animals are placed once per chunk, ever; after that they are kept like everything else
-    if (w.dim !== 'overworld' || w.spawned.has(k)) return;
+    // (every chunk that has ever been shown is remembered, so later updates leave it as it is)
+    const seen = w.spawned.has(k);
     w.spawned.add(k);
+    // animals are placed once per chunk, ever; after that they are kept like everything else
+    if (w.dim !== 'overworld' || seen) return;
     if (rand() > 0.14) return;
     if (this.mobs.filter((m) => PASSIVE.includes(m.type)).length >= 28) return;
     const type = PASSIVE[(rand() * PASSIVE.length) | 0];
@@ -1881,13 +2308,21 @@ export class Entities {
   }
 
   // Remember villager trade usage so it survives unloading and saving
+  // Someone wants the bed a villager is sleeping in: it gets up and looks for another
+  wakeVillagerAt(x, y, z) {
+    for (const m of this.mobs) {
+      if (m.sleeping && Math.abs(m.pos.x - x - 0.5) < 1.3 && Math.abs(m.pos.z - z - 0.5) < 1.3 && Math.abs(m.pos.y - y) < 1.2) { wake(m); m.bed = null; if (m.v) m.v.noBed = G.clock + 40; }
+    }
+  }
+
   saveVillagers() {
     const w = G.world;
-    for (const m of this.mobs) if (m.def.villager && m.key && m.trades) w.villagerTrades.set(m.key, m.trades.map((t) => t.uses));
+    for (const m of this.mobs) if (m.def.villager && m.key && m.trades && !m.proxy) w.villagerTrades.set(m.key, m.villagerState());
   }
 
   clear() {
-    for (const arr of [this.mobs, this.items, this.arrows, this.tnts, this.thrown, this.projectiles]) { arr.forEach((e) => e.dispose()); arr.length = 0; }
+    for (const arr of [this.mobs, this.items, this.arrows, this.tnts, this.thrown, this.projectiles, this.orbs]) { arr.forEach((e) => e.dispose()); arr.length = 0; }
+    this.bobber = null;
     this.particles.clear();
   }
 }

@@ -156,27 +156,43 @@ for (const f of FEATURES) {
   f[2] *= hi > lo ? (toY(hi) - toY(lo)) / (hi - lo) : 0.5;
 }
 
+// Diamonds were too hard to find: half as many veins again (1.6.4). They are worked out with their own
+// random numbers, after everything else, so every ore already in a world stays exactly where it was and
+// the extra diamonds only ever take the place of plain stone.
+export const MORE_DIAMONDS = 0.5;
+// (a touch over half as many veins, since some of the extra ones land on ore or caves that are already there)
+const EXTRA = FEATURES.filter((f) => f[0] === B.diamond_ore).map((f) => { const g = [...f]; g[2] *= MORE_DIAMONDS * 1.08; return g; });
+
 export function placeOres(world, chunk) {
-  const blocks = chunk.blocks, x0 = chunk.cx * CS, z0 = chunk.cz * CS, seed = world.seed;
+  const seed = world.seed;
   // veins from neighbouring chunks spill over the border, so they are worked out too
-  for (let sx = chunk.cx - 1; sx <= chunk.cx + 1; sx++) {
-    for (let sz = chunk.cz - 1; sz <= chunk.cz + 1; sz++) {
-      const rng = mulberry32((hash3(seed ^ 0x0be5, sx, 1, sz) * 4294967296) >>> 0);
-      let biome = -1;
-      FEATURES.forEach(([ore, deep, count, size, dist, lo, hi, airSkip, onlyIn], fi) => {
-        let n = Math.floor(count) + (rng() < count % 1 ? 1 : 0);
-        if (onlyIn !== undefined) {
-          if (biome < 0) biome = world.column(sx * 16 + 8, sz * 16 + 8).biome;
-          if (biome !== onlyIn) n = 0;
-        }
-        for (let k = 0; k < n; k++) {
-          const x = sx * 16 + nextInt(rng, 16), z = sz * 16 + nextInt(rng, 16);
-          const mcY = dist === 'u' ? lo + rng() * (hi - lo) : lo + (rng() + rng()) * (hi - lo) / 2;
-          vein(rng, blocks, x0, z0, seed, fi, x, mcY < -64 || mcY > 320 ? -99 : Math.round(toY(mcY)), z, size, ore, deep, airSkip);
-        }
-      });
+  const around = (features, salt, layer, fi0) => {
+    for (let sx = chunk.cx - 1; sx <= chunk.cx + 1; sx++) {
+      for (let sz = chunk.cz - 1; sz <= chunk.cz + 1; sz++) {
+        scatter(world, chunk, features, fi0, mulberry32((hash3(seed ^ salt, sx, layer, sz) * 4294967296) >>> 0), sx, sz);
+      }
     }
-  }
+  };
+  around(FEATURES, 0x0be5, 1, 0);
+  around(EXTRA, 0xd1a5, 2, FEATURES.length);
+}
+
+// The veins that start in chunk (sx, sz), as far as they reach into `chunk`
+function scatter(world, chunk, features, fi0, rng, sx, sz) {
+  const blocks = chunk.blocks, x0 = chunk.cx * CS, z0 = chunk.cz * CS, seed = world.seed;
+  let biome = -1;
+  features.forEach(([ore, deep, count, size, dist, lo, hi, airSkip, onlyIn], fi) => {
+    let n = Math.floor(count) + (rng() < count % 1 ? 1 : 0);
+    if (onlyIn !== undefined) {
+      if (biome < 0) biome = world.column(sx * 16 + 8, sz * 16 + 8).biome;
+      if (biome !== onlyIn) n = 0;
+    }
+    for (let k = 0; k < n; k++) {
+      const x = sx * 16 + nextInt(rng, 16), z = sz * 16 + nextInt(rng, 16);
+      const mcY = dist === 'u' ? lo + rng() * (hi - lo) : lo + (rng() + rng()) * (hi - lo) / 2;
+      vein(rng, blocks, x0, z0, seed, fi0 + fi, x, mcY < -64 || mcY > 320 ? -99 : Math.round(toY(mcY)), z, size, ore, deep, airSkip);
+    }
+  });
 }
 
 // Minecraft's ore vein: a short line of overlapping blobs, fattest in the middle

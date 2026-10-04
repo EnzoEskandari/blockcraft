@@ -12,7 +12,54 @@ const CAVERN = {
     [-14, 28, -13, 'torch'], [-10, 26, -19, 'torch'], [3, 26, -16, 'torch'], [-5, 28, -1, 'torch'], [7, 27, -11, 'torch'], [-5, 25, -23, 'torch']],
 };
 
+// The middle of a village at sunset, seen from the roof of its well: houses with their job blocks, and on
+// the green an enchanting table ringed with bookshelves, an anvil and a grindstone.
+// put(dx, dy, dz, block, meta) and sign(dx, dy, dz, lines) work from the ground at the well; ground(dx, dz)
+// says how much higher the land is elsewhere.
+const MARKET = {
+  seed: 1755, at: [-104, 168], view: [0, 0, 9.2], pitch: -0.2, time: 0.468,
+  build(put, sign, ground) {
+    // a paved corner between two houses, just big enough for the ring of shelves
+    const ex = 7, ez = -13, g = ground(ex, ez);
+    for (let x = -3; x <= 3; x++) for (let z = -2; z <= 2; z++) {
+      for (let y = Math.min(g, ground(ex + x, ez + z)); y < g; y++) put(ex + x, y, ez + z, 'dirt');
+      put(ex + x, g, ez + z, 'stone_bricks');
+      for (let y = 1; y <= 3; y++) put(ex + x, g + y, ez + z, null);
+    }
+    put(ex, g + 1, ez, 'enchanting_table');
+    // fifteen bookshelves around it (the side towards the well is left open)
+    for (let x = -2; x <= 2; x++) for (let z = -2; z <= 1; z++) {
+      if (Math.abs(x) !== 2 && z !== -2) continue;
+      put(ex + x, g + 1, ez + z, 'bookshelf');
+      if (z === -2 || (Math.abs(x) === 2 && z === -1)) put(ex + x, g + 2, ez + z, 'bookshelf');
+    }
+    put(ex - 3, g + 1, ez + 2, 'anvil', 1); put(ex + 3, g + 1, ez + 2, 'grindstone', 1);
+    put(ex - 2, g + 2, ez + 1, 'torch'); put(ex + 2, g + 2, ez + 1, 'torch');
+    put(ex - 3, g + 1, ez - 2, 'oak_fence'); put(ex - 3, g + 2, ez - 2, 'torch'); put(ex + 3, g + 1, ez - 2, 'oak_fence'); put(ex + 3, g + 2, ez - 2, 'torch');
+    put(ex, g + 1, ez + 3, 'sign', 0); sign(ex, g + 1, ez + 3, ['Blockcraft 1.7', 'Trades &', 'Enchantments']);
+  },
+};
+
 export const UPDATES = [
+  {
+    version: '1.7', name: 'Trades & Enchantments', date: '2026-10-04',
+    splashes: ['Enchanted!', 'Level 30!', 'Fifteen bookshelves!', 'Hire a villager!', 'From Novice to Master!', 'Good night, villagers!', 'Gone fishing!', 'More diamonds!',
+      'Achievement made!', 'Mind the anvil!', 'Sharpness V!', 'Trade up!'],
+    scene: MARKET,
+    notes: [
+      'Enchanting: an enchanting table (a book, two diamonds and four obsidian) puts enchantments on tools, weapons, armour and books for levels and lapis lazuli. Bookshelves around it bring better ones: fifteen for level 30. All 39 of Minecraft\'s classic enchantments are in, from Sharpness and Fortune to Mending.',
+      'Experience: killing monsters, mining ores, smelting, fishing and trading leave orbs that fill the green bar. Dying drops some of it where you fell.',
+      'An anvil combines items and enchanted books and mends things; a grindstone takes enchantments off.',
+      'Villagers have levels, from Novice to Master: the more you trade with one, the more it has to offer. Librarians sell enchanted books, smiths enchanted gear.',
+      'Job blocks: a villager with no work takes up the trade of a free composter, lectern, blast furnace, grindstone, smithing table, smoker, fletching table, brewing stand, loom, cauldron or stonecutter nearby.',
+      'At sunset villagers walk home, open and shut their doors, and sleep in their beds until morning.',
+      'New villages have job blocks in their houses and steps to every door. Villages you have already seen stay as they are.',
+      'Achievements: 53 things to do, each worth experience. Press L, or find them in the game menu.',
+      'A fishing rod, a crossbow and a trident, each with its own enchantments.',
+      'Half as many diamonds again.',
+      'From now on updates only change land nobody has been to: everywhere you have explored stays exactly as it was.',
+    ],
+  },
   {
     // a small update: it keeps the Caves & Ores picture
     version: '1.6.3', name: 'Building Blocks', date: '2026-10-04',

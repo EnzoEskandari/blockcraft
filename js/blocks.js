@@ -1,7 +1,7 @@
 // Block, item, recipe and smelting definitions.
 // Block ids fit in a byte (they are stored in chunk arrays); plain items start at 256.
 
-export const RENDER = { CUBE: 0, CROSS: 1, TORCH: 2, LIQUID: 3, BED: 4, DOOR: 5, FENCE: 6, PORTAL: 7, END_PORTAL: 8, SLAB: 9, TRAPDOOR: 10, SIGN: 11 };
+export const RENDER = { CUBE: 0, CROSS: 1, TORCH: 2, LIQUID: 3, BED: 4, DOOR: 5, FENCE: 6, PORTAL: 7, END_PORTAL: 8, SLAB: 9, TRAPDOOR: 10, SIGN: 11, MODEL: 12 };
 
 export const BLOCKS = [];  // id -> block def
 export const ITEMS = [];   // id -> item def (obtainable blocks are also items)
@@ -40,6 +40,11 @@ function block(id, key, name, o = {}) {
     slab: o.slab || null,      // half a block: the key of the full block two of them make
     trapdoor: !!o.trapdoor,
     sign: o.sign || 0,         // 1 standing on a post, 2 flat on a wall
+    boxes: o.boxes || null,    // a shape of its own: boxes [x0, y0, z0, x1, y1, z1, texture?] in sixteenths of a block
+    height: o.height || 1,     // how tall it is to stand on (the enchanting table is three quarters of a block)
+    job: o.job || null,        // the profession a villager without work takes up at this block
+    xp: o.xp || null,          // [least, most] experience for mining it
+    fortune: !!o.fortune,      // the Fortune enchantment makes it drop more
     slow: o.slow || 0,         // movement multiplier while inside (cobweb)
     flammable: o.flammable || 0, // how readily fire burns this block away (0 = never)
   };
@@ -85,12 +90,12 @@ block(15, 'oak_leaves', 'Oak Leaves', { ...leaves(true), tint: 2 });
 block(16, 'birch_leaves', 'Birch Leaves', leaves(false));
 block(17, 'spruce_leaves', 'Spruce Leaves', leaves(false));
 block(18, 'glass', 'Glass', { opaque: false, cutout: true, cullSame: true, hardness: 0.3, sound: 'glass', drops: none });
-block(19, 'coal_ore', 'Coal Ore', { hardness: 3, tool: 'pickaxe', level: 0, drops: one('coal') });
+block(19, 'coal_ore', 'Coal Ore', { hardness: 3, tool: 'pickaxe', level: 0, drops: one('coal'), xp: [0, 2], fortune: true });
 block(20, 'iron_ore', 'Iron Ore', { hardness: 3, tool: 'pickaxe', level: 1 });
 block(21, 'gold_ore', 'Gold Ore', { hardness: 3, tool: 'pickaxe', level: 2 });
-block(22, 'diamond_ore', 'Diamond Ore', { hardness: 3, tool: 'pickaxe', level: 2, drops: one('diamond') });
-block(23, 'redstone_ore', 'Redstone Ore', { hardness: 3, tool: 'pickaxe', level: 2, drops: range('redstone', 4, 5) });
-block(24, 'lapis_ore', 'Lapis Lazuli Ore', { hardness: 3, tool: 'pickaxe', level: 1, drops: range('lapis_lazuli', 4, 8) });
+block(22, 'diamond_ore', 'Diamond Ore', { hardness: 3, tool: 'pickaxe', level: 2, drops: one('diamond'), xp: [3, 7], fortune: true });
+block(23, 'redstone_ore', 'Redstone Ore', { hardness: 3, tool: 'pickaxe', level: 2, drops: range('redstone', 4, 5), xp: [1, 5], fortune: true });
+block(24, 'lapis_ore', 'Lapis Lazuli Ore', { hardness: 3, tool: 'pickaxe', level: 1, drops: range('lapis_lazuli', 4, 8), xp: [2, 5], fortune: true });
 block(25, 'snowy_grass', 'Snowy Grass Block', { tex: { top: 'snow', bottom: 'dirt', side: 'snowy_grass_side' }, hardness: 0.6, tool: 'shovel', sound: 'snow', drops: one('dirt') });
 block(26, 'snow', 'Snow Block', { hardness: 0.2, tool: 'shovel', sound: 'snow' });
 block(27, 'ice', 'Ice', { hardness: 0.5, tool: 'pickaxe', sound: 'glass', drops: none });
@@ -139,7 +144,7 @@ WOOL_COLORS.forEach(([k, n, c], i) => {
 // ---- blocks added with villages, farming, new biomes and structures
 const wheatDrops = (stage) => (r) => stage < 3 ? [[ID.wheat_seeds, 1]] : [[ID.wheat, 1], [ID.wheat_seeds, 1 + Math.floor(r() * 3)]];
 const bedDrop = () => [[ID.bed_foot, 1]];
-block(71, 'emerald_ore', 'Emerald Ore', { hardness: 3, tool: 'pickaxe', level: 2, drops: one('emerald') });
+block(71, 'emerald_ore', 'Emerald Ore', { hardness: 3, tool: 'pickaxe', level: 2, drops: one('emerald'), xp: [3, 7], fortune: true });
 block(72, 'emerald_block', 'Block of Emerald', { hardness: 5, tool: 'pickaxe', level: 2, sound: 'metal' });
 block(73, 'dirt_path', 'Dirt Path', { tex: { top: 'dirt_path_top', bottom: 'dirt', side: 'dirt_path_side' }, hardness: 0.65, tool: 'shovel', sound: 'gravel', drops: one('dirt') });
 block(74, 'farmland', 'Farmland', { tex: { top: 'farmland_top', bottom: 'dirt', side: 'dirt' }, hardness: 0.6, tool: 'shovel', sound: 'gravel', drops: one('dirt') });
@@ -177,8 +182,8 @@ block(102, 'lava', 'Lava', { render: RENDER.LIQUID, solid: false, opaque: false,
 block(103, 'nether_portal', 'Nether Portal', { render: RENDER.PORTAL, solid: false, opaque: false, translucent: true, light: 11, hardness: -1, noItem: true, drops: none, sound: 'glass' });
 block(104, 'soul_sand', 'Soul Sand', { hardness: 0.5, tool: 'shovel', sound: 'sand' });
 block(105, 'soul_soil', 'Soul Soil', { hardness: 0.5, tool: 'shovel', sound: 'sand' });
-block(106, 'nether_quartz_ore', 'Nether Quartz Ore', { hardness: 3, tool: 'pickaxe', level: 0, drops: one('nether_quartz') });
-block(107, 'nether_gold_ore', 'Nether Gold Ore', { hardness: 3, tool: 'pickaxe', level: 0, drops: nuggets });
+block(106, 'nether_quartz_ore', 'Nether Quartz Ore', { hardness: 3, tool: 'pickaxe', level: 0, drops: one('nether_quartz'), xp: [2, 5], fortune: true });
+block(107, 'nether_gold_ore', 'Nether Gold Ore', { hardness: 3, tool: 'pickaxe', level: 0, drops: nuggets, xp: [0, 1], fortune: true });
 block(108, 'magma_block', 'Magma Block', { light: 3, hardness: 0.5, tool: 'pickaxe', level: 0 });
 block(109, 'basalt', 'Basalt', { tex: { top: 'basalt_top', bottom: 'basalt_top', side: 'basalt_side' }, hardness: 1.25, tool: 'pickaxe', level: 0 });
 block(110, 'blackstone', 'Blackstone', { hardness: 1.5, tool: 'pickaxe', level: 0 });
@@ -211,19 +216,19 @@ block(136, 'violetstone', 'Violetstone', { hardness: 1.5, tool: 'pickaxe', level
 block(137, 'violetstone_pillar', 'Violetstone Pillar', { tex: { top: 'violetstone_pillar_top', bottom: 'violetstone_pillar_top', side: 'violetstone_pillar' }, hardness: 1.5, tool: 'pickaxe', level: 0 });
 block(138, 'end_rod', 'End Rod', { render: RENDER.TORCH, solid: false, opaque: false, light: 14, hardness: 0, sound: 'glass' });
 block(139, 'dragon_egg', 'Dragon Egg', { light: 1, hardness: 3, stack: 1 });
-block(140, 'spawner', 'Monster Spawner', { opaque: false, cutout: true, hardness: 5, tool: 'pickaxe', level: 0, sound: 'metal', drops: none });
+block(140, 'spawner', 'Monster Spawner', { opaque: false, cutout: true, hardness: 5, tool: 'pickaxe', level: 0, sound: 'metal', drops: none, xp: [15, 43] });
 
 // Caves & Ores: deepslate deep underground (with its own ores), copper, and the stones of cave walls
 const deepOre = (o = {}) => ({ hardness: 4.5, tool: 'pickaxe', level: 0, ...o });
 block(141, 'deepslate', 'Deepslate', { hardness: 3, tool: 'pickaxe', level: 0, drops: one('cobbled_deepslate') });
 block(142, 'cobbled_deepslate', 'Cobbled Deepslate', { hardness: 3.5, tool: 'pickaxe', level: 0 });
-block(143, 'deepslate_coal_ore', 'Deepslate Coal Ore', deepOre({ drops: one('coal') }));
+block(143, 'deepslate_coal_ore', 'Deepslate Coal Ore', deepOre({ drops: one('coal'), xp: [0, 2], fortune: true }));
 block(144, 'deepslate_iron_ore', 'Deepslate Iron Ore', deepOre({ level: 1 }));
 block(145, 'deepslate_gold_ore', 'Deepslate Gold Ore', deepOre({ level: 2 }));
-block(146, 'deepslate_diamond_ore', 'Deepslate Diamond Ore', deepOre({ level: 2, drops: one('diamond') }));
-block(147, 'deepslate_redstone_ore', 'Deepslate Redstone Ore', deepOre({ level: 2, drops: range('redstone', 4, 5) }));
-block(148, 'deepslate_lapis_ore', 'Deepslate Lapis Lazuli Ore', deepOre({ level: 1, drops: range('lapis_lazuli', 4, 8) }));
-block(149, 'deepslate_emerald_ore', 'Deepslate Emerald Ore', deepOre({ level: 2, drops: one('emerald') }));
+block(146, 'deepslate_diamond_ore', 'Deepslate Diamond Ore', deepOre({ level: 2, drops: one('diamond'), xp: [3, 7], fortune: true }));
+block(147, 'deepslate_redstone_ore', 'Deepslate Redstone Ore', deepOre({ level: 2, drops: range('redstone', 4, 5), xp: [1, 5], fortune: true }));
+block(148, 'deepslate_lapis_ore', 'Deepslate Lapis Lazuli Ore', deepOre({ level: 1, drops: range('lapis_lazuli', 4, 8), xp: [2, 5], fortune: true }));
+block(149, 'deepslate_emerald_ore', 'Deepslate Emerald Ore', deepOre({ level: 2, drops: one('emerald'), xp: [3, 7], fortune: true }));
 block(150, 'copper_ore', 'Copper Ore', { hardness: 3, tool: 'pickaxe', level: 1 });
 block(151, 'deepslate_copper_ore', 'Deepslate Copper Ore', deepOre({ level: 1 }));
 block(152, 'copper_block', 'Block of Copper', { hardness: 3, tool: 'pickaxe', level: 1, sound: 'metal' });
@@ -255,6 +260,36 @@ SLABS.forEach(([full, key, name], i) => {
 block(179, 'sign', 'Sign', { render: RENDER.SIGN, tex: 'oak_planks', solid: false, opaque: false, sign: 1, hardness: 1, tool: 'axe', sound: 'wood', art: 'sign', stack: 16, fuel: 10 });
 block(180, 'wall_sign', 'Sign', { render: RENDER.SIGN, tex: 'oak_planks', solid: false, opaque: false, sign: 2, hardness: 1, tool: 'axe', sound: 'wood', noItem: true, drops: one('sign') });
 
+// Enchanting and mending
+block(181, 'enchanting_table', 'Enchanting Table', { render: RENDER.MODEL, tex: { top: 'enchanting_table_top', bottom: 'obsidian', side: 'enchanting_table_side' }, opaque: false, atten: 1, light: 7,
+  hardness: 5, tool: 'pickaxe', level: 0, height: 0.75, boxes: [[0, 0, 0, 16, 12, 16]] });
+block(182, 'anvil', 'Anvil', { render: RENDER.MODEL, tex: 'anvil', art: 'anvil', opaque: false, atten: 1, hardness: 5, tool: 'pickaxe', level: 0, sound: 'metal', facing: true,
+  boxes: [[2, 0, 2, 14, 4, 14], [4, 4, 3, 12, 5, 13], [6, 5, 4, 10, 10, 12], [3, 10, 0, 13, 16, 16]] });
+// The blocks villagers work at: one without a job who finds a free one takes up its trade
+const wood = { hardness: 2.5, tool: 'axe', sound: 'wood', fuel: 15 };
+const stoneJob = { hardness: 3.5, tool: 'pickaxe', level: 0 };
+block(183, 'composter', 'Composter', { ...wood, render: RENDER.MODEL, tex: 'composter', opaque: false, atten: 1, job: 'farmer',
+  boxes: [[0, 0, 0, 16, 2, 16], [0, 2, 0, 2, 16, 16], [14, 2, 0, 16, 16, 16], [2, 2, 0, 14, 16, 2], [2, 2, 14, 14, 16, 16], [2, 2, 2, 14, 9, 14, 'compost']] });
+block(184, 'lectern', 'Lectern', { ...wood, render: RENDER.MODEL, tex: { top: 'lectern_top', bottom: 'oak_planks', side: 'lectern_side' }, opaque: false, atten: 1, facing: true, job: 'librarian',
+  boxes: [[0, 0, 0, 16, 2, 16], [4, 2, 4, 12, 13, 12], [0, 13, 1, 16, 16, 15]] });
+block(185, 'blast_furnace', 'Blast Furnace', { ...stoneJob, tex: { top: 'furnace_top', bottom: 'furnace_top', side: 'blast_furnace_side', front: 'blast_furnace_front' }, facing: true, job: 'armorer' });
+block(186, 'grindstone', 'Grindstone', { ...stoneJob, render: RENDER.MODEL, tex: 'grindstone', opaque: false, atten: 1, facing: true, job: 'weaponsmith',
+  boxes: [[2, 0, 6, 4, 9, 10, 'oak_log'], [12, 0, 6, 14, 9, 10, 'oak_log'], [4, 4, 2, 12, 16, 14]] });
+block(187, 'smithing_table', 'Smithing Table', { ...wood, tex: { top: 'smithing_table_top', bottom: 'dark_oak_planks', side: 'smithing_table_side' }, job: 'toolsmith' });
+block(188, 'smoker', 'Smoker', { ...stoneJob, tex: { top: 'furnace_top', bottom: 'furnace_top', side: 'smoker_side', front: 'smoker_front' }, facing: true, job: 'butcher' });
+block(189, 'fletching_table', 'Fletching Table', { ...wood, tex: { top: 'fletching_table_top', bottom: 'birch_planks', side: 'fletching_table_side' }, job: 'fletcher' });
+block(190, 'brewing_stand', 'Brewing Stand', { render: RENDER.MODEL, tex: 'brewing_stand', art: 'brewing_stand', opaque: false, atten: 1, light: 1, hardness: 0.5, tool: 'pickaxe', level: 0, job: 'cleric', height: 0.875,
+  boxes: [[1, 0, 1, 15, 2, 15, 'cobblestone'], [7, 2, 7, 9, 14, 9], [2, 2, 6, 6, 9, 10, 'glass'], [10, 2, 6, 14, 9, 10, 'glass'], [6, 2, 11, 10, 9, 15, 'glass']] });
+block(191, 'loom', 'Loom', { ...wood, tex: { top: 'oak_planks', bottom: 'oak_planks', side: 'loom_side', front: 'loom_front' }, facing: true, job: 'shepherd' });
+block(192, 'cauldron', 'Cauldron', { render: RENDER.MODEL, tex: 'cauldron', art: 'cauldron', opaque: false, atten: 1, hardness: 2, tool: 'pickaxe', level: 0, sound: 'metal', job: 'leatherworker',
+  boxes: [[0, 3, 0, 2, 16, 16], [14, 3, 0, 16, 16, 16], [2, 3, 0, 14, 16, 2], [2, 3, 14, 14, 16, 16], [2, 3, 2, 14, 4, 14], [0, 0, 0, 4, 3, 4], [12, 0, 0, 16, 3, 4], [0, 0, 12, 4, 3, 16], [12, 0, 12, 16, 3, 16]] });
+block(193, 'stonecutter', 'Stonecutter', { ...stoneJob, render: RENDER.MODEL, tex: { top: 'stonecutter_top', bottom: 'stone', side: 'stonecutter_side' }, opaque: false, atten: 1, job: 'mason', height: 0.5625,
+  boxes: [[0, 0, 0, 16, 9, 16], [1, 9, 7, 15, 15, 9, 'stonecutter_saw']] });
+// Ice made by Frost Walker boots: it melts again after a few seconds
+block(194, 'frosted_ice', 'Frosted Ice', { tex: 'ice', hardness: 0.5, tool: 'pickaxe', sound: 'glass', drops: none, noItem: true });
+export const JOB_BLOCKS = {};   // profession -> block id
+for (const b of BLOCKS) if (b && b.job) JOB_BLOCKS[b.job] = b.id;
+
 // How easily fire catches each block
 const FLAMMABLE = {
   oak_log: 5, birch_log: 5, spruce_log: 5, jungle_log: 5, dark_oak_log: 5,
@@ -265,6 +300,7 @@ const FLAMMABLE = {
   bed_foot: 20, bed_head: 20, pumpkin: 5, cobweb: 60, nether_wart_block: 0, crimson_roots: 60, warped_roots: 60,
   oak_slab: 20, birch_slab: 20, spruce_slab: 20, jungle_slab: 20, dark_oak_slab: 20,
   oak_trapdoor: 20, birch_trapdoor: 20, spruce_trapdoor: 20, jungle_trapdoor: 20, dark_oak_trapdoor: 20, sign: 20, wall_sign: 20,
+  composter: 20, lectern: 30, smithing_table: 5, fletching_table: 5, loom: 20,
 };
 for (const [k, v] of Object.entries(FLAMMABLE)) if (BLOCKS[B[k]]) BLOCKS[B[k]].flammable = v;
 WOOL_COLORS.forEach(([k]) => { BLOCKS[B[k + '_wool']].flammable = 60; });
@@ -337,6 +373,16 @@ item(296, 'water_bucket', 'Water Bucket', { stack: 1 });
 item(297, 'lava_bucket', 'Lava Bucket', { stack: 1, fuel: 1000 });
 item(298, 'cinder_rod', 'Cinder Rod', { fuel: 120 });
 item(299, 'cinder_powder', 'Cinder Powder');
+// (1.7: enchanting, fishing, and two more weapons)
+item(325, 'enchanted_book', 'Enchanted Book', { stack: 1, hidden: true });   // (the creative inventory lists one for each enchantment instead)
+item(326, 'fishing_rod', 'Fishing Rod', { stack: 1, durability: 64, fuel: 15 });
+item(327, 'crossbow', 'Crossbow', { stack: 1, durability: 465, fuel: 15 });
+item(328, 'trident', 'Trident', { stack: 1, durability: 250, tool: 'trident', damage: 12, attackSpeed: 1.1 });
+item(329, 'cod', 'Raw Cod', { food: 2, sat: 0.4 });
+item(330, 'cooked_cod', 'Cooked Cod', { food: 5, sat: 6 });
+item(331, 'salmon', 'Raw Salmon', { food: 2, sat: 0.4 });
+item(332, 'cooked_salmon', 'Cooked Salmon', { food: 6, sat: 9.6 });
+item(333, 'experience_bottle', 'Experience Bottle');
 item(360, 'shade_eye', 'Eye of the Shade', { stack: 16 });
 item(361, 'nether_quartz', 'Nether Quartz');
 item(362, 'gold_nugget', 'Gold Nugget');
@@ -414,6 +460,7 @@ const TAGS = {
   '#wool': WOOL_COLORS.map(([k]) => k + '_wool'),
   '#coal': ['coal', 'charcoal'],
   '#cobblestone': ['cobblestone', 'cobbled_deepslate', 'blackstone'],   // what stone tools and furnaces can be made of
+  '#wooden_slab': ['oak_slab', 'birch_slab', 'spruce_slab', 'jungle_slab', 'dark_oak_slab', 'crimson_slab', 'warped_slab'],
 };
 
 const RECIPE_DEFS = [
@@ -466,6 +513,24 @@ const RECIPE_DEFS = [
   { in: ['gold_ingot'], out: ['gold_nugget', 9] },
   { shape: ['###', '###', '###'], key: { '#': 'bone' }, out: ['bone_block', 1] },
   { in: ['bone_block'], out: ['bone', 9] },
+  // enchanting and mending
+  { shape: [' B ', 'DOD', 'OOO'], key: { B: 'book', D: 'diamond', O: 'obsidian' }, out: ['enchanting_table', 1] },
+  { shape: ['BBB', ' I ', 'III'], key: { B: 'iron_block', I: 'iron_ingot' }, out: ['anvil', 1] },
+  // the blocks villagers work at
+  { shape: ['S S', 'S S', 'SSS'], key: { S: '#wooden_slab' }, out: ['composter', 1] },
+  { shape: ['SSS', ' B ', ' S '], key: { S: '#wooden_slab', B: 'bookshelf' }, out: ['lectern', 1] },
+  { shape: ['III', 'IFI', 'SSS'], key: { I: 'iron_ingot', F: 'furnace', S: 'stone' }, out: ['blast_furnace', 1] },
+  { shape: ['TST', 'P P'], key: { T: 'stick', S: 'stone_slab', P: '#planks' }, out: ['grindstone', 1] },
+  { shape: ['II', 'PP', 'PP'], key: { I: 'iron_ingot', P: '#planks' }, out: ['smithing_table', 1] },
+  { shape: [' L ', 'LFL', ' L '], key: { L: '#log', F: 'furnace' }, out: ['smoker', 1] },
+  { shape: ['FF', 'PP', 'PP'], key: { F: 'flint', P: '#planks' }, out: ['fletching_table', 1] },
+  { shape: [' R ', 'CCC'], key: { R: 'cinder_rod', C: '#cobblestone' }, out: ['brewing_stand', 1] },
+  { shape: ['SS', 'PP'], key: { S: 'string', P: '#planks' }, out: ['loom', 1] },
+  { shape: ['I I', 'I I', 'III'], key: { I: 'iron_ingot' }, out: ['cauldron', 1] },
+  { shape: [' I ', 'SSS'], key: { I: 'iron_ingot', S: 'stone' }, out: ['stonecutter', 1] },
+  // fishing and the crossbow
+  { shape: ['  S', ' ST', 'S T'], key: { S: 'stick', T: 'string' }, out: ['fishing_rod', 1] },
+  { shape: ['SIS', 'TIT', ' S '], key: { S: 'stick', I: 'iron_ingot', T: 'string' }, out: ['crossbow', 1] },
 ];
 for (const [block, ingot] of [['emerald_block', 'emerald'], ['iron_block', 'iron_ingot'], ['gold_block', 'gold_ingot'], ['diamond_block', 'diamond'], ['coal_block', 'coal'], ['redstone_block', 'redstone'], ['lapis_block', 'lapis_lazuli'], ['copper_block', 'copper_ingot']]) {
   RECIPE_DEFS.push({ shape: ['###', '###', '###'], key: { '#': ingot }, out: [block, 1] });
@@ -484,7 +549,10 @@ for (const m of TOOL_MATERIALS) {
   }
 }
 
-const TAG_LABELS = { '#planks': 'Planks', '#log': 'Logs', '#coal': 'Coal or Charcoal' };
+// Is this item the named thing, or one of a group ('#planks')?
+export const inTag = (tag, id) => (TAGS[tag] || [tag]).some((k) => ID[k] === id);
+
+const TAG_LABELS = { '#planks': 'Planks', '#log': 'Logs', '#coal': 'Coal or Charcoal', '#wooden_slab': 'Wooden Slabs' };
 
 function ingredientSet(k) {
   const keys = TAGS[k] || [k];
@@ -577,7 +645,7 @@ const SMELT_DEFS = {
   diamond_ore: 'diamond', coal_ore: 'coal', clay: 'terracotta', emerald_ore: 'emerald', lapis_ore: 'lapis_lazuli', redstone_ore: 'redstone',
   netherrack: 'nether_brick', nether_quartz_ore: 'nether_quartz', nether_gold_ore: 'gold_ingot', crimson_stem: 'charcoal', warped_stem: 'charcoal',
   jungle_log: 'charcoal', dark_oak_log: 'charcoal',
-  copper_ore: 'copper_ingot', cobbled_deepslate: 'deepslate',
+  copper_ore: 'copper_ingot', cobbled_deepslate: 'deepslate', cod: 'cooked_cod', salmon: 'cooked_salmon',
   deepslate_coal_ore: 'coal', deepslate_iron_ore: 'iron_ingot', deepslate_gold_ore: 'gold_ingot', deepslate_diamond_ore: 'diamond',
   deepslate_redstone_ore: 'redstone', deepslate_lapis_ore: 'lapis_lazuli', deepslate_emerald_ore: 'emerald', deepslate_copper_ore: 'copper_ingot',
 };

@@ -4,13 +4,17 @@ import { B, BLOCKS } from './blocks.js';
 import { CS, CH, SEA, BIOME, BIOME_NAMES } from './constants.js';
 import { stampStructures, structurePartsNear } from './structures.js';
 import { generateNether, generateEnd, netherBiome, endColumn } from './dims.js';
-import { carveTunnels, placeOres, deepslateAt } from './caves.js';
+import { carveTunnels, placeOres, deepslateAt, MORE_DIAMONDS } from './caves.js';
 
 export { CS, CH, SEA, BIOME, BIOME_NAMES };
 
 export const ckey = (cx, cz) => (cx + 32768) * 65536 + (cz + 32768);
 export const bidx = (x, y, z) => (y << 8) | (z << 4) | x;
 const CAVERN_TOP = 44;   // big caverns stay below this
+// The generator's version. It goes up whenever an update changes how new land is made (1: before Caves &
+// Ores, 2: Caves & Ores, 3: villages with job blocks); worlds remember which version made each chunk.
+export const GEN = 3;
+
 const FULL = [0, 1], BOTTOM_HALF = [0, 0.5], TOP_HALF = [0.5, 1], TRAP_BOTTOM = [0, 0.1875], TRAP_TOP = [0.8125, 1];
 
 export class Chunk {
@@ -69,6 +73,26 @@ export class World {
     // Chunks made the way they were before the Caves & Ores update (the parts of older worlds people had
     // already been to keep their caves and ores); every other chunk gets the new caves, deepslate and ores
     this.legacy = null;               // Set of ckeys, or null
+    // From then on every update that changes how land is made works the same way: the chunks people had
+    // already been to keep being made as they were (ckey -> the generator version they were first seen
+    // with), like Minecraft keeps the chunks it has saved. Only land nobody has seen gets the new things.
+    this.gens = new Map();
+  }
+
+  // Which version of the generator makes this chunk
+  genAt(cx, cz) {
+    const k = ckey(cx, cz);
+    if (this.legacy && this.legacy.has(k)) return 1;
+    return this.gens.get(k) || GEN;
+  }
+
+  // The oldest generator among the chunks an area covers: a village someone has seen a part of is
+  // finished the way it was begun
+  genOver(minX, maxX, minZ, maxZ) {
+    if (!this.gens.size && !(this.legacy && this.legacy.size)) return GEN;
+    let g = GEN;
+    for (let cx = minX >> 4; cx <= maxX >> 4; cx++) for (let cz = minZ >> 4; cz <= maxZ >> 4; cz++) g = Math.min(g, this.genAt(cx, cz));
+    return g;
   }
 
   getChunk(cx, cz) { return this.chunks.get(ckey(cx, cz)); }
@@ -107,12 +131,14 @@ export class World {
     if (b.door) return m & 4 ? null : FULL;
     if (b.slab) return m & 1 ? TOP_HALF : BOTTOM_HALF;
     if (b.trapdoor) return m & 4 ? null : m & 8 ? TRAP_TOP : TRAP_BOTTOM;
+    if (b.height < 1) return b.span || (b.span = [0, b.height]);   // the enchanting table, the stonecutter
     return FULL;
   }
 
   // The part of a block you can point at, when it doesn't fill its cell: [x0, y0, z0, x1, y1, z1] within it
   pickBox(x, y, z, id) {
     const b = BLOCKS[id];
+    if (b.height < 1) return [0, 0, 0, 1, b.height, 1];
     if (!b.slab && !b.trapdoor) return null;
     const m = this.getMeta(x, y, z);
     if (b.slab) return m & 1 ? [0, 0.5, 0, 1, 1, 1] : [0, 0, 0, 1, 0.5, 1];
@@ -433,20 +459,25 @@ export class World {
       [B.gravel, 6, 5, 90, 20], [B.dirt, 6, 5, 90, 20],
     ];
     if (chunk.biomes[136] === BIOME.MOUNTAINS) ORES.push([B.emerald_ore, 4, 4, 32, 1]);
-    for (const [id, count, ymin, ymax, size] of ORES) {
-      const n = Math.floor(count) + (rng() < count % 1 ? 1 : 0);
-      for (let k = 0; k < n; k++) {
-        let x = rng() * 16 | 0, y = ymin + (rng() * (ymax - ymin) | 0), z = rng() * 16 | 0;
-        for (let s = 0; s < size; s++) {
-          if (x >= 0 && x < 16 && z >= 0 && z < 16 && y > 0 && y < CH) {
-            const i = (y << 8) | (z << 4) | x;
-            if (blocks[i] === B.stone) blocks[i] = id;
+    const scatter = (rng, ores) => {
+      for (const [id, count, ymin, ymax, size] of ores) {
+        const n = Math.floor(count) + (rng() < count % 1 ? 1 : 0);
+        for (let k = 0; k < n; k++) {
+          let x = rng() * 16 | 0, y = ymin + (rng() * (ymax - ymin) | 0), z = rng() * 16 | 0;
+          for (let s = 0; s < size; s++) {
+            if (x >= 0 && x < 16 && z >= 0 && z < 16 && y > 0 && y < CH) {
+              const i = (y << 8) | (z << 4) | x;
+              if (blocks[i] === B.stone) blocks[i] = id;
+            }
+            const d = rng() * 6 | 0;
+            if (d === 0) x++; else if (d === 1) x--; else if (d === 2) z++; else if (d === 3) z--; else if (d === 4) y++; else y--;
           }
-          const d = rng() * 6 | 0;
-          if (d === 0) x++; else if (d === 1) x--; else if (d === 2) z++; else if (d === 3) z--; else if (d === 4) y++; else y--;
         }
       }
-    }
+    };
+    scatter(rng, ORES);
+    // half as many diamond veins again (1.6.4), from their own random numbers: the ores already there stay put
+    scatter(mulberry32((hash3(this.seed ^ 0xd1a5, chunk.cx, 0, chunk.cz) * 4294967296) >>> 0), [[B.diamond_ore, 1.2 * MORE_DIAMONDS, 5, 16, 5]]);
   }
 
   // Writes the parts of a tree that fall inside `chunk` (or into the live world when chunk is null)

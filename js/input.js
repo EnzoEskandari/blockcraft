@@ -84,6 +84,7 @@ export function initInput() {
       if ((code === 'KeyT' || code === 'Enter') && G.net) { e.preventDefault(); G.ui.openScreen('chat'); return; }
       if (code === 'KeyQ') { input.drop = true; input.dropAll = e.ctrlKey || e.metaKey; }
       if (code === 'KeyF') input.swapHands = true;
+      if (code === 'KeyL') { G.ui.openScreen('adv'); return; }
       if (code === 'F3') { G.settings.showCoords = !G.settings.showCoords; }
       if (code === 'Escape' && !document.pointerLockElement) { G.ui.openScreen('pause'); return; }
       if (code.startsWith('Digit')) {

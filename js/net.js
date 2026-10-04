@@ -7,6 +7,7 @@ import { R, itemModel, tintModel } from './render.js';
 import { buildModel, holdInHand, lightAt, explosionFx, explosionDamage, spawnBlockParticles } from './entities.js';
 import { BLOCKS, B, ITEMS } from './blocks.js';
 import { packSlots, unpackSlots } from './inventory.js';
+import { cleanEnch } from './enchant.js';
 import { rayBox } from './physics.js';
 import { sfx, blockSound } from './audio.js';
 
@@ -119,9 +120,10 @@ export class Avatar {
   }
 
   // On the host, whatever happens to this player is sent to their browser
-  hurt(dmg, fromX, fromZ, kind, axe = false) {
+  hurt(dmg, fromX, fromZ, kind, axe = false, by = null) {
     if (this.dead || this.mode !== 'survival') return;
-    G.net.sendTo(this.id, { k: 'hurt', d: dmg, x: fromX, z: fromZ, c: kind, ax: axe ? 1 : undefined });
+    // (m: which mob did it, so the guest's Thorns can hurt it back)
+    G.net.sendTo(this.id, { k: 'hurt', d: dmg, x: fromX, z: fromZ, c: kind, ax: axe ? 1 : undefined, m: by && by.netId != null ? by.netId : undefined });
     this.hurtTime = 0.35;
   }
   addEffect(n, t) { G.net.sendTo(this.id, { k: 'fx', n, t }); }
@@ -263,7 +265,7 @@ export class Net {
       let ws;
       try { ws = new WebSocket(url); } catch { fail('Could not reach the multiplayer server.', true); return; }
       net.ws = ws;
-      const timer = setTimeout(() => fail('The multiplayer server did not answer. Check your connection and try again.', true), 25000);
+      let timer = setTimeout(() => fail('The multiplayer server did not answer. Check your connection and try again.', true), 25000);
       ws.onopen = () => {
         onStatus('Joining…');
         ws.send(JSON.stringify({ t: 'world', id: worldId, dim, token: account.token, haves, mine }));
@@ -288,6 +290,9 @@ export class Net {
         if (m.t === 'joined') {
           net.role = 'client'; net.id = m.id;
           onStatus('Downloading the world…');
+          // the world comes from the player who is running it: a big one over a slow connection takes a while
+          clearTimeout(timer);
+          timer = setTimeout(() => fail('The player running this world did not send it in time. Ask them to keep Blockcraft open on their screen, then try again.', true), 90000);
           net.send({ k: 'hello', name });
           net.onWorld = (snap) => { clearTimeout(timer); settled = true; resolve({ net, snap, dim: m.dim, me: m.me || null, build: m.build }); };
           net.onKick = (msg) => { clearTimeout(timer); fail(msg); };
@@ -487,8 +492,8 @@ export class Net {
   }
 
   // Guest: the host drops the item, so everyone sees the same one
-  requestDrop(id, count, x, y, z, vx, vy, vz, dmg) {
-    const stub = { pickupDelay: 0.6, a: [id, count, dmg, r2(x), r2(y), r2(z), r2(vx), r2(vy), r2(vz)] };
+  requestDrop(id, count, x, y, z, vx, vy, vz, dmg, e) {
+    const stub = { pickupDelay: 0.6, e: e || 0, a: [id, count, dmg, r2(x), r2(y), r2(z), r2(vx), r2(vy), r2(vz)] };
     this.drops.push(stub);
     return stub;
   }
@@ -504,9 +509,9 @@ export class Net {
     return best ? { player: best, t: bt } : null;
   }
 
-  pvp(a, dmg, x, z) {
+  pvp(a, dmg, x, z, fire = 0) {
     a.hurtTime = 0.35;
-    const d = { d: Math.round(dmg * 100) / 100, x: r2(x), z: r2(z) };
+    const d = { d: Math.round(dmg * 100) / 100, x: r2(x), z: r2(z), ...(fire ? { f: fire } : {}) };
     if (this.role === 'host') this.sendTo(a.id, { k: 'hurt', ...d, c: 'player', by: this.name });
     else this.send({ k: 'pvp', to: a.id, ...d });
   }
@@ -522,6 +527,7 @@ export class Net {
     }
     p.lastAttacker = by;
     p.hurt(+d.d || 0, d.x, d.z, 'player');
+    if (d.f > 0) p.addEffect('burn', Math.min(8, +d.f));   // Fire Aspect
   }
 
   // A guest opening a chest or furnace gets the host's copy
@@ -563,7 +569,7 @@ export class Net {
         const c = w.containers.get(key);
         if (c && !CONTAINER_BLOCKS.has(id)) {
           // a guest broke a chest or furnace: its contents spill out
-          for (const s of c.slots) if (s) G.entities.dropItem(s.id, s.count, x + 0.5, y + 0.5, z + 0.5, undefined, undefined, undefined, s.dmg);
+          for (const s of c.slots) if (s) G.entities.dropStack(s, x + 0.5, y + 0.5, z + 0.5);
           w.containers.delete(key);
           if (G.ui.container && G.ui.container.data === c) G.ui.back();
         }
@@ -607,14 +613,14 @@ export class Net {
       case 'pvp': {
         if (!a) return;
         if (d.to === 0) this.hurtByPlayer(d, a.name);
-        else if (this.players.has(d.to)) this.sendTo(d.to, { k: 'hurt', d: d.d, x: d.x, z: d.z, c: 'player', by: a.name });
+        else if (this.players.has(d.to)) this.sendTo(d.to, { k: 'hurt', d: d.d, x: d.x, z: d.z, c: 'player', by: a.name, f: d.f });
         break;
       }
       case 'drop':
         for (const s of Array.isArray(d.l) ? d.l : []) {
-          const [id, count, dmg, x, y, z, vx, vy, vz, pd] = s;
+          const [id, count, dmg, x, y, z, vx, vy, vz, pd, e] = s;
           if (!ITEMS[id] || !(count > 0) || count > 64 * 40) continue;
-          const it = G.entities.dropItem(id, count | 0, x, y, z, vx, vy, vz, dmg);
+          const it = G.entities.dropItem(id, count | 0, x, y, z, vx, vy, vz, dmg, cleanEnch(e));
           if (it) it.pickupDelay = Math.min(3, +pd || 0.6);
         }
         break;
@@ -626,14 +632,15 @@ export class Net {
         if (!give) return;
         it.count -= give;
         if (!it.count) it.removed = true;
-        this.sendTo(from, { k: 'got', i: it.id, c: give, d: it.dmg || 0 });
+        this.sendTo(from, { k: 'got', i: it.id, c: give, d: it.dmg || 0, e: it.e || undefined });
         break;
       }
       case 'hit': {
         const m = this.mobIndex.get(d.id);
         if (!m || m.dead || m.removed) return;
         if (m.invul < 0.15) m.invul = 0;   // the guest already waited out the cooldown; allow for network jitter
-        m.hurt(+d.d || 0, d.x, d.z, d.p ? 'remote' : false, d.kb ?? 1, a || null);
+        const f = d.f && typeof d.f === 'object' ? d.f : null;
+        m.hurt(+d.d || 0, d.x, d.z, d.p ? 'remote' : false, d.kb ?? 1, a || null, f ? { fire: Math.min(8, +f.fire || 0), loot: Math.min(3, f.loot | 0), arrow: +f.arrow || 0, bolt: f.bolt ? 1 : 0, shot: f.shot | 0, fb: f.fb ? 1 : 0 } : null);
         break;
       }
       case 'stare': {
@@ -654,6 +661,8 @@ export class Net {
         break;
       }
       case 'cc': for (const s of this.watch.values()) s.delete(from); break;
+      // a guest took what a furnace had smelted, and the experience it kept
+      case 'fx0': { const c = w && w.containers.get(String(d.key)); if (c) c.xp = 0; break; }
       case 'c': {
         const c = w && w.containers.get(d.key);
         if (!c || !Array.isArray(d.s)) return;
@@ -664,11 +673,14 @@ export class Net {
         if (G.ui.container && G.ui.container.data === c) G.ui.refreshContainer();
         break;
       }
+      // a guest traded with one of the villagers: it wears the offer out and the villager learns from it
       case 'tu': {
         const m = this.mobIndex.get(d.id);
-        if (m && m.trades && Array.isArray(d.u)) d.u.forEach((u, i) => { if (m.trades[i]) m.trades[i].uses = Math.max(m.trades[i].uses, u | 0); });
+        if (m && m.trades && !m.dead) m.traded(d.i | 0, Math.max(1, Math.min(64, d.n | 0)));
         break;
       }
+      // a guest wants the bed a villager is sleeping in
+      case 'vw': G.entities.wakeVillagerAt(d.x | 0, d.y | 0, d.z | 0); break;
       case 'sign':
         G.game.setSign(d.x | 0, d.y | 0, d.z | 0, d.l, true);
         this.sendExcept(from, { k: 'sign', x: d.x | 0, y: d.y | 0, z: d.z | 0, l: G.game.signText(d.x | 0, d.y | 0, d.z | 0) });
@@ -711,7 +723,7 @@ export class Net {
         if (!w) return;
         for (const a of d.l) {
           const m = this.proxies.get(a[0]);
-          if (m && !m.removed) m.applyNet(a);
+          if (m && !m.removed) { m.applyNet(a); if (a[9] && m.def.villager) m.applyVillager(a[9]); }   // (a villager sent again has changed: a new level, a new job)
           else if (a[9]) this.proxies.set(a[0], G.entities.spawnProxy(a));
         }
         for (const id of d.g) {
@@ -734,15 +746,18 @@ export class Net {
       case 'hurt':
         if (!p || p.dead) return;
         if (d.c === 'player') this.hurtByPlayer(d, d.by);
-        else p.hurt(+d.d || 0, d.x ?? null, d.z ?? null, d.c, !!d.ax);
+        else p.hurt(+d.d || 0, d.x ?? null, d.z ?? null, d.c, !!d.ax, d.m != null ? this.proxies.get(d.m) || null : null);
         break;
+      // a mob this player killed: its experience, and the kill counts for their achievements
+      case 'xp': if (p) G.entities.gotKill({ t: String(d.t || ''), x: +d.x || 0, y: +d.y || 0, z: +d.z || 0, n: Math.min(2000, d.n | 0), a: +d.a || 0, b: d.b ? 1 : 0, s: d.s | 0, f: d.f ? 1 : 0 }); break;
       case 'fx': if (p && !p.dead) p.addEffect(d.n, +d.t || 0); break;
       case 'got': {
         if (!p) return;
-        const left = p.inv.add(d.i, d.c, d.d);
+        const e = cleanEnch(d.e);
+        const left = p.inv.add(d.i, d.c, d.d, e);
         sfx('pop', null, { vol: 0.5 });
         G.ui.invChanged();
-        if (left) G.entities.dropItem(d.i, left, p.pos.x, p.pos.y + 1, p.pos.z, undefined, undefined, undefined, d.d);
+        if (left) G.entities.dropItem(d.i, left, p.pos.x, p.pos.y + 1, p.pos.z, undefined, undefined, undefined, d.d, e);
         break;
       }
       case 't':
@@ -755,7 +770,7 @@ export class Net {
         const c = w && w.containers.get(d.key);
         if (!c) return;
         unpackSlots(d.s, c.slots.length).forEach((s, i) => { c.slots[i] = s; });
-        c.burn = d.b || 0; c.burnMax = d.bm || 0; c.cook = d.ck || 0;
+        c.burn = d.b || 0; c.burnMax = d.bm || 0; c.cook = d.ck || 0; c.xp = +d.xp || 0;
         c.pending = false;
         c.sig = containerSig(c);
         if (G.ui.container && G.ui.container.data === c) G.ui.refreshContainer();
@@ -778,7 +793,7 @@ export class Net {
   }
 
   containerMsg(c) {
-    return { s: packSlots(c.slots), b: Math.round((c.burn || 0) * 10) / 10, bm: c.burnMax || 0, ck: Math.round((c.cook || 0) * 10) / 10 };
+    return { s: packSlots(c.slots), b: Math.round((c.burn || 0) * 10) / 10, bm: c.burnMax || 0, ck: Math.round((c.cook || 0) * 10) / 10, xp: Math.round((c.xp || 0) * 100) / 100 };
   }
 
   // ------------------------------------------------------------ every frame
@@ -807,7 +822,7 @@ export class Net {
       this.out = [];
     }
     if (this.drops.length) {
-      this.send({ k: 'drop', l: this.drops.map((s) => [...s.a, s.pickupDelay]) });
+      this.send({ k: 'drop', l: this.drops.map((s) => [...s.a, s.pickupDelay, s.e]) });
       this.drops = [];
     }
     if (this.role === 'host') this.hostTick(dt);
@@ -863,7 +878,7 @@ export class Net {
         if (d > (known.has(m.netId) ? MOB_RANGE + 8 : MOB_RANGE)) continue;
         seen.add(m.netId);
         const st = m.netState();
-        if (!known.has(m.netId)) { st.push(m.netSpawn()); known.add(m.netId); }
+        if (!known.has(m.netId) || m.vDirty) { st.push(m.netSpawn()); known.add(m.netId); }
         l.push(st);
       }
       const g = [];
@@ -878,13 +893,14 @@ export class Net {
         iseen.add(e.netId);
         const x = r2(e.pos.x), y = r2(e.pos.y), z = r2(e.pos.z);
         const sig = `${x},${y},${z},${e.count}`;
-        if (!ki.has(e.netId)) it.push([e.netId, x, y, z, e.count, e.id, e.dmg || 0, Math.max(0, r2(e.pickupDelay - e.age))]);
+        if (!ki.has(e.netId)) it.push([e.netId, x, y, z, e.count, e.id, e.dmg || 0, Math.max(0, r2(e.pickupDelay - e.age)), ...(e.e ? [e.e] : [])]);
         else if (ki.get(e.netId) !== sig) it.push([e.netId, x, y, z, e.count]);
         ki.set(e.netId, sig);
       }
       for (const id of ki.keys()) if (!iseen.has(id)) { ig.push(id); ki.delete(id); }
       if (l.length || g.length || it.length || ig.length) this.sendTo(a.id, { k: 'm', l, g, it, ig });
     }
+    for (const m of mobs) m.vDirty = false;
   }
 
   guestTick(dt) {
@@ -902,11 +918,6 @@ export class Net {
         const sig = containerSig(c);
         if (sig !== c.sig) { c.sig = sig; this.send({ k: 'c', key, s: packSlots(c.slots) }); }
       }
-      // trades made with the host's villagers
-      const v = ui && ui.kind === 'trade' && ui.data.proxy ? ui.data : null;
-      const tsig = v ? v.netId + ':' + v.trades.map((t) => t.uses).join(',') : '';
-      if (v && this.tradeSig && tsig !== this.tradeSig && this.tradeSig.startsWith(v.netId + ':')) this.send({ k: 'tu', id: v.netId, u: v.trades.map((t) => t.uses) });
-      this.tradeSig = tsig;
     }
   }
 }

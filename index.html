@@ -75,6 +75,13 @@
   #stats { display: flex; justify-content: space-between; align-items: flex-end; width: calc(var(--slot-size) * 9 + 8px); }
   #right-stats { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
   #left-stats { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+  /* experience: a thin green bar over the hotbar, with the level in the middle */
+  #xp-bar { position: relative; width: calc(var(--slot-size) * 9 + 8px); height: 7px; background: rgba(0, 0, 0, 0.55); border: 1px solid #111; box-sizing: border-box; }
+  #xp-fill { display: block; height: 100%; width: 0; background: linear-gradient(#b6f24a, #58b81c); }
+  #xp-level {
+    position: absolute; left: 50%; bottom: 3px; transform: translateX(-50%); font-size: calc(var(--slot-size) * 0.5); line-height: 1; color: #86f23c;
+    text-shadow: 2px 0 0 #0c1f05, -2px 0 0 #0c1f05, 0 2px 0 #0c1f05, 0 -2px 0 #0c1f05; font-variant-numeric: tabular-nums;
+  }
   #hearts, #food, #bubbles, #armor-bar { display: flex; gap: 1px; }
   #armor-bar { visibility: hidden; }
   .armor-icon { display: block; width: calc(var(--slot-size) * 0.39); height: calc(var(--slot-size) * 0.39); background-size: 100% 100%; image-rendering: pixelated; }
@@ -124,6 +131,14 @@
     font-variant-numeric: tabular-nums;
   }
   .slot .dur { position: absolute; left: 12%; right: 12%; bottom: 9%; height: 3px; background: #000; pointer-events: none; }
+  /* enchanted things shimmer: a moving band of light, cut to the shape of the icon */
+  .slot .glint {
+    position: absolute; left: 11%; top: 11%; width: 78%; height: 78%; pointer-events: none; mix-blend-mode: screen;
+    -webkit-mask: var(--icon) center / 100% 100% no-repeat; mask: var(--icon) center / 100% 100% no-repeat;
+    background: linear-gradient(115deg, rgba(150, 70, 255, 0.28) 20%, rgba(190, 120, 255, 0.85) 45%, rgba(255, 255, 255, 0.6) 50%, rgba(190, 120, 255, 0.85) 55%, rgba(150, 70, 255, 0.28) 80%);
+    background-size: 300% 100%; animation: glint 2.6s linear infinite;
+  }
+  @keyframes glint { 0% { background-position: 120% 0; } 100% { background-position: -60% 0; } }
   .slot .dur i { display: block; height: 100%; }
   #toast {
     position: absolute; left: 50%; transform: translateX(-50%);
@@ -334,6 +349,47 @@
   .hotbar-grid { margin-top: 6px; }
   .armor-col { display: flex; flex-direction: column; margin-right: 18px; }
   .panel .slot.armor-slot { background-size: 70% 70%; background-position: center; background-repeat: no-repeat; image-rendering: pixelated; }
+  /* achievements: the note that slides in, and the screen that lists them */
+  #adv-toast {
+    position: absolute; right: calc(8px + env(safe-area-inset-right, 0px)); top: calc(8px + env(safe-area-inset-top, 0px)); display: flex; align-items: center; gap: 10px;
+    padding: 6px 12px 6px 8px; background: rgba(24, 24, 24, 0.94); border: 2px solid #555; box-shadow: inset 0 0 0 2px #2a2a2a; animation: adv-in 0.35s ease-out;
+  }
+  #adv-toast img { width: 40px; height: 40px; image-rendering: pixelated; }
+  #adv-toast-head { font-size: 18px; color: #ffe14a; }
+  #adv-toast.hard #adv-toast-head { color: #e07af2; }
+  #adv-toast-title { font-size: 21px; color: #fff; }
+  @keyframes adv-in { from { transform: translateX(110%); } to { transform: translateX(0); } }
+  .adv-panel { width: min(680px, calc(100vw - 20px)); }
+  .adv-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+  .adv-tab { font: inherit; font-size: 19px; padding: 2px 10px; color: #222; background: #9a9a9a; border: 2px solid #444; cursor: pointer; }
+  .adv-tab.sel { background: #e8e8e8; border-color: #111; }
+  .adv-list { display: flex; flex-direction: column; gap: 4px; max-height: min(62vh, 520px); overflow-y: auto; touch-action: pan-y; overscroll-behavior: contain; }
+  .adv-row { display: flex; align-items: center; gap: 10px; padding: 4px 8px; background: #6e6e6e; border: 2px solid #3a3a3a; opacity: 0.72; }
+  .adv-row.done { background: #5c7a3a; border-color: #2c3f18; opacity: 1; }
+  .adv-row.done.hard { background: #6e4a86; border-color: #38204a; }
+  .adv-row img { flex: none; width: 36px; height: 36px; image-rendering: pixelated; }
+  .adv-row .t { font-size: 21px; color: #fff; text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4); }
+  .adv-row .d { font-size: 18px; color: #e2e2e2; }
+  .adv-row .x { flex: none; margin-left: auto; font-size: 18px; color: #c8f59a; text-align: right; white-space: nowrap; }
+
+  /* the enchanting table and the anvil */
+  .ench-row { display: flex; gap: 10px; align-items: stretch; margin-bottom: 6px; }
+  .ench-slots { display: flex; flex-direction: column; gap: 4px; justify-content: center; }
+  .ench-offers { flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .ench-offer {
+    display: flex; align-items: center; gap: 8px; width: 100%; min-height: calc(var(--slot-size) * 0.92); padding: 2px 8px; font: inherit; text-align: left; cursor: pointer;
+    color: #f0e6c8; background: #4b3a63; border: 2px solid #1e1530; box-shadow: inset 2px 2px 0 rgba(255, 255, 255, 0.18), inset -2px -2px 0 rgba(0, 0, 0, 0.3);
+  }
+  @media (hover: hover) { .ench-offer:not(:disabled):hover { background: #5e4a7c; } }
+  .ench-offer:disabled { background: #6c6c6c; opacity: 0.45; cursor: default; }
+  .ench-offer.cant { background: #5a4040; color: #c9b4b4; }
+  .ench-cost { flex: none; width: 1.3em; height: 1.3em; display: grid; place-items: center; font-size: 22px; color: #86f23c; background: rgba(0, 0, 0, 0.35); border-radius: 50%; text-shadow: 1px 1px 0 #0c1f05; }
+  .ench-clue { flex: 1; min-width: 0; font-size: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ench-need { flex: none; font-size: 18px; color: #86f23c; }
+  .ench-offer.cant .ench-need, .ench-offer.cant .ench-cost { color: #ff8a80; }
+  .anvil-row .plus { font-size: 30px; color: #3a3a3a; padding: 0 4px; align-self: center; }
+  .panel .hint.anvil-cost { min-height: 1.3em; color: #2e5c12; }
+  .panel .hint.anvil-cost.bad { color: #a01818; }
   .offers { display: flex; flex-direction: column; gap: 4px; max-height: min(42vh, 330px); overflow-y: auto; touch-action: pan-y; overscroll-behavior: contain; }
   .offer {
     display: flex; align-items: center; gap: 6px; padding: 4px 8px; cursor: pointer; text-align: left;
@@ -341,6 +397,10 @@
   }
   @media (hover: hover) { .offer:hover { background: #a2a2a2; } }
   .offer.cant { background: #9c7a7a; }
+  .offer.locked { background: #6f6f6f; opacity: 0.5; }
+  .offer.locked .offer-name { color: #2a2a2a; font-style: italic; }
+  .trade-level { height: 8px; margin: 0 0 6px; background: #3c3c3c; border: 2px solid #1c1c1c; }
+  .trade-level i { display: block; height: 100%; background: linear-gradient(#b6f24a, #58b81c); }
   .offer.out { background: #6c6c6c; opacity: 0.6; }
   .offer-item { position: relative; width: calc(var(--slot-size) * 0.8); height: calc(var(--slot-size) * 0.8); flex: none; }
   .offer-item img { width: 100%; height: 100%; }
@@ -390,6 +450,10 @@
     font-size: 21px; color: #fff; padding: 3px 8px; background: rgba(16, 0, 16, 0.94); border: 2px solid #2d0a63;
     text-shadow: 2px 2px 0 #3f3f3f;
   }
+  #tooltip .tip-name.ench { color: #6ff; }
+  #tooltip .tip-ench { color: #b9b9c4; font-size: 19px; }
+  #tooltip .tip-ench.curse { color: #ff6b6b; }
+  #tooltip .tip-line { color: #cfcfcf; font-size: 19px; }
   #boot { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 16px; text-align: center; font-size: 24px; color: #ddd; background: #1d1d1d; }
 </style>
 <script type="importmap">
@@ -417,6 +481,7 @@
   <div id="attack-ind" hidden><i id="attack-fill"></i></div>
   <div id="debug" hidden></div>
   <div id="toast"></div>
+  <div id="adv-toast" hidden><img id="adv-toast-icon" alt=""><div><div id="adv-toast-head"></div><div id="adv-toast-title"></div></div></div>
   <div id="chat-log"></div>
   <div id="effects" hidden></div>
   <div id="sleep" hidden></div>
@@ -428,6 +493,7 @@
       <div id="left-stats"><div id="armor-bar"></div><div id="hearts"></div></div>
       <div id="right-stats"><div id="bubbles"></div><div id="food"></div></div>
     </div>
+    <div id="xp-bar"><i id="xp-fill"></i><span id="xp-level"></span></div>
     <div id="hotbar-row">
       <div id="offhand" class="slot" role="button" aria-label="Off hand: swap with the item you are holding"></div>
       <div id="hotbar"></div>
@@ -628,6 +694,7 @@
   <h2>Game Menu</h2>
   <div class="col">
     <button class="btn" id="b-resume" type="button">Back to Game</button>
+    <button class="btn" id="b-pause-adv" type="button">Achievements</button>
     <button class="btn" id="b-pause-options" type="button">Options…</button>
     <button class="btn" id="b-quit" type="button">Save and Quit to Title</button>
   </div>
@@ -645,6 +712,14 @@
   <div class="col">
     <button class="btn" id="b-respawn" type="button">Respawn</button>
     <button class="btn" id="b-death-title" type="button">Title Screen</button>
+  </div>
+</section>
+
+<section class="screen dim" id="s-adv" hidden>
+  <div class="panel adv-panel">
+    <div class="panel-head"><div class="panel-title" id="adv-title">Achievements</div><button class="close" id="b-adv-close" type="button" aria-label="Close">✕</button></div>
+    <div class="adv-tabs" id="adv-tabs"></div>
+    <div class="adv-list" id="adv-list"></div>
   </div>
 </section>
 

@@ -3,6 +3,7 @@
 // (light never travels further than 15 blocks).
 import { CH } from './world.js';
 import { BLOCKS, RENDER, B } from './blocks.js';
+import { TEX } from './textures.js';
 
 const RW = 48, RA = RW * RW, RH = CH + 2;   // region: 48x48 columns, one pad layer below and above
 const RSIZE = RA * RH;
@@ -17,6 +18,8 @@ const OPAQUE = new Uint8Array(256), SKYPASS = new Uint8Array(256), ATTEN = new U
 const EMIT = new Uint8Array(256), RTYPE = new Uint8Array(256), CULLSAME = new Uint8Array(256);
 const TRANS = new Uint8Array(256), TINT = new Uint8Array(256), FACING = new Uint8Array(256), SOLID = new Uint8Array(256);
 const FACE = new Uint8Array(256 * 6), FRONT = new Uint8Array(256);
+// Blocks with a shape of their own: id -> for each way they can face, boxes [x0, y0, z0, x1, y1, z1, layers]
+const MODELS = [];
 
 const BIOME_TINT = [
   [1, 1, 1], [0.86, 1, 0.84], [1, 0.93, 0.6], [0.76, 0.92, 0.84], [0.8, 0.9, 0.94], [0.8, 0.93, 0.86],
@@ -68,6 +71,14 @@ export function initMesher() {
     for (let f = 0; f < 6; f++) FACE[i * 6 + f] = b.faces[f];
     FRONT[i] = b.front;
     FENCE_LINK[i] = (b.opaque && b.solid) || b.render === RENDER.FENCE ? 1 : 0;
+    if (b.boxes) {
+      const own = [b.faces[0], b.faces[1], b.faces[2], b.faces[3], b.faces[4], b.faces[5]];
+      const boxes = b.boxes.map((q) => [q[0], q[1], q[2], q[3], q[4], q[5], q[6] ? ALL6(TEX[q[6]]) : own]);
+      // turned a quarter at a time for the way the block faces
+      const turn = (list) => list.map(([x0, y0, z0, x1, y1, z1, l]) => [16 - z1, y0, x0, 16 - z0, y1, x1, l]);
+      MODELS[i] = [boxes];
+      for (let r = 1; r < 4; r++) MODELS[i][r] = turn(MODELS[i][r - 1]);
+    }
   }
 }
 
@@ -491,6 +502,10 @@ export function buildChunkMesh(world, chunk) {
             const b = [[0, 4, 0, 16, 12, 2], [0, 4, 0, 2, 12, 16], [0, 4, 14, 16, 12, 16], [14, 4, 0, 16, 12, 16]][m & 3];
             litBox(OB, X, Y, Z, b[0], b[1], b[2], b[3], b[4], b[5], layers, ri, 0);
           }
+        } else if (rt === RENDER.MODEL) {
+          // a shape of its own, made of boxes (the anvil, the enchanting table, the blocks villagers work at)
+          const m = meta ? meta[(y << 8) | (z << 4) | x] : 0;
+          for (const b of MODELS[id][FACING[id] ? m & 3 : 0]) litBox(OB, x * 16, y * 16, z * 16, b[0], b[1], b[2], b[3], b[4], b[5], b[6], ri, 0);
         } else if (rt === RENDER.PORTAL) {
           // a thin glowing sheet across the frame (meta 0: along x, 1: along z)
           const layer = FACE[id * 6];
