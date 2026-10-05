@@ -42,6 +42,17 @@ const MARKET = {
 
 export const UPDATES = [
   {
+    // a small update: it keeps the Trades & Enchantments picture
+    version: '1.7.1', name: 'Join Codes', date: '2026-10-05',
+    splashes: ['Got the code?', 'Six letters!', 'Enchanted!', 'Level 30!', 'Hire a villager!', 'From Novice to Master!', 'Gone fishing!', 'Achievement made!', 'Trade up!'],
+    scene: MARKET,
+    notes: [
+      'Join a friend’s online world by typing its six-letter join code in the Multiplayer screen. No link needed (links still work).',
+      'Your own world’s code is shown in the Multiplayer list and in the game menu while you play, so you can just read it out.',
+      'Tidying the Multiplayer list: anyone can take a world off their own list (its code brings it back), and whoever made a world can choose between taking it off their list and deleting it for everyone.',
+    ],
+  },
+  {
     version: '1.7', name: 'Trades & Enchantments', date: '2026-10-04',
     splashes: ['Enchanted!', 'Level 30!', 'Fifteen bookshelves!', 'Hire a villager!', 'From Novice to Master!', 'Good night, villagers!', 'Gone fishing!', 'More diamonds!',
       'Achievement made!', 'Mind the anvil!', 'Sharpness V!', 'Trade up!'],

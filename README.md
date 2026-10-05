@@ -33,18 +33,18 @@ Then open http://localhost:8080. Online worlds are saved in the `data/` folder.
 
 ## Online worlds
 
-Online worlds are separate from your singleplayer worlds. They live on the server, and each has a permanent link like `https://your-site.onrender.com/?world=K7PQ2X`.
+Online worlds are separate from your singleplayer worlds. They live on the server, and each has a six-letter join code like `K7PQ2X` (and a permanent link, `https://your-site.onrender.com/?world=K7PQ2X`). Neither ever changes.
 
 1. On the title screen choose **Multiplayer** and sign in, or create an account with a username and password. Then click **Create Online World**.
-2. Click **Copy Link** and send it to your friends. The link never changes.
-3. Anyone who opens the link joins that world, and from then on it is in their own Multiplayer list so they can come back any time. Nobody else sees your world in their list until you give them the link.
+2. Tell your friends the join code. It is shown under the world in the Multiplayer list, and in the game menu while you play. (Or click **Copy Link** and send the link.)
+3. A friend types the code into **Join With Code** on their Multiplayer screen (or opens the link). From then on the world is in their own list so they can come back any time. Nobody else sees your world in their list until you give them the code or the link.
 
 How it works:
 
 - The first player in runs the world in their browser: mobs, water, fire, furnaces and the time of day. Everyone else joins them.
 - The world is sent to the server every 10 seconds and when that player leaves. If they leave while others are playing, the next player takes over automatically after a short "Taking over the world…" screen.
 - Everyone has their own inventory, health, hunger and position, saved under their account, so nobody else can ever be you. Sign in with the same account on any device. Passwords are stored as salted scrypt hashes, never as text.
-- Only the player who created a world can delete it. Anyone else can remove it from their own list (the link still works).
+- Only the player who created a world can delete it for everyone. Anyone, the creator included, can take a world off their own list instead; typing its join code (or opening its link) puts it back.
 - You can see what other players are wearing and holding.
 - The time of day is the same for everyone. The night is skipped only when everyone is in bed.
 - You can always hit other players, with fists, weapons or arrows.

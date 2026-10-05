@@ -294,6 +294,14 @@
   .world-list .empty { font-size: 22px; color: var(--text-dim); text-align: center; margin: 18px 0; }
   .confirm { width: min(560px, 100%); background: rgba(0, 0, 0, 0.7); border: 2px solid #8a2020; padding: 10px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; }
   .confirm p { margin: 0; font-size: 22px; text-align: center; }
+  /* a question asked over the whole screen, so it can't be missed or scrolled away */
+  .modal { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 16px; background: rgba(0, 0, 0, 0.72); }
+  .modal[hidden] { display: none; }
+  .modal .confirm { background: #1c1c1c; }
+  /* the online worlds screen can be taller than a small screen: it scrolls from the top instead of being cut off */
+  #s-mp { justify-content: flex-start; }
+  #s-mp > h2 { margin-top: auto; }
+  #s-mp > :last-child { margin-bottom: auto; }
 
   .field { display: flex; flex-direction: column; gap: 4px; font-size: 21px; color: var(--text-dim); }
   .field input {
@@ -301,6 +309,14 @@
     padding: 4px 8px; outline: none; -webkit-user-select: text; user-select: text; touch-action: auto;
   }
   .field input:focus { border-color: #fff; }
+  /* joining an online world by its code */
+  .mp-code-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+  .mp-code-row input {
+    min-width: 0; font: 26px var(--ui-font); color: #fff; background: #000; border: 2px solid #a0a0a0; padding: 4px 8px; outline: none;
+    text-transform: uppercase; letter-spacing: 2px; -webkit-user-select: text; user-select: text; touch-action: auto;
+  }
+  .mp-code-row input::placeholder { text-transform: none; letter-spacing: 0; color: #777; }
+  .mp-code-row input:focus { border-color: #fff; }
   .note { font-size: 20px; color: var(--text-dim); text-align: center; margin: -2px 0 4px; }
 
   #options-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; width: min(640px, 100%); }
@@ -568,16 +584,21 @@
   </form>
   <p class="note" id="mp-account" hidden>Signed in as <strong id="mp-account-name"></strong> · <button class="linkbtn" id="b-sign-out" type="button">Sign out</button><span id="mp-admin-link" hidden> · <button class="linkbtn" id="b-admin" type="button">Admin</button></span></p>
   <div class="world-list" id="online-list"></div>
-  <div class="confirm" id="online-delete-confirm" hidden>
-    <p id="online-delete-text"></p>
-    <div class="row2">
-      <button class="btn danger" id="b-confirm-delete-online" type="button">Delete</button>
-      <button class="btn" id="b-cancel-delete-online" type="button">Keep it</button>
+  <div class="modal" id="online-delete-confirm" hidden>
+    <div class="confirm">
+      <p id="online-delete-text"></p>
+      <button class="btn" id="b-remove-online" type="button">Take Off My List</button>
+      <button class="btn danger" id="b-confirm-delete-online" type="button">Delete for Everyone</button>
+      <button class="btn" id="b-cancel-delete-online" type="button">Cancel</button>
     </div>
   </div>
   <p class="note mp-status" id="mp-status"></p>
   <p class="note mp-status" id="mp-storage"></p>
   <div class="col" style="width:min(560px,100%)">
+    <form class="mp-code-row mp-world-buttons" id="mp-code-form" autocomplete="off">
+      <input id="mp-code-input" type="text" maxlength="200" autocapitalize="characters" autocorrect="off" spellcheck="false" enterkeyhint="go" placeholder="Friend's join code, like K7PQ2X" aria-label="Join code">
+      <button class="btn" id="b-join-code" type="submit">Join With Code</button>
+    </form>
     <div class="row2 mp-world-buttons">
       <button class="btn" id="b-join" type="button">Play Selected World</button>
       <button class="btn" id="b-new-online" type="button">Create Online World</button>
@@ -699,7 +720,7 @@
     <button class="btn" id="b-quit" type="button">Save and Quit to Title</button>
   </div>
   <div class="mp-box" id="mp-box" hidden>
-    <p class="note" id="mp-info-head">Online world · anyone with the link can join</p>
+    <p class="note" id="mp-info-head">Online world · friends join with this code</p>
     <div class="mp-code" id="mp-code-show"></div>
     <button class="btn" id="b-copy-link-pause" type="button">Copy Link</button>
     <p class="mp-players" id="mp-players"></p>

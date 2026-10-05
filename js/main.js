@@ -1003,8 +1003,9 @@ export const Game = {
   },
 
   // Deletes your own world for everyone; someone else's just leaves your list (resolves { removed: true })
-  async deleteOnline(id) {
-    const r = await fetch('/api/worlds/' + id, { method: 'DELETE', headers: authHeader(G.account) });
+  // (onlyList: your own world just leaves your list and stays there for everyone else)
+  async deleteOnline(id, onlyList = false) {
+    const r = await fetch('/api/worlds/' + id + (onlyList ? '?only=list' : ''), { method: 'DELETE', headers: authHeader(G.account) });
     const b = await r.json().catch(() => ({}));
     // (a world only this browser still had is just forgotten here)
     if (!r.ok && r.status !== 404) throw new Error(b.error || 'Could not delete that world.');

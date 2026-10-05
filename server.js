@@ -235,7 +235,8 @@ const server = http.createServer(async (req, res) => {
         for (const m of await store.list().catch(() => [])) if (!m.id.includes('~') && !worlds.has(m.id)) worlds.set(m.id, m);   // made on the other copy during an update
         const mine = await store.memberWorlds(who.id);   // fresh, in case another copy of the server changed it
         members.set(who.id, mine);
-        list = [...worlds.values()].filter((m) => m.owner === who.id || mine[m.id] === false)
+        // (your own stay in your list unless you took them off it; the join code puts one back)
+        list = [...worlds.values()].filter((m) => mine[m.id] === false || (m.owner === who.id && mine[m.id] !== true))
           .map((m) => ({ ...m, players: playersIn(m.id), mine: m.owner === who.id || !m.owner })).sort((a, b) => (b.updated || 0) - (a.updated || 0));
       }
       json(res, 200, { permanent: store.permanent, storage: store.kind, build: BUILD, worlds: list });
@@ -262,13 +263,14 @@ const server = http.createServer(async (req, res) => {
       if (!who) { json(res, 401, { error: 'Sign in first.' }); return; }
       const wm = await worldMeta(id);
       if (!wm) { json(res, 404, { error: 'No such world' }); return; }
-      if (wm.owner && wm.owner !== who.id) {
-        // someone else's world just leaves your list (its link still works)
+      if ((wm.owner && wm.owner !== who.id) || url.searchParams.get('only') === 'list') {
+        // someone else's world, or your own when you only want it out of the way, just leaves your list
+        // (its join code and link still work, and bring it back)
         await setMember(id, who.id, true);
         json(res, 200, { ok: true, removed: true });
         return;
       }
-      if (playersIn(id)) { json(res, 409, { error: 'Someone is playing in that world right now' }); return; }
+      if (playersIn(id)) { json(res, 409, { error: 'Someone is playing in that world right now. Wait until they leave, or take it off your list instead.' }); return; }
       for (const d of DIMS) { const k = roomKey(id, d); await store.del(k); saves.delete(k); dimMetas.delete(k); }
       await store.delPlayers(id);
       worlds.delete(id);

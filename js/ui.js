@@ -132,6 +132,7 @@ export class UI {
     on('b-multi', () => this.openScreen('mp'));
     on('b-mp-back', () => this.back());
     on('b-join', () => this.playOnline());
+    $('mp-code-form').addEventListener('submit', (e) => { e.preventDefault(); initAudio(); sfx('click'); this.joinCode(); });
     on('b-new-online', () => { if (this.signedIn()) { this.createOnline = true; this.openScreen('create'); } });
     $('mp-auth').addEventListener('submit', (e) => { e.preventDefault(); initAudio(); sfx('click'); this.auth(false); });
     on('b-sign-up', () => this.auth(true));
@@ -151,7 +152,8 @@ export class UI {
     on('b-copy-link', () => this.copyLink(this.selectedOnline));
     on('b-copy-link-pause', () => this.copyLink(G.worldMeta && G.worldMeta.online));
     on('b-delete-online', () => this.askDeleteOnline());
-    on('b-confirm-delete-online', () => this.confirmDeleteOnline());
+    on('b-confirm-delete-online', () => this.confirmDeleteOnline(false));
+    on('b-remove-online', () => this.confirmDeleteOnline(true));
     on('b-cancel-delete-online', () => { $('online-delete-confirm').hidden = true; });
     $('chat-form').addEventListener('submit', (e) => {
       e.preventDefault();
@@ -493,14 +495,14 @@ export class UI {
     for (const w of G.game.localOnlineWorlds()) if (!known.has(w.id)) this.online.push({ ...w, local: true });
     list.innerHTML = '';
     if (!this.online.some((w) => w.id === this.selectedOnline)) this.selectedOnline = this.online.length ? this.online[0].id : null;
-    if (!this.online.length) list.appendChild(h('p', 'empty', 'No online worlds yet. Create one, or open a friend’s link to add theirs here.'));
+    if (!this.online.length) list.appendChild(h('p', 'empty', 'No online worlds yet. Create one, or type a friend’s join code below to add theirs here.'));
     for (const w of this.online) {
       const row = h('button', 'world-row');
       row.type = 'button';
       row.appendChild(h('strong', null, w.name));
       const d = new Date(w.updated || w.created);
       const who = w.local ? 'only saved in this browser, open it to put it back online' : w.players ? `${w.players} playing now` : `last played ${d.toLocaleDateString()}`;
-      row.appendChild(h('span', null, `${w.mode === 'creative' ? 'Creative' : 'Survival'} · ${who} · link …?world=${w.id}`));
+      row.appendChild(h('span', null, `${w.mode === 'creative' ? 'Creative' : 'Survival'} · ${who} · join code ${w.id}`));
       if (w.id === this.selectedOnline) row.classList.add('sel');
       row.addEventListener('click', () => {
         if (this.selectedOnline === w.id) { this.playOnline(); return; }
@@ -524,8 +526,9 @@ export class UI {
   syncOnlineButtons() {
     const off = !this.selectedOnline || !!this.busy;
     for (const id of ['b-join', 'b-copy-link', 'b-delete-online']) $(id).disabled = off;
+    $('b-join-code').disabled = !!this.busy;
     const w = (this.online || []).find((x) => x.id === this.selectedOnline);
-    $('b-delete-online').textContent = w && !w.mine && !w.local ? 'Remove' : 'Delete';
+    $('b-delete-online').textContent = !w || w.local ? 'Delete' : w.mine ? 'Delete or Remove…' : 'Remove From List';
     $('b-new-online').disabled = !!this.busy;
   }
 
@@ -569,16 +572,34 @@ export class UI {
     }
   }
 
+  // Resolves true once you are in
   async playOnline(id = this.selectedOnline) {
-    if (!id || this.busy) return;
-    if (!this.signedIn()) { this.pendingWorld = id; return; }
+    if (!id || this.busy) return false;
+    if (!this.signedIn()) { this.pendingWorld = id; return false; }
     this.busy = true;
     this.syncOnlineButtons();
     this.mpStatus('Connecting…');
+    let ok = true;
     try { await G.game.joinWorld(id, (t) => this.mpStatus(t)); }
-    catch (err) { this.mpStatus(err && err.message ? err.message : 'Could not join that world.'); }
+    catch (err) { ok = false; this.mpStatus(err && err.message ? err.message : 'Could not join that world.'); }
     this.busy = false;
     this.syncOnlineButtons();
+    return ok;
+  }
+
+  // Joining a friend's world by typing its code (a whole link pasted in works as well: the code is its last part)
+  async joinCode() {
+    const box = $('mp-code-input');
+    const raw = box.value.trim();
+    const m = raw.match(/[?&]world=([A-Za-z0-9]+)/);
+    const code = (m ? m[1] : raw).toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!code) { this.mpStatus('Type the join code of the world: six letters and numbers, like K7PQ2X.'); box.focus(); return; }
+    if (!/^[A-HJ-NP-Z2-9]{6}$/.test(code)) {
+      this.mpStatus(/[OI01]/.test(code) && code.length === 6 ? 'Join codes never use the letters O and I or the numbers 0 and 1. Check the code again.' : 'A join code is six letters and numbers, like K7PQ2X.');
+      box.focus();
+      return;
+    }
+    if (await this.playOnline(code)) box.value = '';
   }
 
   // Opened from a world link (…?world=ID)
@@ -595,7 +616,7 @@ export class UI {
     let ok = false;
     try { await navigator.clipboard.writeText(link); ok = true; } catch { /* clipboard blocked */ }
     if (!ok) { window.prompt('Copy this link and send it to your friends:', link); return; }
-    if (G.screen === 'mp') this.mpStatus(`Link copied: ${link}`);
+    if (G.screen === 'mp') this.mpStatus(`Link copied. Friends can also type the join code ${id} in their Multiplayer screen.`);
     else {
       const b = $('b-copy-link-pause');
       b.textContent = 'Link copied!';
@@ -660,22 +681,32 @@ export class UI {
   }
 
   // Your own worlds can be deleted for everyone; anyone else's only leave your list
+  // Taking a world out of the list. Anyone can take one off their own list (its join code brings it back);
+  // whoever made it can also delete it for everyone.
   askDeleteOnline() {
     const w = (this.online || []).find((x) => x.id === this.selectedOnline);
     if (!w) return;
+    const owner = !!w.mine && !w.local;
     $('online-delete-text').textContent = w.local ? `Forget “${w.name}”? It is only saved in this browser.`
-      : w.mine ? `Delete “${w.name}” for everyone? It will be gone for good.`
-        : `Remove “${w.name}” from your list? Its link will still work if you want to come back.`;
-    $('b-confirm-delete-online').textContent = w.local ? 'Forget' : w.mine ? 'Delete' : 'Remove';
+      : owner ? `“${w.name}” is your world. Take it off your list (it stays for your friends, and its join code ${w.id} brings it back), or delete it for everyone, for good?`
+        : `Take “${w.name}” off your list? Its join code ${w.id} brings it back any time.`;
+    $('b-remove-online').hidden = !!w.local;
+    $('b-confirm-delete-online').hidden = !owner && !w.local;
+    $('b-confirm-delete-online').textContent = w.local ? 'Forget It' : 'Delete for Everyone';
     $('online-delete-confirm').hidden = false;
   }
 
-  async confirmDeleteOnline() {
+  async confirmDeleteOnline(onlyList) {
     $('online-delete-confirm').hidden = true;
+    const id = this.selectedOnline;
+    const w = (this.online || []).find((x) => x.id === id);
+    if (!id) return;
+    this.mpStatus(onlyList ? 'Taking it off your list…' : 'Deleting…');
     try {
-      const r = await G.game.deleteOnline(this.selectedOnline);
-      this.mpStatus(r && r.removed ? 'Removed from your list.' : 'World deleted.');
-    } catch (err) { this.mpStatus(err.message); }
+      // (forgetting a copy only this browser has never deletes anything on the server)
+      const r = await G.game.deleteOnline(id, onlyList || !!(w && w.local));
+      this.mpStatus(w && w.local ? 'Forgotten.' : r && r.removed ? `Taken off your list. Its join code is ${id} if you want it back.` : 'World deleted.');
+    } catch (err) { this.mpStatus(err && err.message ? err.message : 'That did not work. Check your connection and try again.'); }
     this.buildOnlineList();
   }
 
@@ -716,7 +747,7 @@ export class UI {
     $('mp-box').hidden = !online;
     $('b-quit').textContent = online ? 'Leave World' : 'Save and Quit to Title';
     if (!online) return;
-    $('mp-info-head').textContent = 'Online world · anyone with the link can join';
+    $('mp-info-head').textContent = 'Online world · friends join with this code';
     $('mp-code-show').textContent = meta.online;
     if (!net) { $('mp-players').textContent = ''; return; }
     const names = [net.role === 'host' ? `${net.name} (you)` : net.hostName];
