@@ -102,7 +102,10 @@ In any online world's chat (press **T**):
 - `/kick name`: sends them out of the world.
 - `/ban name reason`: bans them from multiplayer and signs them out everywhere. `/unban name` lets them back.
 - `/op name`, `/deop name`: give or take away admin.
+- `/creative`, `/survival` (or `/gamemode creative`): switch your own mode, in any world. The game menu has a button for the same thing.
 - `/players`: who is online, and where. `/accounts`: every account. `/list`: who is in this world (anyone can use this).
+
+Admins see every online world on the server in their Multiplayer list (marked *Admin · made by …*) and can open any of them.
 
 The **Admin** link on the Multiplayer screen (next to Sign out) lists every account, with buttons for the same things.
 

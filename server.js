@@ -239,7 +239,14 @@ const server = http.createServer(async (req, res) => {
         list = [...worlds.values()].filter((m) => mine[m.id] === false || (m.owner === who.id && mine[m.id] !== true))
           .map((m) => ({ ...m, players: playersIn(m.id), mine: m.owner === who.id || !m.owner })).sort((a, b) => (b.updated || 0) - (a.updated || 0));
       }
-      json(res, 200, { permanent: store.permanent, storage: store.kind, build: BUILD, worlds: list });
+      // an admin also sees every other world on the server, and can walk into any of them
+      let others;
+      if (isAdmin(who)) {
+        const shown = new Set(list.map((m) => m.id));
+        others = [...worlds.values()].filter((m) => !m.id.includes('~') && !shown.has(m.id))
+          .map((m) => ({ ...m, players: playersIn(m.id), mine: false, other: true })).sort((a, b) => (b.updated || 0) - (a.updated || 0));
+      }
+      json(res, 200, { permanent: store.permanent, storage: store.kind, build: BUILD, worlds: list, others });
       return;
     }
     if (p === '/api/worlds' && req.method === 'POST') {
@@ -510,7 +517,14 @@ async function command(ws, text) {
     return `${names.length} playing here: ${names.join(', ')}`;
   }
   if (!isAdmin(acc)) return c === 'help' ? 'Commands: /list (who is playing here). The rest are for admins.' : `Only admins can use /${c}.`;
-  if (c === 'help') return 'Admin commands: /kill name, /kick name, /ban name [reason], /unban name, /op name, /deop name, /players (everyone online), /accounts (every account), /list';
+  // an admin plays in whichever mode they like, in any world
+  if (['gamemode', 'gm', 'creative', 'survival'].includes(c)) {
+    const want = c === 'creative' || c === 'survival' ? c : /^(c|1|creative)$/i.test(name || '') ? 'creative' : /^(s|0|survival)$/i.test(name || '') ? 'survival' : null;
+    if (!want) return 'Say /gamemode creative or /gamemode survival (or just /creative, /survival).';
+    send(ws, { t: 'admin', a: 'mode', mode: want });
+    return `You are in ${want} mode.`;
+  }
+  if (c === 'help') return 'Admin commands: /creative, /survival, /kill name, /kick name, /ban name [reason], /unban name, /op name, /deop name, /players (everyone online), /accounts (every account), /list';
   if (c === 'players') {
     const on = playerList().filter((x) => x.online.length);
     return on.length ? 'Online: ' + on.map((x) => `${x.name} in ${x.online.join(', ')}`).join('; ') : 'Nobody is in an online world.';

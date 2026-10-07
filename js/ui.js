@@ -197,6 +197,7 @@ export class UI {
     on('b-resume', () => this.back());
     on('b-pause-options', () => this.openScreen('options'));
     on('b-pause-adv', () => this.openScreen('adv'));
+    on('b-pause-mode', () => { G.game.toggleMode(); this.closeAll(); requestLock(); });
     on('b-adv-close', () => this.back());
     on('b-quit', () => G.game.quitToTitle());
     on('b-respawn', () => G.game.respawn());
@@ -563,8 +564,10 @@ export class UI {
     if (G.screen !== 'mp') return;
     this.online = res.worlds || [];
     // online worlds this browser keeps a copy of that the server doesn't have (it lost them): opening one puts it back
-    const known = new Set(this.online.map((w) => w.id));
+    const known = new Set([...this.online, ...(res.others || [])].map((w) => w.id));
     for (const w of G.game.localOnlineWorlds()) if (!known.has(w.id)) this.online.push({ ...w, local: true });
+    // (for an admin) every other world on the server, after their own
+    for (const w of res.others || []) if (!this.online.some((x) => x.id === w.id)) this.online.push(w);
     list.innerHTML = '';
     if (!this.online.some((w) => w.id === this.selectedOnline)) this.selectedOnline = this.online.length ? this.online[0].id : null;
     if (!this.online.length) list.appendChild(h('p', 'empty', 'No online worlds yet. Create one, or type a friend’s join code below to add theirs here.'));
@@ -574,7 +577,7 @@ export class UI {
       row.appendChild(h('strong', null, w.name));
       const d = new Date(w.updated || w.created);
       const who = w.local ? 'only saved in this browser, open it to put it back online' : w.players ? `${w.players} playing now` : `last played ${d.toLocaleDateString()}`;
-      row.appendChild(h('span', null, `${w.mode === 'creative' ? 'Creative' : 'Survival'} · ${who} · join code ${w.id}`));
+      row.appendChild(h('span', null, `${w.other ? `Admin · made by ${w.ownerName || 'someone'} · ` : ''}${w.mode === 'creative' ? 'Creative' : 'Survival'} · ${who} · join code ${w.id}`));
       if (w.id === this.selectedOnline) row.classList.add('sel');
       row.addEventListener('click', () => {
         if (this.selectedOnline === w.id) { this.playOnline(); return; }
@@ -818,6 +821,10 @@ export class UI {
     const online = !!(meta && meta.online);
     $('mp-box').hidden = !online;
     $('b-quit').textContent = online ? 'Leave World' : 'Save and Quit to Title';
+    // admins can change mode in any world
+    const admin = !!(G.account && G.account.admin);
+    $('b-pause-mode').hidden = !admin;
+    if (admin && G.player) $('b-pause-mode').textContent = G.player.creative ? 'Switch to Survival Mode' : 'Switch to Creative Mode';
     if (!online) return;
     $('mp-info-head').textContent = 'Online world · friends join with this code';
     $('mp-code-show').textContent = meta.online;

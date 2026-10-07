@@ -768,6 +768,23 @@ export const Game = {
   },
 
   pressPlate,
+  // An admin switches between survival and creative in any world (it lasts until they leave the world)
+  setMode(mode) {
+    const p = G.player, meta = G.worldMeta;
+    if (!p || !meta) return;
+    mode = mode === 'creative' ? 'creative' : 'survival';
+    S.modeFor = { world: meta.online || meta.id, mode };
+    p.mode = mode;
+    if (mode === 'survival') { p.flying = false; p.fallStart = p.pos.y; }
+    if (G.screen === 'creative' || G.screen === 'inventory') G.ui.closeAll();
+    G.ui.invChanged();
+    G.ui.toast(mode === 'creative' ? 'Creative mode' : 'Survival mode');
+  },
+  // The pause menu's button: through the server in an online world (it checks who is asking)
+  toggleMode() {
+    const want = G.player.creative ? 'survival' : 'creative';
+    if (G.net && G.worldMeta.online) G.net.raw({ t: 'cmd', text: '/' + want }); else if (G.account && G.account.admin) Game.setMode(want);
+  },
   toggleDoor(x, y, z) {
     const w = G.world;
     const id = w.getBlock(x, y, z);
@@ -1393,6 +1410,7 @@ function startRemoteWorld(snap, onlineId, dim = 'overworld', me = null) {
   G.world = w;
   const p = new Player();
   p.mode = G.worldMeta.mode;
+  if (S.modeFor && S.modeFor.world === (G.worldMeta.online || G.worldMeta.id)) p.mode = S.modeFor.mode; else S.modeFor = null;
   G.player = p;
   if (!G.entities) G.entities = new Entities();
   G.clock = 0;
@@ -1461,6 +1479,7 @@ function startWorld(meta, data, opts = {}) {
   G.world = w;
   const p = new Player();
   p.mode = meta.mode;
+  if (S.modeFor && S.modeFor.world === (G.worldMeta.online || G.worldMeta.id)) p.mode = S.modeFor.mode; else S.modeFor = null;
   G.player = p;
   if (!G.entities) G.entities = new Entities();
   G.clock = 0;

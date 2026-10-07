@@ -384,6 +384,7 @@ export class Net {
   // An admin killed, kicked or banned this player
   adminDid(m) {
     const by = String(m.by || 'An admin').slice(0, 16);
+    if (m.a === 'mode') { G.game.setMode(m.mode); return; }
     if (m.a === 'kill') {
       const p = G.player;
       if (p && !p.dead) { p.lastAttacker = by; p.die('admin'); }
