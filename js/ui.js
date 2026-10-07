@@ -164,7 +164,14 @@ export class UI {
       inp.value = '';
       this.back();
     });
-    $('chat-input').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); this.back(); } });
+    $('chat-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); this.back(); return; }
+      // Tab takes the first suggestion (or the next one, pressed again)
+      const hints = [...$('chat-hints').children];
+      if (e.key === 'Tab' && hints.length) { e.preventDefault(); hints[0].click(); }
+    });
+    $('chat-input').addEventListener('input', () => this.chatHints());
+    $('chat-input').addEventListener('focus', () => this.chatHints());
     $('t-chat').addEventListener('click', (e) => { e.preventDefault(); if (G.net && !G.screen) this.openScreen('chat'); });
     on('b-options', () => this.openScreen('options'));
     on('b-help', () => this.openScreen('help'));
@@ -222,7 +229,7 @@ export class UI {
     const chat = name === 'chat';
     $('chat-form').hidden = !chat;
     $('chat-log').classList.toggle('open', chat);
-    if (chat) $('chat-input').focus();   // right away, so iPad keyboards open from the tap
+    if (chat) { this.allNames = null; this.namesAsked = false; $('chat-hints').hidden = true; $('chat-input').focus(); }   // right away, so iPad keyboards open from the tap
     else if (document.activeElement === $('chat-input')) $('chat-input').blur();
   }
 
@@ -260,6 +267,48 @@ export class UI {
     if (G.state === 'playing') exitLock();
     this.updateTouchVisibility();
     this.hideTooltip();
+  }
+
+  // ---------------------------------------------------------------- command suggestions
+  // Typing / in the chat brings up the commands, and after a command the players it could be about;
+  // a click (or Tab) finishes the word
+  chatHints() {
+    const box = $('chat-hints'), inp = $('chat-input'), text = inp.value;
+    box.textContent = '';
+    box.hidden = true;
+    if (text[0] !== '/') return;
+    const admin = !!(G.account && G.account.admin);
+    const CMDS = admin ? [['where', 'where a player is', 1], ['tp', 'go to a player', 1], ['bring', 'fetch a player to you', 1], ['creative', 'creative mode'], ['survival', 'survival mode'],
+      ['kill', 'kill a player', 1], ['kick', 'send a player out', 1], ['ban', 'ban a player', 1], ['unban', 'let a player back', 1], ['op', 'make a player an admin', 1], ['deop', 'take admin away', 1],
+      ['players', 'everyone online'], ['accounts', 'every account'], ['list', 'who is here'], ['help', 'all the commands']]
+      : [['list', 'who is here'], ['help', 'the commands']];
+    const m = text.match(/^\/(\S*)(\s+(\S*))?$/);
+    if (!m) return;
+    let items;
+    if (m[2] === undefined) {
+      items = CMDS.filter(([c]) => c.startsWith(m[1].toLowerCase())).map(([c, about, takesName]) => ({ label: '/' + c, about, value: '/' + c + (takesName ? ' ' : ''), send: !takesName && c === m[1].toLowerCase() }));
+    } else {
+      const cmd = CMDS.find(([c]) => c === m[1].toLowerCase());
+      if (!cmd || !cmd[2]) return;
+      // the players here first, then (for an admin) every account on the server
+      const here = G.net ? [...G.net.players.values()].map((a) => a.name).filter(Boolean) : [];
+      if (admin && !this.allNames && !this.namesAsked) { this.namesAsked = true; G.game.adminPlayers().then((l) => { this.allNames = l.map((x) => x.name); if (G.screen === 'chat') this.chatHints(); }, () => { this.namesAsked = false; }); }
+      const names = [...new Set([...here, ...(this.allNames || [])])].filter((n) => n !== (G.account && G.account.name));
+      const part = (m[3] || '').toLowerCase();
+      items = names.filter((n) => n.toLowerCase().startsWith(part)).slice(0, 12).map((n) => ({ label: n, about: here.includes(n) ? 'here' : '', value: `/${cmd[0]} ${n}` }));
+      if (items.length === 1 && items[0].label.toLowerCase() === part) return;
+    }
+    if (!items.length) return;
+    for (const it of items) {
+      const b = h('button', null, it.label);
+      b.type = 'button';
+      if (it.about) b.appendChild(h('small', null, it.about));
+      // (pointerdown, so the keyboard stays up on an iPad)
+      b.addEventListener('pointerdown', (e) => e.preventDefault());
+      b.addEventListener('click', () => { inp.value = it.value; inp.focus(); this.chatHints(); });
+      box.appendChild(b);
+    }
+    box.hidden = false;
   }
 
   // ---------------------------------------------------------------- treasure maps

@@ -159,6 +159,10 @@
   #chat-log p.old { opacity: 0; }
   #chat-log.open p.old { opacity: 1; }
   #chat-form { position: fixed; left: calc(10px + env(safe-area-inset-left, 0px)); right: 10px; bottom: calc(var(--slot-size) * 1.9 + 34px + env(safe-area-inset-bottom, 0px)); z-index: 11; margin: 0; }
+  #chat-hints { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; max-height: 40vh; overflow-y: auto; }
+  #chat-hints button { font: inherit; font-size: 18px; padding: 8px 12px; color: #fff; background: rgba(0,0,0,.78); border: 2px solid #777; cursor: pointer; text-align: left; }
+  #chat-hints button.sel, #chat-hints button:hover { border-color: #fff; background: rgba(40,40,40,.92); }
+  #chat-hints button small { color: #bbb; margin-left: 8px; }
   #chat-input {
     width: 100%; box-sizing: border-box; font: 22px var(--ui-font); color: #fff; padding: 6px 8px;
     background: rgba(0, 0, 0, 0.7); border: 2px solid rgba(255, 255, 255, 0.6); outline: none;
@@ -521,7 +525,7 @@
   </div>
 </div>
 <div id="click-to-play" hidden>Click to play</div>
-<form id="chat-form" hidden autocomplete="off"><input id="chat-input" type="text" maxlength="120" enterkeyhint="send" aria-label="Chat message" placeholder="Say something to everyone"></form>
+<form id="chat-form" hidden autocomplete="off"><div id="chat-hints" hidden></div><input id="chat-input" type="text" maxlength="120" enterkeyhint="send" aria-label="Chat message" placeholder="Say something to everyone"></form>
 
 <section class="screen menu-bg" id="s-title" hidden>
   <div class="logo-wrap">
