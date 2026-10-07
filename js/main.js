@@ -15,7 +15,7 @@ import { input, initInput, pollInput, endFrame, setTouchMode, requestLock, exitL
 import { initAudio, blockSound, sfx } from './audio.js';
 import { hashString } from './noise.js';
 import { packSlots, unpackSlots, stack } from './inventory.js';
-import { rollLoot } from './structures.js';
+import { rollLoot, treasureFor } from './structures.js';
 import { hash3 } from './noise.js';
 import { Net, serverURL } from './net.js';
 import './dimmobs.js';
@@ -27,6 +27,94 @@ const isNight = () => G.time > 0.52 && G.time < 0.98;
 // In multiplayer only the host runs the world; guests just show it
 const isGuest = () => !!(G.net && G.net.role === 'client');
 const SIM_R = 4;   // the host keeps chunks this far around each guest loaded and running
+
+// A Charred Skull has been set down: if it completes the figure (three skulls in a row on three blocks of
+// soul sand or soul soil, with a fourth under the middle one), the blocks vanish and the Blight wakes there
+function summonBlight(w, x, y, z) {
+  const soul = (a, b, c) => { const id = w.getBlock(a, b, c); return id === B.soul_sand || id === B.soul_soil; };
+  for (const [dx, dz] of [[1, 0], [0, 1]]) {
+    for (let o = -2; o <= 0; o++) {
+      const cells = [0, 1, 2].map((i) => [x + (o + i) * dx, z + (o + i) * dz]);
+      if (!cells.every(([a, c]) => w.getBlock(a, y, c) === B.charred_skull_block && soul(a, y - 1, c))) continue;
+      const [mx, mz] = cells[1];
+      if (!soul(mx, y - 2, mz)) continue;
+      for (const [a, c] of cells) { w.setBlock(a, y, c, 0); w.setBlock(a, y - 1, c, 0); }
+      w.setBlock(mx, y - 2, mz, 0);
+      G.entities.spawnMob('blight', mx + 0.5, y - 2, mz + 0.5, { persistent: true }).fresh = true;
+      sfx('portal_open', { x: mx, y, z: mz }, { vol: 1.2, pitch: 0.5 });
+      const msg = 'The Blight is waking...';
+      if (G.net) G.net.announce(msg); else G.ui.toast(msg);
+      return true;
+    }
+  }
+  return false;
+}
+
+// Pressure plates: whatever steps on one sets off the TNT beside or under it and opens the doors next to it
+const PLATE_REACH = [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, -1, 0]];
+function pressPlate(x, y, z) {
+  const key = `${x},${y},${z}`;
+  const last = S.plates.get(key);
+  S.plates.set(key, G.clock);
+  if (last !== undefined && G.clock - last < 0.6) return;   // still held down
+  const w = G.world;
+  sfx('click', { x, y, z }, { vol: 0.5, pitch: 0.7 });
+  // TNT touching the plate, or under the block it lies on (and the ones round that)
+  for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) for (let dy = -2; dy <= 0; dy++) {
+    if (dy === 0 && dx && dz) continue;
+    if (w.getBlock(x + dx, y + dy, z + dz) !== B.tnt) continue;
+    Game.removeBlock(x + dx, y + dy, z + dz, false);
+    G.entities.primeTNT(x + dx, y + dy, z + dz);
+  }
+  for (const [dx, dy, dz] of PLATE_REACH) {
+    const X = x + dx, Y = y + dy, Z = z + dz, id = w.getBlock(X, Y, Z);
+    if (!(BLOCKS[id].door || BLOCKS[id].trapdoor) || (w.getMeta(X, Y, Z) & 4)) continue;
+    if (BLOCKS[id].door) Game.toggleDoor(X, Y, Z); else Game.toggleTrapdoor(X, Y, Z);
+    S.plateDoors.set(`${X},${Y},${Z}`, key);   // (it shuts again once nothing is on the plate)
+  }
+}
+function tickPlates() {
+  if (!S.plateDoors.size) return;
+  const w = G.world;
+  for (const [door, plate] of S.plateDoors) {
+    if (G.clock - (S.plates.get(plate) ?? -9) < 1) continue;
+    S.plateDoors.delete(door);
+    const [x, y, z] = door.split(',').map(Number), id = w.getBlock(x, y, z);
+    if (!(w.getMeta(x, y, z) & 4)) continue;
+    if (BLOCKS[id].door) Game.toggleDoor(x, y, z); else if (BLOCKS[id].trapdoor) Game.toggleTrapdoor(x, y, z);
+  }
+}
+
+// Beacons: one that stands on a three-by-three of iron, gold, diamond or emerald blocks under open sky
+// mends everyone within thirty blocks and quickens their digging. (Each player works out their own.)
+const MINERAL = new Set([B.iron_block, B.gold_block, B.diamond_block, B.emerald_block]);
+function tickBeacons(dt) {
+  S.beaconT = (S.beaconT || 0) - dt;
+  const w = G.world, p = G.player;
+  if (!w || !p || !w.beacons || !w.beacons.size) return;
+  const check = S.beaconT <= 0;
+  if (check) S.beaconT = 1;
+  for (const [key, st] of w.beacons) {
+    const [x, y, z] = key.split(',').map(Number);
+    if (check) {
+      if (!w.getChunk(x >> 4, z >> 4)) { st.on = false; continue; }
+      if (w.getBlock(x, y, z) !== B.beacon) { w.beacons.delete(key); continue; }
+      st.on = true;
+      for (let dx = -1; dx <= 1 && st.on; dx++) for (let dz = -1; dz <= 1; dz++) if (!MINERAL.has(w.getBlock(x + dx, y - 1, z + dz))) { st.on = false; break; }
+      if (st.on && !p.dead && Math.hypot(p.pos.x - x - 0.5, p.pos.z - z - 0.5) < 30) {
+        p.addEffect('regen', 4); p.addEffect('haste', 4);
+        G.adv.did('beacon');
+      }
+    }
+    // its light: a column of sparks climbing into the sky
+    if (st.on && Math.hypot(p.pos.x - x, p.pos.z - z) < 96) {
+      for (let i = 0; i < 3; i++) {
+        const h = Math.random() * 44;
+        G.entities.particles.spawn(x + 0.5 + (Math.random() - 0.5) * 0.3, y + 1 + h, z + 0.5 + (Math.random() - 0.5) * 0.3, 0, 5, 0, 0.75, 0.97, 1, 0.16, 1.1, 0);
+      }
+    }
+  }
+}
 
 // Frosted ice (Frost Walker) melts back into water: "x,y,z" -> when
 function tickFrost() {
@@ -50,6 +138,8 @@ const S = {
   water: new Map(),   // liquid blocks due for another look: "x,y,z" -> { x, y, z, t }
   saplings: new Map(),
   frost: new Map(),   // frosted ice due to melt: "x,y,z" -> when
+  plates: new Map(),  // pressure plates stepped on: "x,y,z" -> when last
+  plateDoors: new Map(),   // doors a plate is holding open: "x,y,z" -> the plate's key
   saveTimer: 0,
 };
 
@@ -179,6 +269,7 @@ function onBlockChange(x, y, z, oldId, newId) {
   if (G.net) G.net.blockChanged(x, y, z, newId);
   if (isGuest()) return;   // falling sand, water and the rest happen on the host
   S.updates.push(x, y, z);
+  if (newId === B.charred_skull_block) summonBlight(w, x, y, z);
   // any change can start, stop or turn a flow: the liquid here and next to it takes another look
   scheduleLiquid(w, x, y, z);
   for (const [dx, dy, dz] of NEIGHBORS6) scheduleLiquid(w, x + dx, y + dy, z + dz);
@@ -676,6 +767,7 @@ export const Game = {
     w.fires.set(`${x},${y},${z}`, { t: 0, age: 0 });
   },
 
+  pressPlate,
   toggleDoor(x, y, z) {
     const w = G.world;
     const id = w.getBlock(x, y, z);
@@ -754,7 +846,14 @@ export const Game = {
       c.x = x; c.y = y; c.z = z;
       // structure chests are filled the first time they are opened
       const loot = w.lootChests.get(key);
-      if (loot && type === 'chest') { c.slots = rollLoot(loot, hash3(w.seed, x, y, z) * 4294967296); w.lootChests.delete(key); if (loot === 'bastion') G.adv.did('bastion_loot'); }
+      if (loot && type === 'chest') {
+        c.slots = rollLoot(loot, hash3(w.seed, x, y, z) * 4294967296);
+        w.lootChests.delete(key);
+        if (loot === 'bastion') G.adv.did('bastion_loot');
+        if (loot === 'buried_treasure') G.adv.did('treasure');
+        // a map found here leads to the nearest buried treasure (where there is none for miles, it is only paper)
+        for (const sl of c.slots) if (sl && sl.id === ID.treasure_map) { sl.dmg = treasureFor(w, x, z); if (!sl.dmg) { sl.id = ID.paper; sl.count = 3; } }
+      }
       w.containers.set(key, c);
     }
     return c;
@@ -1334,6 +1433,7 @@ function teardown() {
   S.water.clear();
   S.saplings.clear();
   S.frost.clear();
+  S.plates.clear(); S.plateDoors.clear();
   G.sleeping = null;
 }
 
@@ -1532,6 +1632,8 @@ function frame(dt) {
     }
     tickFires(host);
     tickFrost();
+    tickBeacons(dt);
+    tickPlates();
     G.adv.tick(dt);
     updateSigns(dt);
   }

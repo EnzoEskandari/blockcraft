@@ -184,7 +184,11 @@ function scatter(world, chunk, features, fi0, rng, sx, sz) {
   features.forEach(([ore, deep, count, size, dist, lo, hi, airSkip, onlyIn], fi) => {
     let n = Math.floor(count) + (rng() < count % 1 ? 1 : 0);
     if (onlyIn !== undefined) {
-      if (biome < 0) biome = world.column(sx * 16 + 8, sz * 16 + 8).biome;
+      // (land from before 1.8 is asked the way it always was; from then on the snowy peaks are mountains too)
+      if (biome < 0) {
+        biome = world.genAt(chunk.cx, chunk.cz) < 4 ? world.columnOld(sx * 16 + 8, sz * 16 + 8).biome : world.column(sx * 16 + 8, sz * 16 + 8).biome;
+        if (biome === BIOME.SNOWY_PEAKS) biome = BIOME.MOUNTAINS;
+      }
       if (biome !== onlyIn) n = 0;
     }
     for (let k = 0; k < n; k++) {

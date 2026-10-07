@@ -24,7 +24,11 @@ const MODELS = [];
 const BIOME_TINT = [
   [1, 1, 1], [0.86, 1, 0.84], [1, 0.93, 0.6], [0.76, 0.92, 0.84], [0.8, 0.9, 0.94], [0.8, 0.93, 0.86],
   [0.62, 0.74, 0.46], [0.8, 1, 0.62], [0.66, 0.84, 0.58],
+  // savanna, badlands, birch forest, flower forest, cherry grove, snowy taiga, ice spikes, mushroom fields, meadow, old growth taiga, sunflower plains
+  [1, 0.84, 0.44], [0.92, 0.8, 0.5], [0.9, 1, 0.8], [0.84, 1, 0.78], [0.94, 1, 0.74], [0.78, 0.9, 0.86], [0.8, 0.9, 0.94], [0.72, 0.9, 0.62], [0.78, 0.98, 0.9], [0.74, 0.9, 0.74], [1, 1, 0.9],
 ];
+// (oceans, the beach, snowy peaks, the bamboo jungle)
+Object.assign(BIOME_TINT, { 25: [0.9, 1, 0.9], 26: [0.9, 1, 0.9], 27: [0.8, 0.9, 0.94], 28: [0.9, 1, 0.8], 29: [1, 1, 0.9], 31: [0.8, 0.93, 0.86], 32: [0.8, 1, 0.62] });
 const FENCE_LINK = new Uint8Array(256); // blocks a fence connects to
 const AO = [0.5, 0.68, 0.84, 1];
 
@@ -72,10 +76,10 @@ export function initMesher() {
     FRONT[i] = b.front;
     FENCE_LINK[i] = (b.opaque && b.solid) || b.render === RENDER.FENCE ? 1 : 0;
     if (b.boxes) {
-      const own = [b.faces[0], b.faces[1], b.faces[2], b.faces[3], b.faces[4], b.faces[5]];
+      const own = [b.faces[0], b.faces[1], b.faces[2], b.faces[3], b.facing ? b.front : b.faces[4], b.faces[5]];
       const boxes = b.boxes.map((q) => [q[0], q[1], q[2], q[3], q[4], q[5], q[6] ? ALL6(TEX[q[6]]) : own]);
       // turned a quarter at a time for the way the block faces
-      const turn = (list) => list.map(([x0, y0, z0, x1, y1, z1, l]) => [16 - z1, y0, x0, 16 - z0, y1, x1, l]);
+      const turn = (list) => list.map(([x0, y0, z0, x1, y1, z1, l]) => [16 - z1, y0, x0, 16 - z0, y1, x1, [l[5], l[4], l[2], l[3], l[0], l[1]]]);
       MODELS[i] = [boxes];
       for (let r = 1; r < 4; r++) MODELS[i][r] = turn(MODELS[i][r - 1]);
     }

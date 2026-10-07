@@ -45,6 +45,7 @@ function block(id, key, name, o = {}) {
     job: o.job || null,        // the profession a villager without work takes up at this block
     xp: o.xp || null,          // [least, most] experience for mining it
     fortune: !!o.fortune,      // the Fortune enchantment makes it drop more
+    plate: !!o.plate,          // a pressure plate
     slow: o.slow || 0,         // movement multiplier while inside (cobweb)
     flammable: o.flammable || 0, // how readily fire burns this block away (0 = never)
   };
@@ -99,7 +100,7 @@ block(24, 'lapis_ore', 'Lapis Lazuli Ore', { hardness: 3, tool: 'pickaxe', level
 block(25, 'snowy_grass', 'Snowy Grass Block', { tex: { top: 'snow', bottom: 'dirt', side: 'snowy_grass_side' }, hardness: 0.6, tool: 'shovel', sound: 'snow', drops: one('dirt') });
 block(26, 'snow', 'Snow Block', { hardness: 0.2, tool: 'shovel', sound: 'snow' });
 block(27, 'ice', 'Ice', { hardness: 0.5, tool: 'pickaxe', sound: 'glass', drops: none });
-block(28, 'cactus', 'Cactus', { tex: { top: 'cactus_top', bottom: 'cactus_bottom', side: 'cactus_side' }, hardness: 0.4, sound: 'wool', support: () => [B.sand, B.cactus] });
+block(28, 'cactus', 'Cactus', { tex: { top: 'cactus_top', bottom: 'cactus_bottom', side: 'cactus_side' }, hardness: 0.4, sound: 'wool', support: () => [B.sand, B.red_sand, B.cactus] });
 block(29, 'clay', 'Clay', { hardness: 0.6, tool: 'shovel', sound: 'gravel', drops: range('clay_ball', 4, 4) });
 block(30, 'sandstone', 'Sandstone', { tex: { top: 'sandstone_top', bottom: 'sandstone_bottom', side: 'sandstone_side' }, hardness: 0.8, tool: 'pickaxe', level: 0 });
 block(31, 'bricks', 'Bricks', { hardness: 2, tool: 'pickaxe', level: 0 });
@@ -116,7 +117,7 @@ block(41, 'torch', 'Torch', { render: RENDER.TORCH, solid: false, opaque: false,
 block(42, 'tall_grass', 'Grass', { ...plant, tint: 2, replaceable: true, drops: (r) => (r() < 0.125 ? [[ID.wheat_seeds, 1]] : []), support: GROUND });
 block(43, 'dandelion', 'Dandelion', { ...plant, support: GROUND });
 block(44, 'poppy', 'Poppy', { ...plant, support: GROUND });
-block(45, 'dead_bush', 'Dead Bush', { ...plant, replaceable: true, drops: range('stick', 0, 2), support: () => [B.sand, B.dirt] });
+block(45, 'dead_bush', 'Dead Bush', { ...plant, replaceable: true, drops: range('stick', 0, 2), support: () => [B.sand, B.red_sand, B.dirt, B.terracotta, B.podzol] });
 block(46, 'oak_sapling', 'Oak Sapling', { ...plant, support: GROUND });
 block(47, 'pumpkin', 'Pumpkin', { tex: { top: 'pumpkin_top', bottom: 'pumpkin_top', side: 'pumpkin_side' }, hardness: 1, tool: 'axe', sound: 'wood' });
 block(48, 'iron_block', 'Block of Iron', { hardness: 5, tool: 'pickaxe', level: 1, sound: 'metal' });
@@ -154,7 +155,7 @@ for (let s = 0; s < 4; s++) {
 block(79, 'hay_bale', 'Hay Bale', { tex: { top: 'hay_bale_top', bottom: 'hay_bale_top', side: 'hay_bale_side' }, hardness: 0.5, sound: 'grass' });
 block(80, 'bed_foot', 'Red Bed', { render: RENDER.BED, tex: { top: 'bed_foot_top', bottom: 'oak_planks', side: 'bed_side' }, solid: false, opaque: false, bed: true, facing: true, hardness: 0.2, sound: 'wool', stack: 1, art: 'bed', drops: bedDrop });
 block(81, 'bed_head', 'Red Bed', { render: RENDER.BED, tex: { top: 'bed_head_top', bottom: 'oak_planks', side: 'bed_side' }, solid: false, opaque: false, bed: true, facing: true, hardness: 0.2, sound: 'wool', noItem: true, drops: bedDrop });
-block(82, 'sugar_cane', 'Sugar Cane', { ...plant, support: () => [B.sand, B.grass, B.dirt, B.sugar_cane] });
+block(82, 'sugar_cane', 'Sugar Cane', { ...plant, support: () => [B.sand, B.red_sand, B.grass, B.dirt, B.podzol, B.sugar_cane] });
 block(83, 'jungle_log', 'Jungle Log', { tex: { top: 'jungle_log_top', bottom: 'jungle_log_top', side: 'jungle_log' }, hardness: 2, tool: 'axe', sound: 'wood', fuel: 15 });
 block(84, 'jungle_leaves', 'Jungle Leaves', { ...leaves(false), tint: 2 });
 block(85, 'jungle_planks', 'Jungle Planks', { hardness: 2, tool: 'axe', sound: 'wood', fuel: 15 });
@@ -287,6 +288,51 @@ block(193, 'stonecutter', 'Stonecutter', { ...stoneJob, render: RENDER.MODEL, te
   boxes: [[0, 0, 0, 16, 9, 16], [1, 9, 7, 15, 15, 9, 'stonecutter_saw']] });
 // Ice made by Frost Walker boots: it melts again after a few seconds
 block(194, 'frosted_ice', 'Frosted Ice', { tex: 'ice', hardness: 0.5, tool: 'pickaxe', sound: 'glass', drops: none, noItem: true });
+
+// ---- Lands & Legends (1.8): the blocks of the new lands, and of the Blight
+const SOIL = () => [B.grass, B.dirt, B.snowy_grass, B.podzol, B.mycelium];
+const capDrops = (r) => { const n = Math.floor(r() * 3) - 1; return n > 0 ? [[ID.red_mushroom, n]] : []; };
+block(195, 'acacia_log', 'Acacia Log', { tex: { top: 'acacia_planks', bottom: 'acacia_planks', side: 'acacia_log' }, hardness: 2, tool: 'axe', sound: 'wood', fuel: 15 });
+block(196, 'acacia_leaves', 'Acacia Leaves', { ...leaves(false), tex: 'oak_leaves', tint: 2 });
+block(197, 'acacia_planks', 'Acacia Planks', { hardness: 2, tool: 'axe', sound: 'wood', fuel: 15 });
+block(198, 'cherry_log', 'Cherry Log', { tex: { top: 'cherry_planks', bottom: 'cherry_planks', side: 'cherry_log' }, hardness: 2, tool: 'axe', sound: 'wood', fuel: 15 });
+block(199, 'cherry_leaves', 'Cherry Leaves', leaves(false));
+block(200, 'cherry_planks', 'Cherry Planks', { hardness: 2, tool: 'axe', sound: 'wood', fuel: 15 });
+block(201, 'red_sand', 'Red Sand', { hardness: 0.5, tool: 'shovel', sound: 'sand', gravity: true });
+block(202, 'red_terracotta', 'Red Terracotta', { hardness: 1.25, tool: 'pickaxe', level: 0 });
+block(203, 'yellow_terracotta', 'Yellow Terracotta', { hardness: 1.25, tool: 'pickaxe', level: 0 });
+block(204, 'packed_ice', 'Packed Ice', { hardness: 0.5, tool: 'pickaxe', sound: 'glass' });
+block(205, 'mycelium', 'Mycelium', { tex: { top: 'mycelium_top', bottom: 'dirt', side: 'mycelium_side' }, hardness: 0.6, tool: 'shovel', sound: 'grass', drops: one('dirt') });
+block(206, 'red_mushroom_block', 'Red Mushroom Block', { hardness: 0.2, tool: 'axe', sound: 'wood', drops: capDrops });
+block(207, 'brown_mushroom_block', 'Brown Mushroom Block', { hardness: 0.2, tool: 'axe', sound: 'wood', drops: capDrops });
+block(208, 'mushroom_stem', 'Mushroom Stem', { hardness: 0.2, tool: 'axe', sound: 'wood', drops: none });
+block(209, 'red_mushroom', 'Red Mushroom', { ...plant, support: SOIL });
+block(210, 'podzol', 'Podzol', { tex: { top: 'podzol_top', bottom: 'dirt', side: 'podzol_side' }, hardness: 0.5, tool: 'shovel', sound: 'gravel', drops: one('dirt') });
+block(211, 'fern', 'Fern', { ...plant, tint: 2, replaceable: true, drops: (r) => (r() < 0.125 ? [[ID.wheat_seeds, 1]] : []), support: SOIL });
+block(212, 'cornflower', 'Cornflower', { ...plant, support: SOIL });
+block(213, 'allium', 'Allium', { ...plant, support: SOIL });
+block(214, 'tulip', 'Tulip', { ...plant, support: SOIL });
+block(215, 'oxeye_daisy', 'Oxeye Daisy', { ...plant, support: SOIL });
+block(216, 'sunflower', 'Sunflower', { ...plant, support: SOIL });
+block(217, 'lily_pad', 'Lily Pad', { render: RENDER.MODEL, opaque: false, hardness: 0, sound: 'grass', height: 0.0625, boxes: [[0, 0, 0, 16, 1, 16]], support: () => [B.water, B.ice, B.frosted_ice] });
+block(218, 'bamboo', 'Bamboo', { ...plant, fuel: 3, support: () => [B.grass, B.dirt, B.podzol, B.sand, B.bamboo] });
+block(219, 'tube_coral_block', 'Tube Coral Block', { hardness: 1.5, tool: 'pickaxe', level: 0 });
+block(220, 'fire_coral_block', 'Fire Coral Block', { hardness: 1.5, tool: 'pickaxe', level: 0 });
+block(221, 'brain_coral_block', 'Brain Coral Block', { hardness: 1.5, tool: 'pickaxe', level: 0 });
+// A Charred Skull set down: three of them on a T of soul sand wake the Blight
+block(222, 'charred_skull_block', 'Charred Skull', { render: RENDER.MODEL, tex: { top: 'skull_side', bottom: 'skull_side', side: 'skull_side', front: 'skull_front' }, opaque: false, facing: true, hardness: 1, sound: 'stone',
+  noItem: true, drops: one('charred_skull'), height: 0.5, boxes: [[4, 0, 4, 12, 8, 12]] });
+// A beacon on a three-by-three of iron, gold, diamond or emerald blocks lends strength to everyone near it
+block(223, 'beacon', 'Beacon', { render: RENDER.MODEL, tex: 'glass', art: 'beacon', opaque: false, light: 15, hardness: 3, sound: 'glass',
+  boxes: [[2, 0, 2, 14, 3, 14, 'obsidian'], [3, 3, 3, 13, 13, 13, 'beacon'], [0, 0, 0, 2, 16, 2], [14, 0, 0, 16, 16, 2], [0, 0, 14, 2, 16, 16], [14, 0, 14, 16, 16, 16], [2, 14, 0, 14, 16, 16], [0, 14, 2, 2, 16, 14], [14, 14, 2, 16, 16, 14]] });
+// Pressure plates: stepping on one sets off TNT beside or under it and opens doors next to it
+const plate = (tex, o) => ({ render: RENDER.MODEL, tex, opaque: false, solid: false, plate: true, support: 'solid', boxes: [[1, 0, 1, 15, 1, 15]], ...o });
+block(224, 'stone_pressure_plate', 'Stone Pressure Plate', plate('stone', { hardness: 0.5, tool: 'pickaxe', level: 0 }));
+block(225, 'oak_pressure_plate', 'Oak Pressure Plate', plate('oak_planks', { hardness: 0.5, tool: 'axe', sound: 'wood', fuel: 15 }));
+for (const [i, full, key, name] of [[226, 'acacia_planks', 'acacia_slab', 'Acacia Slab'], [227, 'cherry_planks', 'cherry_slab', 'Cherry Slab']]) {
+  const f = BLOCKS[B[full]];
+  block(i, key, name, { render: RENDER.SLAB, tex: f.tex, opaque: false, atten: 1, slab: full, hardness: f.hardness, tool: f.tool, level: f.level, sound: f.sound, fuel: 7 });
+}
 export const JOB_BLOCKS = {};   // profession -> block id
 for (const b of BLOCKS) if (b && b.job) JOB_BLOCKS[b.job] = b.id;
 
@@ -301,6 +347,8 @@ const FLAMMABLE = {
   oak_slab: 20, birch_slab: 20, spruce_slab: 20, jungle_slab: 20, dark_oak_slab: 20,
   oak_trapdoor: 20, birch_trapdoor: 20, spruce_trapdoor: 20, jungle_trapdoor: 20, dark_oak_trapdoor: 20, sign: 20, wall_sign: 20,
   composter: 20, lectern: 30, smithing_table: 5, fletching_table: 5, loom: 20,
+  acacia_log: 5, cherry_log: 5, acacia_planks: 20, cherry_planks: 20, acacia_leaves: 60, cherry_leaves: 60, acacia_slab: 20, cherry_slab: 20,
+  fern: 100, cornflower: 100, allium: 100, tulip: 100, oxeye_daisy: 100, sunflower: 100, bamboo: 60, oak_pressure_plate: 20,
 };
 for (const [k, v] of Object.entries(FLAMMABLE)) if (BLOCKS[B[k]]) BLOCKS[B[k]].flammable = v;
 WOOL_COLORS.forEach(([k]) => { BLOCKS[B[k + '_wool']].flammable = 60; });
@@ -383,6 +431,10 @@ item(330, 'cooked_cod', 'Cooked Cod', { food: 5, sat: 6 });
 item(331, 'salmon', 'Raw Salmon', { food: 2, sat: 0.4 });
 item(332, 'cooked_salmon', 'Cooked Salmon', { food: 6, sat: 9.6 });
 item(333, 'experience_bottle', 'Experience Bottle');
+// (1.8) a map to buried treasure (which one is kept in the stack's wear number), what the Blight leaves, and a golden apple
+item(334, 'treasure_map', 'Treasure Map', { stack: 1 });
+item(335, 'blight_star', 'Blight Star');
+item(336, 'golden_apple', 'Golden Apple', { food: 4, sat: 9.6 });
 item(360, 'shade_eye', 'Eye of the Shade', { stack: 16 });
 item(361, 'nether_quartz', 'Nether Quartz');
 item(362, 'gold_nugget', 'Gold Nugget');
@@ -455,12 +507,13 @@ export function fuelValue(id) { const d = ITEMS[id]; return d ? d.fuel : 0; }
 
 // ---------------------------------------------------------------- recipes
 const TAGS = {
-  '#planks': ['oak_planks', 'birch_planks', 'spruce_planks', 'jungle_planks', 'dark_oak_planks', 'crimson_planks', 'warped_planks'],
-  '#log': ['oak_log', 'birch_log', 'spruce_log', 'jungle_log', 'dark_oak_log', 'crimson_stem', 'warped_stem'],
+  '#planks': ['oak_planks', 'birch_planks', 'spruce_planks', 'jungle_planks', 'dark_oak_planks', 'crimson_planks', 'warped_planks', 'acacia_planks', 'cherry_planks'],
+  '#log': ['oak_log', 'birch_log', 'spruce_log', 'jungle_log', 'dark_oak_log', 'crimson_stem', 'warped_stem', 'acacia_log', 'cherry_log'],
   '#wool': WOOL_COLORS.map(([k]) => k + '_wool'),
   '#coal': ['coal', 'charcoal'],
   '#cobblestone': ['cobblestone', 'cobbled_deepslate', 'blackstone'],   // what stone tools and furnaces can be made of
-  '#wooden_slab': ['oak_slab', 'birch_slab', 'spruce_slab', 'jungle_slab', 'dark_oak_slab', 'crimson_slab', 'warped_slab'],
+  '#wooden_slab': ['oak_slab', 'birch_slab', 'spruce_slab', 'jungle_slab', 'dark_oak_slab', 'crimson_slab', 'warped_slab', 'acacia_slab', 'cherry_slab'],
+  '#mineral_block': ['iron_block', 'gold_block', 'diamond_block', 'emerald_block'],
 };
 
 const RECIPE_DEFS = [
@@ -528,6 +581,18 @@ const RECIPE_DEFS = [
   { shape: ['SS', 'PP'], key: { S: 'string', P: '#planks' }, out: ['loom', 1] },
   { shape: ['I I', 'I I', 'III'], key: { I: 'iron_ingot' }, out: ['cauldron', 1] },
   { shape: [' I ', 'SSS'], key: { I: 'iron_ingot', S: 'stone' }, out: ['stonecutter', 1] },
+  // the new lands
+  { in: ['acacia_log'], out: ['acacia_planks', 4] },
+  { in: ['cherry_log'], out: ['cherry_planks', 4] },
+  { shape: ['###'], key: { '#': 'acacia_planks' }, out: ['acacia_slab', 6] },
+  { shape: ['###'], key: { '#': 'cherry_planks' }, out: ['cherry_slab', 6] },
+  { shape: ['#', '#'], key: { '#': 'bamboo' }, out: ['stick', 1] },
+  { shape: ['##', '##'], key: { '#': 'red_sand' }, out: ['red_terracotta', 1] },
+  { shape: ['###', '###', '###'], key: { '#': 'ice' }, out: ['packed_ice', 1] },
+  { shape: ['##'], key: { '#': 'stone' }, out: ['stone_pressure_plate', 1] },
+  { shape: ['##'], key: { '#': '#planks' }, out: ['oak_pressure_plate', 1] },
+  { shape: ['GGG', 'GAG', 'GGG'], key: { G: 'gold_ingot', A: 'apple' }, out: ['golden_apple', 1] },
+  { shape: ['GGG', 'GSG', 'OOO'], key: { G: 'glass', S: 'blight_star', O: 'obsidian' }, out: ['beacon', 1] },
   // fishing and the crossbow
   { shape: ['  S', ' ST', 'S T'], key: { S: 'stick', T: 'string' }, out: ['fishing_rod', 1] },
   { shape: ['SIS', 'TIT', ' S '], key: { S: 'stick', I: 'iron_ingot', T: 'string' }, out: ['crossbow', 1] },
@@ -553,6 +618,7 @@ for (const m of TOOL_MATERIALS) {
 export const inTag = (tag, id) => (TAGS[tag] || [tag]).some((k) => ID[k] === id);
 
 const TAG_LABELS = { '#planks': 'Planks', '#log': 'Logs', '#coal': 'Coal or Charcoal', '#wooden_slab': 'Wooden Slabs' };
+export const tagIds = (tag) => (TAGS[tag] || [tag]).map((k) => ID[k]);
 
 function ingredientSet(k) {
   const keys = TAGS[k] || [k];
@@ -644,7 +710,7 @@ const SMELT_DEFS = {
   mutton: 'cooked_mutton', oak_log: 'charcoal', birch_log: 'charcoal', spruce_log: 'charcoal',
   diamond_ore: 'diamond', coal_ore: 'coal', clay: 'terracotta', emerald_ore: 'emerald', lapis_ore: 'lapis_lazuli', redstone_ore: 'redstone',
   netherrack: 'nether_brick', nether_quartz_ore: 'nether_quartz', nether_gold_ore: 'gold_ingot', crimson_stem: 'charcoal', warped_stem: 'charcoal',
-  jungle_log: 'charcoal', dark_oak_log: 'charcoal',
+  jungle_log: 'charcoal', dark_oak_log: 'charcoal', acacia_log: 'charcoal', cherry_log: 'charcoal', red_sand: 'glass',
   copper_ore: 'copper_ingot', cobbled_deepslate: 'deepslate', cod: 'cooked_cod', salmon: 'cooked_salmon',
   deepslate_coal_ore: 'coal', deepslate_iron_ore: 'iron_ingot', deepslate_gold_ore: 'gold_ingot', deepslate_diamond_ore: 'diamond',
   deepslate_redstone_ore: 'redstone', deepslate_lapis_ore: 'lapis_lazuli', deepslate_emerald_ore: 'emerald', deepslate_copper_ore: 'copper_ingot',

@@ -1,5 +1,6 @@
 // Generated structures: villages, desert pyramids, jungle temples, witch huts, igloos,
-// pillager outposts, woodland mansions, ruined portals, desert wells and shipwrecks.
+// pillager outposts, woodland mansions, ruined portals, desert wells, shipwrecks, and (from 1.8)
+// dungeons, mineshafts and buried treasure.
 //
 // Each structure type sits on a grid of regions. A region deterministically picks one spot,
 // checks the biome there, and builds a plan (a list of parts with bounding boxes). When a chunk
@@ -13,6 +14,9 @@ import { NB, NETHER_LAVA, strongholds } from './dims.js';
 
 const ckey = (cx, cz) => (cx + 32768) * 65536 + (cz + 32768);
 const DIRV = [[0, 1], [-1, 0], [0, -1], [1, 0]]; // facing meta -> (dx, dz)
+// The generator version whose rules are the newest here (1.8). Land seen before it keeps the structures
+// it had, built the way they were; everywhere else follows the new rules.
+const NEW = 4;
 
 function rotVec(dx, dz, r) {
   switch (r & 3) {
@@ -128,12 +132,44 @@ const LOOT = {
   },
 };
 
+Object.assign(LOOT, {
+  dungeon: {
+    rolls: [5, 9], wear: [0, 0.4], sure: [['bone', 2, 6]],
+    items: [['iron_ingot', 1, 4, 12], ['gold_ingot', 1, 3, 6], ['bread', 1, 3, 12], ['wheat', 1, 4, 10], ['coal', 2, 6, 10], ['redstone', 2, 6, 8], ['string', 2, 6, 8],
+      ['gunpowder', 2, 6, 8], ['rotten_flesh', 2, 6, 8], ['bucket', 1, 1, 6], ['arrow', 4, 10, 6], ['golden_apple', 1, 1, 4], ['diamond', 1, 2, 3], ['emerald', 1, 3, 4],
+      ['iron_sword', 1, 1, 3], ['iron_pickaxe', 1, 1, 3], ['iron_helmet', 1, 1, 2], ['iron_chestplate', 1, 1, 2], ['bow', 1, 1, 3], ['experience_bottle', 1, 3, 3]],
+  },
+  mineshaft: {
+    rolls: [4, 8], wear: [0.1, 0.5], sure: [['torch', 4, 12]],
+    items: [['iron_ingot', 2, 6, 14], ['gold_ingot', 1, 4, 8], ['coal', 4, 10, 14], ['redstone', 4, 9, 8], ['lapis_lazuli', 4, 9, 8], ['diamond', 1, 3, 5], ['copper_ingot', 3, 8, 8],
+      ['bread', 1, 4, 10], ['oak_planks', 4, 12, 6], ['oak_fence', 2, 6, 4], ['tnt', 1, 2, 4], ['string', 2, 5, 5], ['golden_apple', 1, 1, 3], ['iron_pickaxe', 1, 1, 6],
+      ['diamond_pickaxe', 1, 1, 1], ['iron_shovel', 1, 1, 3], ['bucket', 1, 1, 3], ['experience_bottle', 1, 2, 2]],
+  },
+  // the best there is: what a map from a shipwreck leads to
+  buried_treasure: {
+    rolls: [6, 10], wear: [0, 0], sure: [['diamond', 4, 9], ['emerald', 6, 14], ['gold_ingot', 6, 14], ['iron_ingot', 6, 12], ['enchanted_book', 1, 1], ['golden_apple', 1, 2]],
+    items: [['diamond', 2, 5, 12], ['emerald', 4, 9, 10], ['gold_block', 1, 3, 8], ['iron_block', 1, 3, 8], ['diamond_block', 1, 1, 3], ['emerald_block', 1, 2, 3], ['golden_apple', 1, 2, 8],
+      ['experience_bottle', 3, 8, 8], ['shade_pearl', 2, 4, 5], ['tnt', 2, 5, 4], ['cooked_cod', 3, 6, 4], ['cooked_salmon', 3, 6, 4], ['trident', 1, 1, 3],
+      ['diamond_sword', 1, 1, 5], ['diamond_pickaxe', 1, 1, 5], ['diamond_axe', 1, 1, 3], ['diamond_helmet', 1, 1, 3], ['diamond_chestplate', 1, 1, 3], ['diamond_leggings', 1, 1, 3],
+      ['diamond_boots', 1, 1, 3], ['bow', 1, 1, 3], ['crossbow', 1, 1, 2], ['fishing_rod', 1, 1, 2]],
+  },
+  // (outposts built from 1.8 on)
+  outpost_top: {
+    rolls: [4, 7], wear: [0.1, 0.5], sure: [['crossbow', 1, 1], ['arrow', 8, 20]],
+    items: [['iron_ingot', 1, 4, 10], ['emerald', 1, 4, 8], ['gold_ingot', 1, 3, 6], ['dark_oak_log', 2, 6, 6], ['wheat', 3, 8, 6], ['bread', 2, 4, 6], ['string', 2, 6, 6],
+      ['experience_bottle', 1, 3, 5], ['golden_apple', 1, 1, 3], ['diamond', 1, 2, 3], ['iron_sword', 1, 1, 4], ['iron_axe', 1, 1, 4], ['iron_chestplate', 1, 1, 3], ['shield', 1, 1, 3]],
+  },
+});
+// A map in every sunken ship's treasure chest
+LOOT.shipwreck_treasure.sure.push(['treasure_map', 1, 1]);
+
 // Enchantments in loot: [chance a tool or armour piece is enchanted, lowest and highest level it is
 // enchanted with, weight of a book of enchantment among the table's items]
 const BOOK_LOOT = {
   blacksmith: [0.15, 5, 15, 0], outpost: [0.2, 5, 15, 2], igloo: [0.3, 10, 25, 4], ruined_portal: [0.5, 10, 25, 3], mansion: [0.4, 15, 30, 6],
   pyramid: [0.4, 15, 30, 10], jungle_temple: [0.4, 15, 30, 10], shipwreck_supply: [0.2, 5, 15, 0], shipwreck_treasure: [0.5, 15, 30, 6],
   stronghold_corridor: [0.4, 15, 30, 5], stronghold_library: [0, 0, 0, 30], fortress: [0.3, 10, 25, 3], bastion: [0.6, 20, 30, 8], end_city: [1, 20, 30, 6],
+  dungeon: [0.4, 10, 25, 8], mineshaft: [0.4, 10, 25, 6], buried_treasure: [1, 25, 30, 10], outpost_top: [0.5, 10, 25, 5],
 };
 
 // Items for a structure chest, spread over 27 slots
@@ -193,7 +229,8 @@ function makeCtx(world, chunk, plan) {
       if (!inside(x, z) || y < 0 || y >= CH) return -1;
       return blocks[(y << 8) | ((z - z0) << 4) | (x - x0)];
     },
-    ground: (x, z) => plan.ground(x, z),
+    // (a structure begun in old land and finished in new stands on the ground that is really there)
+    ground: plan.gen < NEW && world.dim === 'overworld' && world.genAt(chunk.cx, chunk.cz) >= NEW ? (x, z) => world.column(x, z).h : (x, z) => plan.ground(x, z),
     chest(x, y, z, loot, facing = 0) {
       ctx.set(x, y, z, B.chest, facing);
       if (inside(x, z)) world.lootChests.set(`${x},${y},${z}`, loot);
@@ -283,7 +320,18 @@ const STYLE = {
   desert: { wall: B.sandstone, frame: B.chiseled_sandstone, floor: B.sandstone, found: B.sandstone, roof: B.sandstone, win: 0, flat: true, accent: B.orange_terracotta, path: B.dirt_path },
   taiga: { wall: B.spruce_planks, frame: B.spruce_log, floor: B.spruce_planks, found: B.cobblestone, roof: B.spruce_planks, win: B.glass, flat: false, path: B.dirt_path },
   snowy: { wall: B.spruce_planks, frame: B.spruce_log, floor: B.spruce_planks, found: B.stone_bricks, roof: B.dark_oak_planks, win: B.glass, flat: false, path: B.dirt_path },
+  // (1.8) acacia and orange roofs on the savanna, flat-roofed terracotta in the badlands, white walls and
+  // wide eaves under the cherry trees, thatch in the jungle, birch cottages, and stone houses in the meadows
+  savanna: { wall: B.acacia_planks, frame: B.acacia_log, floor: B.acacia_planks, found: B.cobblestone, roof: B.orange_terracotta, win: B.glass, flat: false, path: B.dirt_path },
+  badlands: { wall: B.terracotta, frame: B.red_terracotta, floor: B.yellow_terracotta, found: B.red_terracotta, roof: B.terracotta, win: 0, flat: true, accent: B.yellow_terracotta, path: B.dirt_path },
+  cherry: { wall: B.white_terracotta, frame: B.cherry_log, floor: B.cherry_planks, found: B.stone_bricks, roof: B.cherry_planks, win: B.glass, flat: false, eave: true, path: B.dirt_path },
+  jungle: { wall: B.jungle_planks, frame: B.jungle_log, floor: B.jungle_planks, found: B.mossy_cobblestone, roof: B.hay_bale, win: 0, flat: false, path: B.dirt_path },
+  birch: { wall: B.birch_planks, frame: B.birch_log, floor: B.birch_planks, found: B.cobblestone, roof: B.spruce_planks, win: B.glass, flat: false, path: B.dirt_path },
+  meadow: { wall: B.stone_bricks, frame: B.spruce_log, floor: B.spruce_planks, found: B.cobblestone, roof: B.bricks, win: B.glass, flat: false, path: B.dirt_path },
 };
+// The half blocks each kind of village makes its stairs of
+const STYLE_SLAB = { plains: B.oak_slab, desert: B.sandstone_slab, taiga: B.spruce_slab, snowy: B.spruce_slab, savanna: B.acacia_slab, badlands: B.sandstone_slab, cherry: B.cherry_slab,
+  jungle: B.jungle_slab, birch: B.birch_slab, meadow: B.stone_brick_slab };
 
 function walls(L, S, hw, hd, H, wallId) {
   for (let ly = 0; ly < H; ly++) for (let lz = -hd; lz <= hd; lz++) for (let lx = -hw; lx <= hw; lx++) {
@@ -303,8 +351,10 @@ function roof(L, S, hw, hd, H) {
   for (let i = 0; i <= hw + 1; i++) {
     const x0 = -hw - 1 + i, x1 = hw + 1 - i;
     if (x0 > x1) break;
-    L.fill(x0, H + i, -hd - 1, x1, H + i, hd + 1, S.roof);
+    L.fill(x0, H + i, -hd - 1, x1, H + i, hd + 1, x0 === x1 && S.eave ? S.frame : S.roof);
   }
+  // wide eaves, a half block thick
+  if (S.eave) for (const lx of [-hw - 2, hw + 2]) L.fill(lx, H, -hd - 1, lx, H, hd + 1, B.cherry_slab, 1);
 }
 function windowsOn(L, S, hw, hd, ly) {
   const w = S.win;
@@ -499,6 +549,51 @@ const BUILDINGS = {
     }
     L.set(2, 0, 2, B.hay_bale);
   } },
+  // (1.8) a market stall: four posts, a striped awning, a chest and a bale behind the counter
+  stall: { w: 5, d: 5, build(ctx, part) {
+    const L = local(ctx, part), S = STYLE[part.style];
+    L.prepare(2, 2, 5, S.found, S.floor);
+    for (const [lx, lz] of [[-2, -2], [2, -2], [-2, 2], [2, 2]]) L.fill(lx, 0, lz, lx, 2, lz, B.oak_fence);
+    const c = [B.red_wool, B.yellow_wool, B.blue_wool, B.lime_wool, B.orange_wool, B.cyan_wool][Math.floor(ctx.h(part.x, part.y, part.z, 43) * 6)];
+    for (let lz = -2; lz <= 2; lz++) for (let lx = -2; lx <= 2; lx++) L.set(lx, 3, lz, (lx + 2) % 2 ? B.white_wool : c);
+    L.set(-1, 0, -1, S.wall); L.set(1, 0, -1, S.wall);
+    L.chest(-1, 0, 1, 'village_house', 2);
+    L.set(1, 0, 1, B.hay_bale);
+    L.set(1, 1, 1, B.torch);
+    L.doorstep(2, 2, S.path);
+  } },
+  // (1.8) a lookout tower: a room at the bottom, stairs winding up the wall, and a walk round the top
+  tower: { w: 7, d: 7, build(ctx, part) {
+    const L = local(ctx, part), S = STYLE[part.style];
+    L.prepare(3, 3, 14, S.found, S.floor);
+    walls(L, S, 3, 3, 9);
+    L.door(0, 0, -3, 2);
+    for (const ly of [2, 6]) { L.set(-3, ly, 0, S.win); L.set(3, ly, 0, S.win); L.set(0, ly, 3, S.win); }
+    L.fill(-3, 9, -3, 3, 9, 3, S.floor);
+    const R = windingStairs(L, 2, 0, 20, STYLE_SLAB[part.style]);
+    for (let k = 13; k < 18; k++) L.set(R[k % 16][0], 9, R[k % 16][1], 0);   // (where the stairs come up, with room overhead to step)
+    for (let lz = -3; lz <= 3; lz++) for (let lx = -3; lx <= 3; lx++) {
+      if (Math.abs(lx) !== 3 && Math.abs(lz) !== 3) continue;
+      const corner = Math.abs(lx) === 3 && Math.abs(lz) === 3;
+      L.set(lx, 10, lz, corner ? S.frame : B.oak_fence);
+      if (corner) L.set(lx, 11, lz, B.torch);
+    }
+    L.bed(-1, 0, 0, 0);
+    L.set(0, 0, 1, B.torch);
+    L.doorstep(3, 2, S.path);
+  } },
+  // (1.8) a flower garden
+  garden: { w: 5, d: 5, build(ctx, part) {
+    const L = local(ctx, part), S = STYLE[part.style];
+    L.prepare(2, 2, 3, B.dirt, B.grass);
+    const F = [B.dandelion, B.poppy, B.cornflower, B.allium, B.tulip, B.oxeye_daisy, B.sunflower, B.tall_grass];
+    for (let lz = -2; lz <= 2; lz++) for (let lx = -2; lx <= 2; lx++) {
+      const [wx, wz] = L.w(lx, lz);
+      if (Math.abs(lx) === 2 || Math.abs(lz) === 2) { if (!(lz === -2 && lx === 0)) L.set(lx, 0, lz, STYLE_SLAB[part.style]); }
+      else if (lx || lz) L.set(lx, 0, lz, F[Math.floor(ctx.h(wx, part.y, wz, 44) * F.length)]);
+    }
+    L.set(0, -1, 0, S.found); L.set(0, 0, 0, B.oak_fence); L.set(0, 1, 0, B.torch);
+  } },
   lamp: { w: 1, d: 1, build(ctx, part) {
     const L = local(ctx, part), S = STYLE[part.style];
     L.prepare(0, 0, 3, S.found, S.found);
@@ -533,7 +628,8 @@ function buildRoad(ctx, part) {
 
 // Villages in land first seen from 1.7 on: the house of every villager with a trade holds its job block,
 // and the buildings that had no bed get one. [x, y, z] inside each kind of building.
-const JOB_SPOT = { small: [1, 0, -1], big: [2, 0, -1], tall: [-1, 0, 0], longhouse: [-1, 0, -1], hut: [-1, 0, 0], porch: [-2, 0, 1], library: [0, 0, 2], blacksmith: [0, 0, 2], church: [1, 0, 3], butcher: [0, 0, 2], farm: [-4, 0, -3] };
+const JOB_SPOT = { small: [1, 0, -1], big: [2, 0, -1], tall: [-1, 0, 0], longhouse: [-1, 0, -1], hut: [-1, 0, 0], porch: [-2, 0, 1], library: [0, 0, 2], blacksmith: [0, 0, 2], church: [1, 0, 3], butcher: [0, 0, 2], farm: [-4, 0, -3],
+  stall: [0, 0, 1], tower: [1, 0, 1] };
 const EXTRA_BED = { library: [-1, 0, -3], blacksmith: [2, 0, -1], church: [-1, 0, 1], butcher: [-1, 0, -1], porch: [1, 0, 1] };   // (the porch house gets a spare one, for the farm hands)
 function furnish(ctx, part) {
   const L = local(ctx, part);
@@ -541,10 +637,15 @@ function furnish(ctx, part) {
   if (spot && job) L.set(spot[0], spot[1], spot[2], job, 2);
   const bed = EXTRA_BED[part.kind];
   if (bed) L.bed(bed[0], bed[1], bed[2], 0);
+  // (1.8) every smithy has an anvil, for putting the enchantments of books onto tools
+  if (part.kind === 'blacksmith' && ctx.plan.gen >= NEW) L.set(-2, 0, 0, B.anvil, 1);
 }
 
 const HOUSE_KINDS = [['small', 15], ['big', 10], ['tall', 10], ['longhouse', 8], ['hut', 8], ['porch', 9], ['farm', 18], ['blacksmith', 6], ['library', 6], ['church', 4], ['butcher', 6], ['pen', 8]];
+const HOUSE_KINDS4 = [...HOUSE_KINDS, ['stall', 8], ['tower', 3], ['garden', 5]];
 const PROF_FOR = {
+  stall: ['farmer', 'fletcher', 'butcher', 'shepherd', 'leatherworker', 'mason'],
+  tower: ['fletcher', 'weaponsmith', 'armorer', 'cleric'],
   small: ['fletcher', 'shepherd', 'leatherworker', 'mason', 'nitwit'],
   big: ['farmer', 'shepherd', 'fletcher', 'librarian'],
   tall: ['librarian', 'cleric', 'mason', 'farmer'],
@@ -559,7 +660,9 @@ const PROF_FOR = {
 };
 
 function planVillage(world, plan, x, z, col, rng) {
-  const style = col.biome === BIOME.DESERT ? 'desert' : col.biome === BIOME.SNOWY ? 'snowy' : col.biome === BIOME.TAIGA ? 'taiga' : 'plains';
+  const style = plan.v4 ? VILLAGE_LANDS[col.biome] || 'plains'
+    : col.biome === BIOME.DESERT ? 'desert' : col.biome === BIOME.SNOWY ? 'snowy' : col.biome === BIOME.TAIGA ? 'taiga' : 'plains';
+  plan.style = style;
   const cy = plan.ground(x, z) + 1;
   if (cy - 1 < SEA + 1) return false;
   const occupied = [];
@@ -608,7 +711,7 @@ function planVillage(world, plan, x, z, col, rng) {
         // leave gaps where side streets branch off
         if (branches && sideStreets.length < 2 && d > 12 && rng() < 0.3) { sideStreets.push([d, side]); continue; }
         if (rng() < 0.08) continue;
-        const kind = pick(HOUSE_KINDS);
+        const kind = pick(plan.v4 ? HOUSE_KINDS4 : HOUSE_KINDS);
         const K = BUILDINGS[kind];
         const hd = K.d >> 1;
         const off = hd + 3;
@@ -620,7 +723,7 @@ function planVillage(world, plan, x, z, col, rng) {
         if (kind === 'pen') {
           const animal = ['cow', 'sheep', 'pig', 'chicken'][Math.floor(rng() * 4)];
           for (let k = 0; k < 2 + Math.floor(rng() * 2); k++) plan.mobs.push({ type: animal, x: bx + 0.5 + (k - 1), y: p.y, z: bz + 0.5, key: `${plan.key}:a${vi++}` });
-        } else {
+        } else if (kind !== 'garden') {
           const profs = PROF_FOR[kind];
           const [fx, fz] = rotVec(0, -1, rot);
           p.prof = profs[Math.floor(rng() * profs.length)];   // (its job block goes in this building)
@@ -690,6 +793,8 @@ function buildPyramid(ctx, part) {
   ctx.chest(x - 3, cy + 1, z, 'pyramid', 3);
   ctx.chest(x, cy + 1, z + 3, 'pyramid', 2);
   ctx.chest(x, cy + 1, z - 3, 'pyramid', 0);
+  // (pyramids made from 1.8 on) the trap is set: a pressure plate in the middle of the floor, over the TNT
+  if (ctx.plan.gen >= NEW) ctx.set(x, cy + 1, z, B.stone_pressure_plate);
 }
 
 function buildJungleTemple(ctx, part) {
@@ -784,6 +889,78 @@ function buildOutpost(ctx, part) {
   L.fill(-3, 19, -3, 3, 19, 3, B.dark_oak_planks);
   L.chest(0, 15, 0, 'outpost', 2);
   L.set(2, 15, 2, B.torch);
+}
+
+// The cells against the inside of a square wall, once round, starting beside the middle of the front
+function ring(r) {
+  const out = [];
+  for (let x = 1; x <= r; x++) out.push([x, -r]);
+  for (let z = -r + 1; z <= r; z++) out.push([r, z]);
+  for (let x = r - 1; x >= -r; x--) out.push([x, r]);
+  for (let z = r - 1; z >= -r; z--) out.push([-r, z]);
+  for (let x = -r + 1; x <= 0; x++) out.push([x, -r]);
+  return out;
+}
+// Stairs of half blocks that wind up the inside of a tower: `steps` half-block steps, each one walked up
+// without a jump, starting from the floor at y0
+function windingStairs(L, r, y0, steps, slab) {
+  const R = ring(r);
+  for (let k = 0; k < steps; k++) L.set(R[k % R.length][0], y0 + (k >> 1), R[k % R.length][1], slab, k & 1);
+  return R;
+}
+
+// Outposts from 1.8 on: a watchtower with one staircase that winds all the way to the lookout
+function buildOutpostTower(ctx, part) {
+  const L = local(ctx, part);
+  const stone = (lx, ly, lz) => { const [wx, wz] = L.w(lx, lz); return ctx.h(wx, part.y + ly, wz, 71) < 0.3 ? B.mossy_cobblestone : B.cobblestone; };
+  L.prepare(5, 5, 23, B.cobblestone, B.cobblestone);
+  for (let ly = 0; ly <= 15; ly++) for (let lz = -4; lz <= 4; lz++) for (let lx = -4; lx <= 4; lx++) {
+    const ex = Math.abs(lx) === 4, ez = Math.abs(lz) === 4;
+    if (!ex && !ez) continue;
+    let id = ex && ez ? B.dark_oak_log : ly <= 2 ? stone(lx, ly, lz) : ly % 5 === 0 ? B.dark_oak_log : B.birch_planks;
+    if (!(ex && ez) && (ly === 7 || ly === 8 || ly === 12 || ly === 13) && (lx === 0 || lz === 0)) id = 0;   // narrow windows
+    L.set(lx, ly, lz, id);
+  }
+  L.fill(0, 0, -4, 0, 1, -4, 0);   // the way in
+  // two floors with the stairs going round them, and the lookout on top
+  for (const ly of [5, 10]) L.fill(-2, ly, -2, 2, ly, 2, B.dark_oak_planks);
+  L.fill(-5, 15, -5, 5, 15, 5, B.dark_oak_planks);
+  const R = windingStairs(L, 3, 0, 32, B.dark_oak_slab);
+  for (let k = 24; k < 30; k++) L.set(R[k % 24][0], 15, R[k % 24][1], 0);   // (the stairs come up through the lookout's floor)
+  L.set(-2, 0, 2, B.torch); L.set(2, 6, 2, B.torch); L.set(-2, 11, -2, B.torch);
+  L.chest(-2, 6, 2, 'outpost', 2);
+  L.set(-2, 11, 2, B.crafting_table); L.set(2, 11, 2, B.hay_bale); L.set(2, 11, 1, B.hay_bale);
+  // the lookout: a rail, four posts and a roof
+  for (let lz = -5; lz <= 5; lz++) for (let lx = -5; lx <= 5; lx++) {
+    if (Math.abs(lx) === 5 || Math.abs(lz) === 5) L.set(lx, 16, lz, B.oak_fence);
+  }
+  for (const [lx, lz] of [[-5, -5], [5, -5], [-5, 5], [5, 5]]) L.fill(lx, 17, lz, lx, 18, lz, B.oak_fence);
+  L.fill(-5, 19, -5, 5, 19, 5, B.dark_oak_slab);
+  L.fill(-3, 19, -3, 3, 19, 3, B.dark_oak_planks);
+  L.fill(-2, 20, -2, 2, 20, 2, B.dark_oak_slab);
+  L.chest(-1, 16, 2, 'outpost_top', 2);
+  L.set(-3, 16, -3, B.torch); L.set(3, 16, 3, B.torch);
+  L.doorstep(4, 2, B.dirt_path);
+}
+function buildOutpostTent(ctx, part) {
+  const L = local(ctx, part);
+  L.prepare(2, 2, 4, B.dirt, null);
+  for (let lz = -2; lz <= 2; lz++) {
+    L.set(-2, 0, lz, B.white_wool); L.set(2, 0, lz, B.white_wool);
+    L.set(-1, 1, lz, B.white_wool); L.set(1, 1, lz, B.white_wool);
+    L.set(0, 2, lz, part.cap || B.gray_wool);
+  }
+  L.fill(-1, 0, 2, 1, 0, 2, B.white_wool); L.set(0, 1, 2, B.white_wool);
+  if (part.chest) L.chest(0, 0, 1, 'outpost', 2); else { L.set(0, 0, 1, B.crafting_table); L.set(-1, 0, 0, B.hay_bale); }
+}
+// A cage of fences with an iron golem shut inside: let it out and it turns on its captors
+function buildOutpostCage(ctx, part) {
+  const L = local(ctx, part);
+  L.prepare(2, 2, 5, B.cobblestone, B.cobblestone);
+  for (let lz = -2; lz <= 2; lz++) for (let lx = -2; lx <= 2; lx++) {
+    if (Math.abs(lx) === 2 || Math.abs(lz) === 2) L.fill(lx, 0, lz, lx, 2, lz, B.oak_fence);
+  }
+  L.fill(-2, 3, -2, 2, 3, 2, B.dark_oak_slab);
 }
 
 function buildMansion(ctx, part) {
@@ -897,6 +1074,142 @@ function buildShipwreck(ctx, part) {
   L.fill(2, 8, -2, 2, 8, 2, B.spruce_planks);
   L.chest(5, 2, 0, 'shipwreck_supply', 3);
   L.chest(-7, 4, 0, 'shipwreck_treasure', 3);
+}
+
+// ---------------------------------------------------------------- underground (1.8)
+const SPAWN_ZOMBIE = 2, SPAWN_SKELETON = 3, SPAWN_SPIDER = 4, SPAWN_CAVE_SPIDER = 5;   // (a spawner's meta: see SPAWNER_TYPES)
+
+// A dungeon: a small room of cobblestone and moss with a monster spawner in the middle and a chest or two
+function buildDungeon(ctx, part) {
+  const { x, y, z, hw, hd } = part;
+  const stone = (xx, yy, zz) => (ctx.h(xx, yy, zz, 81) < (yy === y ? 0.6 : 0.3) ? B.mossy_cobblestone : B.cobblestone);
+  for (let zz = z - hd; zz <= z + hd; zz++) for (let xx = x - hw; xx <= x + hw; xx++) {
+    if (!ctx.inside(xx, zz)) continue;
+    const edge = Math.abs(xx - x) === hw || Math.abs(zz - z) === hd;
+    for (let k = 0; k <= 5; k++) {
+      const shell = edge || k === 0 || k === 5;
+      // (walls stand only where there was rock: where a cave runs past, the room is open to it)
+      if (shell && k > 0 && k < 5 && ctx.get(xx, y + k, zz) === 0) continue;
+      ctx.set(xx, y + k, zz, shell ? stone(xx, y + k, zz) : 0);
+    }
+  }
+  for (const [dx, dz] of part.doors) for (let k = 1; k <= 2; k++) ctx.set(x + dx, y + k, z + dz, 0);
+  ctx.set(x, y + 1, z, B.spawner, part.spawn);
+  for (const [dx, dz, f] of part.chests) ctx.chest(x + dx, y + 1, z + dz, 'dungeon', f);
+}
+
+// What a mineshaft's diggers were after: ore in the walls, more of it than anywhere else
+const SHAFT_ORES = [
+  ['coal_ore', 'deepslate_coal_ore', 26], ['iron_ore', 'deepslate_iron_ore', 26], ['copper_ore', 'deepslate_copper_ore', 10], ['gold_ore', 'deepslate_gold_ore', 11],
+  ['redstone_ore', 'deepslate_redstone_ore', 12], ['lapis_ore', 'deepslate_lapis_ore', 9], ['diamond_ore', 'deepslate_diamond_ore', 6],
+];
+function shaftVein(ctx, x, y, z) {
+  let pick = ctx.h(x, y, z, 91) * 100;
+  let ore = SHAFT_ORES.find((o) => (pick -= o[2]) < 0) || SHAFT_ORES[0];
+  if (ore[0] === 'diamond_ore' && y > 20) ore = SHAFT_ORES[1];   // (diamonds only down deep, as everywhere)
+  const n = 3 + Math.floor(ctx.h(x, y, z, 92) * 5);
+  for (let i = 0; i < n; i++) {
+    const cur = ctx.get(x, y, z);
+    if (cur === B.stone || cur === B.granite || cur === B.diorite || cur === B.andesite) ctx.set(x, y, z, B[ore[0]]);
+    else if (cur === B.deepslate || cur === B.tuff) ctx.set(x, y, z, B[ore[1]]);
+    const d = Math.floor(ctx.h(x + i * 7, y - i * 3, z + i * 5, 93) * 6);
+    if (d === 0) x++; else if (d === 1) x--; else if (d === 2) z++; else if (d === 3) z--; else if (d === 4) y++; else y--;
+  }
+}
+
+// One straight gallery of a mineshaft: three wide and three high, with timber props, cobwebs, the odd chest
+// left behind, and ore showing in the walls
+function buildGallery(ctx, part) {
+  const { sx, sz, dx, dz, len, y } = part;
+  const px = -dz, pz = dx;
+  for (let t = 0; t <= len; t++) {
+    const cx = sx + dx * t, cz = sz + dz * t;
+    for (let w = -1; w <= 1; w++) {
+      const xx = cx + px * w, zz = cz + pz * w;
+      if (!ctx.inside(xx, zz)) continue;
+      for (let k = 0; k <= 2; k++) { const cur = ctx.get(xx, y + k, zz); if (cur !== B.chest && cur !== B.spawner && cur !== B.oak_fence) ctx.set(xx, y + k, zz, 0); }
+      // a floor of planks over a drop or a pool
+      const below = ctx.get(xx, y - 1, zz);
+      if (below === 0 || below === B.water || below === B.lava) ctx.set(xx, y - 1, zz, B.oak_planks);
+      const r = ctx.h(xx, y, zz, 94);
+      if (r < 0.035 && ctx.get(xx, y + 3, zz) > 0) ctx.set(xx, y + 2, zz, B.cobweb);
+    }
+    if (t % 4 === 2 && t < len) {
+      // a prop: two posts and a beam
+      for (const w of [-1, 1]) { ctx.set(cx + px * w, y, cz + pz * w, B.oak_fence); ctx.set(cx + px * w, y + 1, cz + pz * w, B.oak_fence); }
+      for (let w = -1; w <= 1; w++) ctx.set(cx + px * w, y + 2, cz + pz * w, B.oak_planks);
+      if (ctx.h(cx, y, cz, 95) < 0.14) ctx.set(cx, y + 1, cz, B.torch);   // (still burning, somehow)
+    } else if (t > 2 && t < len - 1 && t % 4 !== 2) {
+      if (ctx.h(cx, y, cz, 96) < 0.022) {
+        const w = ctx.h(cx, y, cz, 97) < 0.5 ? -1 : 1;
+        ctx.chest(cx + px * w, y, cz + pz * w, 'mineshaft', DIRV.findIndex((v) => v[0] === -px * w && v[1] === -pz * w));
+      }
+    }
+    // ore in the walls, the roof and the floor
+    for (const [w, k] of [[-2, 0], [2, 0], [-2, 1], [2, 1], [0, 3], [1, -1], [-1, 3]]) {
+      const xx = cx + px * w, zz = cz + pz * w;
+      if (ctx.h(xx, y + k, zz, 98) < 0.05) shaftVein(ctx, xx, y + k, zz);
+    }
+  }
+  if (part.spawner >= 0) {
+    const cx = sx + dx * part.spawner, cz = sz + dz * part.spawner;
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (let k = 0; k <= 2; k++) {
+      if ((a || b || k) && ctx.h(cx + a, y + k, cz + b, 99) < 0.6) ctx.set(cx + a, y + k, cz + b, B.cobweb);
+    }
+    ctx.set(cx, y, cz, B.spawner, SPAWN_CAVE_SPIDER);
+  }
+}
+// The room the galleries start from
+function buildShaftHub(ctx, part) {
+  const { x, y, z } = part;
+  for (let zz = z - 4; zz <= z + 4; zz++) for (let xx = x - 4; xx <= x + 4; xx++) {
+    if (!ctx.inside(xx, zz)) continue;
+    const corner = Math.abs(xx - x) === 4 && Math.abs(zz - z) === 4;
+    for (let k = 0; k <= 5; k++) ctx.set(xx, y + k, zz, corner && k < 5 ? B.oak_log : 0);
+    ctx.set(xx, y - 1, zz, ctx.h(xx, y, zz, 90) < 0.5 ? B.dirt : B.gravel);
+    if (Math.abs(xx - x) === 4 || Math.abs(zz - z) === 4) ctx.set(xx, y + 5, zz, B.oak_planks);
+  }
+  ctx.set(x - 3, y, z - 3, B.torch); ctx.set(x + 3, y, z + 3, B.torch);
+  ctx.set(x + 3, y, z - 3, B.crafting_table);
+  ctx.chest(x - 3, y, z + 3, 'mineshaft', 2);
+}
+
+function planMineshaft(world, plan, x, z, col, rng) {
+  const y = 12 + Math.floor(rng() * 26);
+  if (col.h < y + 20) return false;
+  plan.add({ minX: x - 5, maxX: x + 5, minZ: z - 5, maxZ: z + 5, x, y, z, under: true, build: buildShaftHub });
+  let count = 0;
+  const grow = (sx, sz, dx, dz, depth) => {
+    if (depth > 6 || count >= 44) return;
+    const len = 10 + Math.floor(rng() * 4) * 4;
+    const ex = sx + dx * len, ez = sz + dz * len;
+    if (Math.abs(ex - x) > 66 || Math.abs(ez - z) > 66) return;
+    // (never out through a hillside, or under the sea bed)
+    if (plan.ground(ex, ez) < y + 12 || plan.ground(sx + dx * (len >> 1), sz + dz * (len >> 1)) < y + 12) return;
+    count++;
+    plan.add({
+      minX: Math.min(sx, ex) - 5, maxX: Math.max(sx, ex) + 5, minZ: Math.min(sz, ez) - 5, maxZ: Math.max(sz, ez) + 5,
+      sx, sz, dx, dz, len, y, under: true, spawner: rng() < 0.09 ? 4 + Math.floor(rng() * (len - 8)) : -1, build: buildGallery,
+    });
+    for (const turn of [0, 1, -1]) {
+      if (rng() >= (turn === 0 ? 0.78 : 0.44)) continue;
+      const [ndx, ndz] = turn === 0 ? [dx, dz] : turn === 1 ? [-dz, dx] : [dz, -dx];
+      grow(ex, ez, ndx, ndz, depth + 1);
+    }
+  };
+  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) grow(x + dx * 5, z + dz * 5, dx, dz, 0);
+  return count >= 3;
+}
+
+// Treasure buried under a beach: a chest two blocks down, with nothing above it to show where
+function buildBuriedTreasure(ctx, part) {
+  const { x, y, z } = part;
+  for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+    ctx.set(x + dx, y - 1, z + dz, B.sandstone);
+    if (dx || dz) { if (ctx.get(x + dx, y, z + dz) === 0) ctx.set(x + dx, y, z + dz, B.sand); }
+  }
+  for (let k = 1; k <= 2; k++) if (ctx.get(x, y + k, z) === 0 || ctx.get(x, y + k, z) === B.water) ctx.set(x, y + k, z, B.sand);
+  ctx.chest(x, y, z, 'buried_treasure', 0);
 }
 
 // ---------------------------------------------------------------- the Nether
@@ -1100,13 +1413,26 @@ function strongholdPlans(world) {
 }
 
 // ---------------------------------------------------------------- structure types
+// Each kind has its rules as they were up to 1.7 (ok, and plan with plan.v4 unset) and, where 1.8 changed
+// them, its rules from then on (ok4, and plan with plan.v4 set). New kinds are added at the end only: a
+// kind's place in this list is part of how its spots are picked.
 const isLand = (c) => c.h > SEA + 1;
+const near = (plan, world, name, x, z, dist) => nearStructure(world, name, x, z, dist, plan.v4);
+// The kind of village each land has (1.8)
+const VILLAGE_LANDS = {
+  [BIOME.PLAINS]: 'plains', [BIOME.SUNFLOWER]: 'plains', [BIOME.MEADOW]: 'meadow', [BIOME.DESERT]: 'desert', [BIOME.BADLANDS]: 'badlands', [BIOME.SAVANNA]: 'savanna',
+  [BIOME.TAIGA]: 'taiga', [BIOME.OLD_TAIGA]: 'taiga', [BIOME.SNOWY]: 'snowy', [BIOME.SNOWY_TAIGA]: 'snowy', [BIOME.CHERRY_GROVE]: 'cherry', [BIOME.JUNGLE]: 'jungle', [BIOME.BAMBOO]: 'jungle',
+  [BIOME.BIRCH_FOREST]: 'birch', [BIOME.FLOWER_FOREST]: 'birch',
+};
+const OUTPOST_LANDS = [BIOME.PLAINS, BIOME.DESERT, BIOME.TAIGA, BIOME.SNOWY, BIOME.DARK_FOREST, BIOME.SAVANNA, BIOME.MEADOW, BIOME.BADLANDS, BIOME.CHERRY_GROVE, BIOME.SUNFLOWER, BIOME.SNOWY_TAIGA, BIOME.OLD_TAIGA];
 const TYPES = [
   { name: 'village', spacing: 20, sep: 5, chance: 1, radius: 100, ok: (c) => [BIOME.PLAINS, BIOME.DESERT, BIOME.TAIGA, BIOME.SNOWY].includes(c.biome) && isLand(c) && c.h < 92,
+    ok4: (c) => !!VILLAGE_LANDS[c.biome] && isLand(c) && c.h < 92,
     plan: (world, plan, x, z, c, rng) => planVillage(world, plan, x, z, c, rng) },
   { name: 'pyramid', spacing: 14, sep: 4, chance: 0.8, radius: 14, ok: (c) => c.biome === BIOME.DESERT && isLand(c),
     plan: (world, plan, x, z) => { plan.add({ minX: x - 11, maxX: x + 11, minZ: z - 11, maxZ: z + 11, x, z, y: plan.ground(x, z) + 1, build: buildPyramid }); return true; } },
   { name: 'jungle_temple', spacing: 14, sep: 4, chance: 0.8, radius: 10, ok: (c) => c.biome === BIOME.JUNGLE && isLand(c),
+    ok4: (c) => (c.biome === BIOME.JUNGLE || c.biome === BIOME.BAMBOO) && isLand(c),
     plan: (world, plan, x, z, c, rng) => { planSingle(plan, x, z, plan.ground(x, z) + 1, 5, 6, Math.floor(rng() * 4), buildJungleTemple); return true; } },
   { name: 'witch_hut', spacing: 10, sep: 3, chance: 0.8, radius: 7, ok: (c) => c.biome === BIOME.SWAMP,
     plan: (world, plan, x, z, c, rng) => {
@@ -1116,11 +1442,34 @@ const TYPES = [
       return true;
     } },
   { name: 'igloo', spacing: 10, sep: 3, chance: 0.6, radius: 7, ok: (c) => c.biome === BIOME.SNOWY && isLand(c),
+    ok4: (c) => (c.biome === BIOME.SNOWY || c.biome === BIOME.SNOWY_TAIGA || c.biome === BIOME.ICE_SPIKES) && isLand(c),
     plan: (world, plan, x, z, c, rng) => { planSingle(plan, x, z, plan.ground(x, z) + 1, 4, 6, Math.floor(rng() * 4), buildIgloo); return true; } },
-  { name: 'outpost', spacing: 18, sep: 5, chance: 0.5, radius: 8, ok: (c) => [BIOME.PLAINS, BIOME.DESERT, BIOME.TAIGA, BIOME.SNOWY, BIOME.DARK_FOREST].includes(c.biome) && isLand(c) && c.h < 95,
+  { name: 'outpost', spacing: 18, sep: 5, chance: 0.5, radius: 18, ok: (c) => [BIOME.PLAINS, BIOME.DESERT, BIOME.TAIGA, BIOME.SNOWY, BIOME.DARK_FOREST].includes(c.biome) && isLand(c) && c.h < 95,
+    ok4: (c) => OUTPOST_LANDS.includes(c.biome) && isLand(c) && c.h < 95,
     plan: (world, plan, x, z, c, rng) => {
-      if (nearStructure(world, 'village', x, z, 180)) return false;
+      if (near(plan, world, 'village', x, z, 180)) return false;
       const y = plan.ground(x, z) + 1;
+      if (plan.v4) {
+        // a watchtower with a camp round it: tents, and a cage with a captured iron golem
+        const rot = Math.floor(rng() * 4);
+        planSingle(plan, x, z, y, 5, 5, rot, buildOutpostTower);
+        const spots = [[11, 3], [-11, -2], [3, 12], [-2, -12]];
+        const first = Math.floor(rng() * 4);
+        spots.forEach(([ox, oz], i) => {
+          const px = x + ox, pz = z + oz, g = plan.ground(px, pz);
+          if (g < SEA + 1 || Math.abs(g + 1 - y) > 5) return;
+          if (i === first) {
+            planSingle(plan, px, pz, g + 1, 2, 2, 0, buildOutpostCage);
+            plan.mobs.push({ type: 'iron_golem', x: px + 0.5, y: g + 1, z: pz + 0.5, key: `${plan.key}:golem` });
+          } else planSingle(plan, px, pz, g + 1, 2, 2, i & 1, buildOutpostTent, { chest: i === (first + 1) % 4, cap: [B.gray_wool, B.red_wool, B.black_wool, B.brown_wool][i] });
+        });
+        for (let k = 0; k < 4; k++) { const a = k * Math.PI / 2 + 0.9; const px = Math.round(x + Math.cos(a) * 8), pz = Math.round(z + Math.sin(a) * 8); plan.mobs.push({ type: 'pillager', x: px + 0.5, y: plan.ground(px, pz) + 1, z: pz + 0.5, key: `${plan.key}:p${k}` }); }
+        plan.mobs.push({ type: 'pillager', x: x + 0.5, y: y + 6, z: z + 0.5, key: `${plan.key}:f1` });
+        plan.mobs.push({ type: 'pillager', x: x + 0.5, y: y + 11, z: z + 0.5, key: `${plan.key}:f2` });
+        plan.mobs.push({ type: 'pillager', x: x + 1.5, y: y + 16, z: z - 0.5, key: `${plan.key}:top` });
+        plan.mobs.push({ type: 'vindicator', x: x - 1.5, y: y + 16, z: z - 1.5, key: `${plan.key}:chief` });
+        return true;
+      }
       planSingle(plan, x, z, y, 4, 4, Math.floor(rng() * 4), buildOutpost);
       for (let k = 0; k < 4; k++) { const a = k * Math.PI / 2 + 0.4; plan.mobs.push({ type: 'pillager', x: x + Math.cos(a) * 7 + 0.5, y: plan.ground(Math.round(x + Math.cos(a) * 7), Math.round(z + Math.sin(a) * 7)) + 1, z: z + Math.sin(a) * 7 + 0.5, key: `${plan.key}:p${k}` }); }
       plan.mobs.push({ type: 'pillager', x: x + 1.5, y: y + 15, z: z + 1.5, key: `${plan.key}:top` });
@@ -1138,20 +1487,21 @@ const TYPES = [
       return true;
     } },
   { name: 'ruined_portal', spacing: 12, sep: 3, chance: 0.5, radius: 7, ok: (c) => isLand(c) && c.biome !== BIOME.MOUNTAINS,
+    ok4: (c) => isLand(c) && c.biome !== BIOME.MOUNTAINS && c.biome !== BIOME.SNOWY_PEAKS,
     plan: (world, plan, x, z, c, rng) => {
-      if (nearStructure(world, 'village', x, z, 70)) return false;
+      if (near(plan, world, 'village', x, z, 70)) return false;
       planSingle(plan, x, z, plan.ground(x, z) + 1, 5, 5, Math.floor(rng() * 4), buildRuinedPortal);
       return true;
     } },
   { name: 'well', spacing: 6, sep: 1, chance: 0.2, radius: 4, ok: (c) => c.biome === BIOME.DESERT && isLand(c),
     plan: (world, plan, x, z) => {
-      if (nearStructure(world, 'village', x, z, 70) || nearStructure(world, 'pyramid', x, z, 25)) return false;
+      if (near(plan, world, 'village', x, z, 70) || near(plan, world, 'pyramid', x, z, 25)) return false;
       planSingle(plan, x, z, plan.ground(x, z) + 1, 2, 2, 0, buildWell);
       return true;
     } },
   { name: 'shipwreck', spacing: 12, sep: 3, chance: 0.6, radius: 11, ok: (c) => c.h <= SEA + 1 && c.h >= SEA - 18,
     plan: (world, plan, x, z, c, rng) => {
-      if (nearStructure(world, 'village', x, z, 70)) return false;
+      if (near(plan, world, 'village', x, z, 70)) return false;
       planSingle(plan, x, z, plan.ground(x, z) + 1, 8, 3, Math.floor(rng() * 4), buildShipwreck);
       return true;
     } },
@@ -1166,7 +1516,7 @@ TYPES.push(
     } },
   { name: 'bastion', dim: 'nether', spacing: 15, sep: 4, chance: 0.6, radius: 11, ok: (c) => c.biome !== NB.BASALT,
     plan: (world, plan, x, z, c, rng) => {
-      if (nearStructure(world, 'fortress', x, z, 90)) return false;
+      if (near(plan, world, 'fortress', x, z, 90)) return false;
       const y = 40 + Math.floor(rng() * 16);
       plan.add({ minX: x - 10, maxX: x + 10, minZ: z - 10, maxZ: z + 10, x, z, y, build: buildBastion });
       for (let k = 0; k < 4; k++) plan.mobs.push({ type: 'snoutling', x: x + 0.5 + (k % 2 ? 3 : -3), y: y + 1 + (k > 1 ? 8 : 0), z: z + 0.5 + (k < 2 ? 3 : -3), key: `${plan.key}:s${k}` });
@@ -1186,31 +1536,54 @@ TYPES.push(
       return true;
     } },
 );
+// ---- from 1.8 (only ever in land made from then on)
+TYPES.push(
+  { name: 'dungeon', since: NEW, spacing: 5, sep: 1, chance: 0.6, radius: 5, ok: (c) => c.h > 30,
+    plan: (world, plan, x, z, c, rng) => {
+      const top = Math.min(c.h - 12, 54);
+      if (top < 15) return false;
+      const y = 10 + Math.floor(rng() * (top - 10));
+      const hw = 3 + Math.floor(rng() * 2), hd = 3 + Math.floor(rng() * 2);
+      const r = rng();
+      const chests = [[-(hw - 1), 1 - (hd - 1), 3]];
+      if (rng() < 0.6) chests.push([hw - 1, hd - 2, 1]);
+      const doors = [[[hw, 0]], [[-hw, 0]], [[0, hd]], [[0, -hd]], [[hw, 0], [0, -hd]], [[-hw, 0], [0, hd]]][Math.floor(rng() * 6)];
+      plan.add({ minX: x - hw, maxX: x + hw, minZ: z - hd, maxZ: z + hd, x, y, z, hw, hd, chests, doors, under: true,
+        spawn: r < 0.5 ? SPAWN_ZOMBIE : r < 0.75 ? SPAWN_SKELETON : SPAWN_SPIDER, build: buildDungeon });
+      return true;
+    } },
+  { name: 'mineshaft', since: NEW, spacing: 17, sep: 6, chance: 0.7, radius: 78, ok: (c) => c.h > 44, plan: planMineshaft },
+  { name: 'buried_treasure', since: NEW, spacing: 6, sep: 2, chance: 0.65, radius: 2, ok: (c) => c.biome === BIOME.BEACH && c.h >= SEA,
+    plan: (world, plan, x, z, c) => {
+      plan.add({ minX: x - 1, maxX: x + 1, minZ: z - 1, maxZ: z + 1, x, y: c.h - 2, z, under: true, build: buildBuriedTreasure });
+      plan.chest = { x, y: c.h - 2, z };
+      return true;
+    } },
+);
 const dimOf = (T) => T.dim || 'overworld';
 const TYPE_BY_NAME = Object.fromEntries(TYPES.map((t, i) => [t.name, { ...t, index: i }]));
 TYPES.forEach((t, i) => { t.index = i; });
 
-function regionPlan(world, T, rx, rz) {
-  const key = `${T.name}:${rx}:${rz}`;
-  const cache = world.structureCache;
-  if (cache.has(key)) return cache.get(key);
-  cache.set(key, null);
+// The plan a region makes of its structure under the old rules or the new ones, or null
+function buildPlan(world, T, rx, rz, v4) {
   const salt = 0x9e37 + T.index * 7919;
   if (hash3(world.seed ^ salt, rx, 0, rz) > T.chance) return null;
   const span = T.spacing - T.sep;
   const ocx = rx * T.spacing + Math.floor(hash3(world.seed ^ salt, rx, 1, rz) * span);
   const ocz = rz * T.spacing + Math.floor(hash3(world.seed ^ salt, rx, 2, rz) * span);
   const x = ocx * CS + 8, z = ocz * CS + 8;
-  const col = world.column(x, z);
-  if (!T.ok(col)) return null;
+  // (old rules are worked out on the land as it was, wherever that is)
+  const colAt = v4 || world.dim !== 'overworld' ? (px, pz) => world.column(px, pz) : (px, pz) => world.columnOld(px, pz);
+  const col = colAt(x, z);
+  if (!(v4 && T.ok4 ? T.ok4(col) : T.ok(col))) return null;
   const hcache = new Map();
   const plan = {
-    type: T.name, key, x, z, parts: [], mobs: [],
+    type: T.name, key: `${T.name}:${rx}:${rz}`, rx, rz, x, z, v4, parts: [], mobs: [],
     minX: x, maxX: x, minZ: z, maxZ: z,
     ground(px, pz) {
       const k = px + ',' + pz;
       let h = hcache.get(k);
-      if (h === undefined) { h = world.column(px, pz).h; hcache.set(k, h); }
+      if (h === undefined) { h = colAt(px, pz).h; hcache.set(k, h); }
       return h;
     },
     add(p) {
@@ -1221,20 +1594,55 @@ function regionPlan(world, T, rx, rz) {
   };
   const rng = mulberry32((hash3(world.seed ^ salt, rx, 3, rz) * 4294967296) >>> 0);
   if (!T.plan(world, plan, x, z, col, rng)) return null;
-  // built the way the oldest chunk it covers was made, so nothing people have seen changes under them
-  plan.gen = world.genOver(plan.minX, plan.maxX, plan.minZ, plan.maxZ);
+  return plan;
+}
+
+// What a region held under the rules up to 1.7 (whether or not it is still there)
+function oldPlan(world, T, rx, rz) {
+  if (T.since >= NEW) return null;
+  const key = `old:${T.name}:${rx}:${rz}`;
+  const cache = world.structureCache;
+  if (cache.has(key)) return cache.get(key);
+  cache.set(key, null);
+  const plan = buildPlan(world, T, rx, rz, false);
+  if (plan) plan.gen = world.genOver(plan.minX, plan.maxX, plan.minZ, plan.maxZ);
   cache.set(key, plan);
   return plan;
 }
 
-// Is a structure of the given type centred within `dist` blocks of (x, z)?
-function nearStructure(world, name, x, z, dist) {
+// The structure a region really has. A world that began in 1.8 or later follows the new rules. In an
+// older one, a structure of the old rules that reaches into land someone has seen stays, built as it
+// always was; anywhere else the new rules decide, and their structures keep wholly to unseen land.
+function regionPlan(world, T, rx, rz) {
+  const key = `${T.name}:${rx}:${rz}`;
+  const cache = world.structureCache;
+  if (cache.has(key)) return cache.get(key);
+  cache.set(key, null);
+  let plan = null;
+  if (!world.mixed) {
+    plan = buildPlan(world, T, rx, rz, true);
+    if (plan) plan.gen = NEW;
+  } else {
+    const old = oldPlan(world, T, rx, rz);
+    if (old && old.gen < NEW) plan = old;
+    else {
+      const nw = buildPlan(world, T, rx, rz, true);
+      if (nw && world.genOver(nw.minX, nw.maxX, nw.minZ, nw.maxZ) >= NEW) { plan = nw; plan.gen = NEW; }
+    }
+  }
+  cache.set(key, plan);
+  return plan;
+}
+
+// Is a structure of the given type centred within `dist` blocks of (x, z)? (v4: among the structures
+// that are really there; otherwise among those of the old rules, as an old structure being planned saw them)
+function nearStructure(world, name, x, z, dist, v4 = true) {
   const T = TYPE_BY_NAME[name];
   const S = T.spacing * CS;
   const r0x = Math.floor((x - dist) / S), r1x = Math.floor((x + dist) / S);
   const r0z = Math.floor((z - dist) / S), r1z = Math.floor((z + dist) / S);
   for (let rx = r0x; rx <= r1x; rx++) for (let rz = r0z; rz <= r1z; rz++) {
-    const p = regionPlan(world, TYPES[T.index], rx, rz);
+    const p = v4 ? regionPlan(world, TYPES[T.index], rx, rz) : oldPlan(world, TYPES[T.index], rx, rz);
     if (p && Math.hypot(p.x - x, p.z - z) < dist) return true;
   }
   return false;
@@ -1273,29 +1681,30 @@ export function stampStructures(world, chunk) {
   }
 }
 
-// Footprints of structure parts near a chunk, so terrain generation can keep trees off them
-export function structurePartsNear(world, cx, cz, margin) {
+// Footprints of structure parts near a chunk, so terrain generation can keep trees off them. A chunk
+// made by an older version asks what it asked then: the structures of the old rules.
+export function structurePartsNear(world, cx, cz, margin, g4 = true) {
   const box = { minX: cx * CS - margin, maxX: cx * CS + CS - 1 + margin, minZ: cz * CS - margin, maxZ: cz * CS + CS - 1 + margin };
   const out = [];
   for (const T of TYPES) {
-    if (dimOf(T) !== world.dim) continue;
+    if (dimOf(T) !== world.dim || (!g4 && T.since >= NEW)) continue;
     const rc = Math.ceil((T.radius + margin) / CS) + 1;
     const r0x = Math.floor((cx - rc) / T.spacing), r1x = Math.floor((cx + rc) / T.spacing);
     const r0z = Math.floor((cz - rc) / T.spacing), r1z = Math.floor((cz + rc) / T.spacing);
     for (let rx = r0x; rx <= r1x; rx++) for (let rz = r0z; rz <= r1z; rz++) {
-      const plan = regionPlan(world, T, rx, rz);
+      const plan = g4 ? regionPlan(world, T, rx, rz) : oldPlan(world, T, rx, rz);
       if (!plan || !overlaps(plan, box)) continue;
-      for (const p of plan.parts) if (overlaps(p, box)) out.push(p);
+      for (const p of plan.parts) if (!p.under && overlaps(p, box)) out.push(p);
     }
   }
   return out;
 }
 
 // Nearest structures of a type (used by the locate helper in the debug screen)
-export function structuresNear(world, x, z, radius) {
+export function structuresNear(world, x, z, radius, only = null) {
   const out = [];
   for (const T of TYPES) {
-    if (dimOf(T) !== world.dim) continue;
+    if (dimOf(T) !== world.dim || (only && T.name !== only)) continue;
     const S = T.spacing * CS;
     for (let rx = Math.floor((x - radius) / S); rx <= Math.floor((x + radius) / S); rx++) {
       for (let rz = Math.floor((z - radius) / S); rz <= Math.floor((z + radius) / S); rz++) {
@@ -1305,4 +1714,25 @@ export function structuresNear(world, x, z, radius) {
     }
   }
   return out.sort((a, b) => a.dist - b.dist);
+}
+
+// ---------------------------------------------------------------- treasure maps
+// A map is for one buried treasure: the number of its region is kept in the map (in the stack's wear
+// number, which a map has no other use for).
+const mapCode = (rx, rz) => (rx + 8192) * 16384 + (rz + 8192) + 1;
+// The map found in a chest at (x, z): to the nearest buried treasure, or 0 if there is none for a long way
+export function treasureFor(world, x, z) {
+  if (world.dim !== 'overworld') return 0;
+  for (const radius of [400, 1100, 2400]) {
+    const found = structuresNear(world, x, z, radius, 'buried_treasure')[0];
+    if (found) return mapCode(found.plan.rx, found.plan.rz);
+  }
+  return 0;
+}
+// Where a map's treasure lies: { x, y, z }, or null if this world has none there
+export function treasureAt(world, code) {
+  if (world.dim !== 'overworld' || !(code > 0)) return null;
+  const rx = Math.floor((code - 1) / 16384) - 8192, rz = ((code - 1) % 16384) - 8192;
+  const plan = regionPlan(world, TYPES[TYPE_BY_NAME.buried_treasure.index], rx, rz);
+  return plan ? plan.chest : null;
 }

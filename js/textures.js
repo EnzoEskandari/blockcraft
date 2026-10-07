@@ -943,6 +943,134 @@ function crackPixels() {
   }
   return pix.sort((a, b) => a[2] - b[2]);
 }
+// ---- Lands & Legends (1.8)
+const flower = (p, stem, draw) => {
+  p.clear();
+  for (let y = stem; y < 16; y++) p.set(7, y, [64, 132, 40]);
+  p.set(6, 13, [74, 146, 46]); p.set(8, 12, [64, 132, 40]); p.set(9, 11, [74, 146, 46]);
+  draw();
+};
+const coral = (p, base, light) => {
+  const vor = voronoi(p.r, 14);
+  p.each((x, y) => { const c = vor(x, y); return c.d2 - c.d1 < 0.7 ? sh(base, 0.72) : jit(mix(base, light, c.v), 6, p.r); });
+};
+const capTop = (p, base, spots) => {
+  const n = vnoise(p.r, 4);
+  p.each((x, y) => jit(sh(base, 0.9 + n(x, y) * 0.2), 5, p.r));
+  if (spots) for (const [x, y, w] of [[2, 2, 3], [10, 3, 2], [6, 8, 3], [12, 11, 3], [2, 11, 2]]) for (let j = 0; j < w; j++) for (let i = 0; i < w; i++) p.set(x + i, y + j, jit([236, 232, 226], 5, p.r));
+};
+const soilSide = (p, pal, depth0) => {
+  dirt(p);
+  for (let x = 0; x < 16; x++) {
+    const depth = depth0 + (p.r() < 0.5 ? 1 : 0) + (p.r() < 0.3 ? 1 : 0);
+    for (let y = 0; y < depth; y++) p.set(x, y, jit(pal[Math.floor(p.r() * pal.length)], 5, p.r));
+  }
+};
+const MYC = [[112, 98, 116], [126, 110, 128], [100, 88, 106], [138, 122, 136]];
+const POD = [[92, 66, 28], [108, 80, 36], [78, 54, 22], [122, 92, 44]];
+Object.assign(PAINTERS, {
+  acacia_log: (p) => bark(p, [104, 98, 90], [70, 64, 58]),
+  acacia_planks: (p) => planks(p, [176, 96, 52]),
+  cherry_log: (p) => bark(p, [58, 36, 44], [38, 22, 30]),
+  cherry_planks: (p) => planks(p, [228, 180, 172]),
+  cherry_leaves: (p) => {
+    leavesTex(p, [240, 158, 196]);
+    for (let k = 0; k < 14; k++) { const x = Math.floor(p.r() * 16), y = Math.floor(p.r() * 16); if (p.d[(y * 16 + x) * 4 + 3]) p.set(x, y, p.r() < 0.5 ? [255, 214, 232] : [222, 118, 168]); }
+  },
+  red_sand: (p) => p.each(() => { const r = p.r(); return r < 0.14 ? [170, 86, 32] : r < 0.2 ? [206, 122, 62] : jit([190, 102, 44], 6, p.r); }),
+  red_terracotta: (p) => p.each(() => jit([142, 60, 46], 5, p.r)),
+  yellow_terracotta: (p) => p.each(() => jit([186, 132, 36], 5, p.r)),
+  packed_ice: (p) => {
+    const n = vnoise(p.r, 4);
+    p.each((x, y) => ((x * 3 + y) % 13 === 0 ? [176, 204, 250] : jit(mix([126, 160, 232], [154, 186, 246], n(x, y)), 3, p.r)));
+  },
+  mycelium_top: (p) => { const n = vnoise(p.r, 4); p.each((x, y) => MYC[Math.min(3, Math.floor(n(x, y) * 2 + p.r() * 2))]); },
+  mycelium_side: (p) => soilSide(p, MYC, 3),
+  red_mushroom_block: (p) => capTop(p, [196, 38, 34], true),
+  brown_mushroom_block: (p) => capTop(p, [146, 110, 82], false),
+  mushroom_stem: (p) => { p.each((x) => jit(x % 4 === 0 ? [198, 192, 180] : [222, 216, 204], 4, p.r)); },
+  red_mushroom: (p) => {
+    p.clear();
+    for (let y = 10; y < 16; y++) { p.set(7, y, [226, 220, 206]); p.set(8, y, [204, 198, 184]); }
+    for (let x = 4; x < 12; x++) for (let y = 7; y < 10; y++) p.set(x, y, [200, 40, 36]);
+    for (let x = 5; x < 11; x++) p.set(x, 6, [214, 52, 44]);
+    p.set(5, 8, [240, 236, 230]); p.set(8, 7, [240, 236, 230]); p.set(10, 8, [240, 236, 230]);
+  },
+  podzol_top: (p) => { const n = vnoise(p.r, 4); p.each((x, y) => jit(POD[Math.min(3, Math.floor(n(x, y) * 2 + p.r() * 2))], 4, p.r)); },
+  podzol_side: (p) => soilSide(p, POD, 3),
+  fern: (p) => {
+    p.clear();
+    const pal = [[84, 150, 50], [102, 168, 60], [70, 132, 44]];
+    for (let y = 4; y < 16; y++) p.set(7, y, pal[2]);
+    for (let k = 0; k < 6; k++) {
+      const y = 5 + k * 2, w = 2 + Math.floor((k + 1) * 0.9);
+      for (let i = 1; i <= w; i++) { p.set(7 - i, y + (i > 2 ? 1 : 0), pal[(i + k) % 3]); p.set(7 + i, y + (i > 2 ? 1 : 0), pal[(i + k + 1) % 3]); }
+    }
+  },
+  cornflower: (p) => flower(p, 8, () => {
+    for (const [x, y] of [[6, 5], [7, 4], [8, 5], [7, 6], [5, 6], [9, 6], [6, 7], [8, 7], [7, 5]]) p.set(x, y, (x + y) % 2 ? [70, 106, 232] : [52, 78, 196]);
+    p.set(7, 5, [30, 40, 120]);
+  }),
+  allium: (p) => flower(p, 7, () => {
+    for (let y = 2; y < 7; y++) for (let x = 5; x < 10; x++) if (Math.hypot(x - 7, y - 4) < 2.6) p.set(x, y, (x * 3 + y) % 4 ? [188, 120, 236] : [150, 84, 206]);
+    p.set(6, 3, [222, 172, 250]);
+  }),
+  tulip: (p) => flower(p, 8, () => {
+    for (let y = 4; y < 8; y++) for (let x = 6; x < 9; x++) p.set(x, y, x === 7 ? [226, 52, 40] : [196, 34, 30]);
+    p.set(6, 3, [226, 52, 40]); p.set(8, 3, [226, 52, 40]); p.set(7, 4, [240, 96, 70]);
+  }),
+  oxeye_daisy: (p) => flower(p, 8, () => {
+    for (const [x, y] of [[7, 3], [7, 7], [5, 5], [9, 5], [6, 4], [8, 4], [6, 6], [8, 6], [6, 5], [8, 5], [7, 4], [7, 6]]) p.set(x, y, [240, 240, 236]);
+    p.set(7, 5, [240, 196, 40]);
+  }),
+  sunflower: (p) => {
+    p.clear();
+    for (let y = 6; y < 16; y++) { p.set(7, y, [70, 140, 44]); p.set(8, y, [56, 118, 36]); }
+    for (const [x, y] of [[5, 11], [4, 10], [10, 12], [11, 11], [6, 13], [9, 9]]) p.set(x, y, [84, 156, 50]);
+    for (let y = 0; y < 8; y++) for (let x = 3; x < 12; x++) {
+      const d = Math.hypot(x - 7.5, y - 3.5);
+      if (d < 1.8) p.set(x, y, (x + y) % 2 ? [110, 70, 30] : [84, 52, 22]);
+      else if (d < 4.2 && (x + y) % 2 === 0 || d < 3.2) p.set(x, y, d < 3 ? [250, 206, 36] : [240, 176, 20]);
+    }
+  },
+  lily_pad: (p) => {
+    p.clear();
+    for (let y = 1; y < 15; y++) for (let x = 1; x < 15; x++) {
+      const dx = x - 7.5, dy = y - 7.5, d = Math.hypot(dx, dy);
+      if (d > 6.6 || (dy > 0 && Math.abs(dx) < dy * 0.28)) continue;
+      p.set(x, y, d > 5.6 ? [26, 96, 34] : (x + y * 2) % 7 === 0 ? [58, 150, 60] : jit([40, 124, 46], 5, p.r));
+    }
+  },
+  bamboo: (p) => {
+    p.clear();
+    for (const x0 of [3, 8, 12]) {
+      for (let y = 0; y < 16; y++) {
+        const node = (y + x0 * 2) % 6 === 0;
+        p.set(x0, y, node ? [150, 190, 70] : jit([104, 160, 40], 6, p.r));
+        p.set(x0 + 1, y, node ? [128, 170, 56] : jit([84, 136, 30], 6, p.r));
+      }
+      const ly = (x0 * 5) % 12;
+      p.set(x0 + 2, ly, [96, 170, 50]); p.set(x0 + 3, ly + 1, [80, 150, 44]); p.set(x0 - 1, ly + 5, [96, 170, 50]);
+    }
+  },
+  tube_coral_block: (p) => coral(p, [48, 86, 206], [72, 120, 236]),
+  fire_coral_block: (p) => coral(p, [166, 36, 46], [214, 60, 56]),
+  brain_coral_block: (p) => coral(p, [206, 92, 160], [236, 132, 190]),
+  skull_side: (p) => { const n = vnoise(p.r, 4); p.each((x, y) => { const v = 40 + n(x, y) * 14; return [v, v, v + 2]; }); },
+  skull_front: (p) => {
+    const n = vnoise(p.r, 4);
+    p.each((x, y) => { const v = 40 + n(x, y) * 14; return [v, v, v + 2]; });
+    // (the skull itself is the middle 8 by 8 of the tile: the lower half, between 4 and 12 across)
+    for (let y = 10; y < 12; y++) { p.set(5, y, [8, 8, 8]); p.set(6, y, [8, 8, 8]); p.set(9, y, [8, 8, 8]); p.set(10, y, [8, 8, 8]); }
+    p.set(7, 12, [14, 14, 14]); p.set(8, 12, [14, 14, 14]);
+    for (let x = 5; x < 11; x += 2) p.set(x, 14, [14, 14, 14]);
+  },
+  beacon: (p) => {
+    const n = vnoise(p.r, 4);
+    p.each((x, y) => { const d = Math.hypot(x - 7.5, y - 7.5) / 9; return mix([220, 255, 255], [96, 214, 230], Math.min(1, d + n(x, y) * 0.25)); });
+  },
+});
+
 const CRACKS = crackPixels();
 for (let s = 0; s < 10; s++) {
   PAINTERS['destroy_' + s] = (p) => {
@@ -1183,6 +1311,16 @@ Object.assign(ART, {
     '....OOOOOOOO....', '..OOLLLHLLLHOO..', '.OLLHHHLHHHLHHO.', '.OHHHHHHHHHHHhO.',
     '.OHHHHHHHHHHhhO.', '..OhhhhhhhhhhO..', '...OOOOOOOOOO...',
   ],
+  map: [
+    '................', '.OOOOOOOOOOOOOO.', '.OWWWWWWWWWWWWO.', '.OWGGWWWWBBBWWO.', '.OWGGGWWBBBBBWO.', '.OWWGGWWWBBBWWO.',
+    '.OWWWWLWWWWWWWO.', '.OWWLLWWWWRWRWO.', '.OWLWWWWWWWRWWO.', '.OWWLLLLWWRWRWO.', '.OWWWWWWLLWWWWO.', '.OWBBWWWWWWGGWO.',
+    '.OWBBBWWWWGGGWO.', '.OWWWWWWWWWWWWO.', '.OOOOOOOOOOOOOO.', '................',
+  ],
+  star: [
+    '................', '.......OO.......', '......OLLO......', '......OLHO......', '.OOOOOLHHOOOOOO.', '.OLLLLHHHHHHHhO.',
+    '..OLHHHHHHHHhO..', '...OHHHHHHHhO...', '....OHHHHHhO....', '....OHHHHHhO....', '...OHHHhOHHhO...', '...OHHhO.OHhO...',
+    '..OHhOO...OOhO..', '..OOO.......OO..', '................', '................',
+  ],
   paper: [
     '....OOOOOOOO....', '....OWWWWWWO....', '....OWLLLLWO....', '....OWWWWWWO....',
     '....OWLLLLWO....', '....OWWWWWWO....', '....OWLLLLWO....', '....OWWWWWWO....',
@@ -1256,6 +1394,11 @@ Object.assign(ART, {
     '....OHHHHhO.....', '....OHHHHhO.....', '...OHHHHHHhO....', '..OLLLLLLLLhO...',
     '..OHHHHHHHHhO...', '..OOOOOOOOOOO...',
   ],
+  beacon: [
+    '................', '..OOOOOOOOOOOO..', '..OWWWWWWWWWWO..', '..OWLLWWWWWWWO..', '..OWLOOOOOOWWO..', '..OWWOCCCCOWWO..',
+    '..OWWOCLLCOWWO..', '..OWWOCLLCOWWO..', '..OWWOCCCCOWWO..', '..OWWOOOOOOWWO..', '..OWWWWWWWWWWO..', '..OWBBBBBBBBWO..',
+    '..OWBBBBBBBBWO..', '..OOOOOOOOOOOO..', '................', '................',
+  ],
   cauldron: [
     '.OOOOOOOOOOOOOO.', '.OLO........OhO.', '.OHO........OhO.', '.OHO........OhO.',
     '.OHO........OhO.', '.OHO........OhO.', '.OHOOOOOOOOOOhO.', '.OHHHHHHHHHHHhO.',
@@ -1274,6 +1417,7 @@ const BLOCK_ART_PAL = {
   sign: { O: [80, 58, 32], P: [176, 142, 88], K: [70, 52, 30], S: [137, 103, 55] },
   anvil: { O: [22, 22, 26], H: [74, 74, 80], h: [50, 50, 56], L: [110, 110, 118] },
   cauldron: { O: [20, 20, 24], H: [62, 62, 68], h: [42, 42, 48], L: [96, 96, 104] },
+  beacon: { O: [70, 110, 130], W: [206, 236, 244], C: [110, 226, 240], L: [240, 255, 255], B: [26, 20, 36] },
   brewing_stand: { O: [40, 34, 20], Y: [226, 190, 70], W: [200, 220, 232], P: [150, 40, 160], L: [232, 124, 242], G: [128, 128, 128] },
 };
 const ARMOR_PAL = {
@@ -1352,6 +1496,9 @@ const ITEM_ART = {
   wailer_tear: ['tear', { O: [150, 180, 190], W: [240, 252, 255], L: [200, 230, 240] }],
   clamper_shell: ['shell', { O: [60, 30, 70], H: [170, 110, 180], h: [120, 70, 130], L: [214, 170, 220] }],
   charred_skull: ['skull', { O: [16, 16, 16], H: [52, 52, 54], h: [30, 30, 32], E: [8, 8, 8] }],
+  treasure_map: ['map', { O: [120, 96, 60], W: [226, 208, 160], L: [150, 122, 80], G: [110, 160, 80], B: [80, 130, 200], R: [200, 30, 30] }],
+  blight_star: ['star', { O: [60, 70, 90], H: [226, 240, 252], h: [150, 176, 214], L: [255, 255, 255] }],
+  golden_apple: ['apple', pal3([250, 214, 60], [204, 150, 24], [255, 248, 180], { s: [100, 70, 30], G: [60, 150, 40], O: [110, 76, 10] })],
   enchanted_book: ['book', { O: [40, 16, 60], R: [134, 62, 196], G: [250, 220, 90], W: [240, 234, 220] }],
   experience_bottle: ['potion', { O: [40, 50, 30], W: [200, 220, 232], P: [150, 214, 40], L: [236, 255, 150] }],
   fishing_rod: ['fishing_rod', { O: OUT, ...STICK, W: [226, 226, 226], R: [200, 40, 40] }],

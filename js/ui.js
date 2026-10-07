@@ -5,7 +5,8 @@ import { BLOCKS, ITEMS, ID, B, maxStack, itemName, matchRecipe, fuelValue, SMELT
 import { iconURL, ICONS, drawAscii, TILES, TEX, armorSilhouette, shieldSilhouette } from './textures.js';
 import { PROFESSIONS, LEVEL_NAMES, levelProgress } from './villagers.js';
 import { ADV, TABS } from './advancements.js';
-import { structuresNear } from './structures.js';
+import { structuresNear, treasureAt } from './structures.js';
+import { SEA, BIOME } from './constants.js';
 import { sameItem, stack, craftableTimes, takeIngredients } from './inventory.js';
 import { isEnchanted, enchList, enchLine, ENCH, xpForLevel, enchantability, tableLevels, tableOffer, enchanted, anvil, grind, repairItem, countShelves } from './enchant.js';
 import { requestLock, exitLock, setTouchMode, resetTouch } from './input.js';
@@ -139,6 +140,7 @@ export class UI {
     on('b-sign-out', async () => { await G.game.signOut(); this.syncAccount(); this.mpStatus('Signed out.'); });
     on('b-admin', () => this.openScreen('admin'));
     on('b-sign-done', () => this.back());
+    on('b-map-done', () => this.back());
     document.querySelectorAll('.sign-line').forEach((el, i, all) => el.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === 'ArrowDown') { e.preventDefault(); if (i < all.length - 1) all[i + 1].focus(); else if (e.key === 'Enter') this.back(); }
       else if (e.key === 'ArrowUp' && i > 0) { e.preventDefault(); all[i - 1].focus(); }
@@ -239,6 +241,7 @@ export class UI {
     if (name === 'admin') this.buildAdminList();
     if (name === 'adv') this.buildAdv();
     if (name === 'sign') this.openSign(data);
+    if (name === 'map') this.openMap(data);
     if (name === 'pause') this.syncPause();
     if (name === 'mp') {
       this.mpStatus('');
@@ -256,6 +259,75 @@ export class UI {
     if (G.state === 'playing') exitLock();
     this.updateTouchVisibility();
     this.hideTooltip();
+  }
+
+  // ---------------------------------------------------------------- treasure maps
+  // The land round a buried treasure seen from above (two blocks to the dot, north at the top), a red
+  // cross where it lies, and a marker for you that turns as you turn
+  openMap(data) {
+    const spot = treasureAt(G.world, data && data.code);
+    const g = $('map-canvas').getContext('2d');
+    g.fillStyle = '#d8c698'; g.fillRect(0, 0, 128, 128);
+    this.map = { spot, row: 0, img: spot ? g.getImageData(0, 0, 128, 128) : null };
+    if (!spot) $('map-note').textContent = G.dim === 'overworld' ? 'The ink has faded. This map shows nowhere in this world.' : 'This map shows a place in the Overworld.';
+    const tick = () => { if (G.screen !== 'map') return; this.drawMap(); requestAnimationFrame(tick); };
+    tick();
+  }
+
+  drawMap(rows = 6) {
+    const M = this.map;
+    if (!M || !M.spot) return;
+    const g = $('map-canvas').getContext('2d'), w = G.world, d = M.img.data, sp = M.spot;
+    // the land is drawn in a few rows at a time, so opening the map never makes the game stutter
+    for (let n = 0; n < rows && M.row < 128; n++, M.row++) {
+      const j = M.row, wz = sp.z + (j - 64) * 2;
+      for (let i = 0; i < 128; i++) {
+        const wx = sp.x + (i - 64) * 2;
+        const c = w.column(wx, wz), b = c.biome;
+        let col;
+        if (c.h < SEA) { const k = Math.min(1, (SEA - c.h) / 16); col = b === BIOME.FROZEN_OCEAN ? [176, 204, 232] : [92 - 36 * k, 132 - 44 * k, 196 - 30 * k]; }
+        else if (b === BIOME.BEACH || b === BIOME.DESERT || c.h <= SEA + 1) col = [226, 212, 158];
+        else if (b === BIOME.BADLANDS) col = [196, 110, 62];
+        else if (b === BIOME.SNOWY || b === BIOME.ICE_SPIKES || b === BIOME.SNOWY_TAIGA || b === BIOME.SNOWY_PEAKS) col = [236, 240, 244];
+        else if (b === BIOME.MOUNTAINS) col = [150, 148, 144];
+        else if (b === BIOME.MUSHROOM) col = [150, 122, 156];
+        else if (b === BIOME.SAVANNA) col = [176, 170, 86];
+        else if (b === BIOME.CHERRY_GROVE) col = [226, 164, 190];
+        else if (b === BIOME.FOREST || b === BIOME.DARK_FOREST || b === BIOME.JUNGLE || b === BIOME.BAMBOO || b === BIOME.BIRCH_FOREST || b === BIOME.TAIGA || b === BIOME.OLD_TAIGA || b === BIOME.SWAMP) col = [84, 136, 70];
+        else col = [130, 176, 92];
+        // higher ground is lighter, and slopes facing north are in shade
+        const sh = c.h < SEA ? 1 : Math.max(0.78, Math.min(1.16, 0.94 + (c.h - SEA) / 260 + (c.h - w.column(wx, wz - 2).h) * 0.05));
+        const o = (j * 128 + i) * 4;
+        // (inked on parchment: every colour leans a little towards the paper)
+        d[o] = col[0] * sh * 0.82 + 216 * 0.18; d[o + 1] = col[1] * sh * 0.82 + 198 * 0.18; d[o + 2] = col[2] * sh * 0.82 + 152 * 0.18; d[o + 3] = 255;
+      }
+    }
+    g.putImageData(M.img, 0, 0);
+    // the cross
+    g.strokeStyle = '#c01818'; g.lineWidth = 2.4; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(59, 59); g.lineTo(69, 69); g.moveTo(69, 59); g.lineTo(59, 69); g.stroke();
+    const p = G.player;
+    if (!p) return;
+    const dx = p.pos.x - sp.x, dz = p.pos.z - sp.z, dist = Math.hypot(dx, dz);
+    const note = $('map-note');
+    let text;
+    if (G.dim !== 'overworld') text = 'This map shows a place in the Overworld.';
+    else if (dist < 5) text = 'You are standing on the cross. Dig straight down!';
+    else {
+      const ang = Math.atan2(-dx, dz) * 4 / Math.PI;   // which way the treasure lies from you
+      const way = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'][((Math.round(ang) % 8) + 8) % 8];
+      text = `The treasure is ${Math.round(dist)} blocks to the ${way}.`;
+    }
+    if (note.textContent !== text) note.textContent = text;
+    if (G.dim !== 'overworld') return;
+    // you: an arrowhead, kept on the sheet when you are off the edge of it
+    const mx = Math.max(4, Math.min(124, 64 + dx / 2)), my = Math.max(4, Math.min(124, 64 + dz / 2));
+    g.save();
+    g.translate(mx, my);
+    g.rotate(Math.atan2(-Math.sin(p.yaw), Math.cos(p.yaw)));
+    g.beginPath(); g.moveTo(0, -4.5); g.lineTo(3.4, 3.6); g.lineTo(0, 1.8); g.lineTo(-3.4, 3.6); g.closePath();
+    g.fillStyle = '#fff'; g.strokeStyle = '#202020'; g.lineWidth = 1; g.fill(); g.stroke();
+    g.restore();
   }
 
   // ---------------------------------------------------------------- achievements
@@ -1054,6 +1126,8 @@ export class UI {
     if (p.hungerEffect > 0) fx.push(['Hunger', p.hungerEffect]);
     if (p.effects.wither > 0) fx.push(['Wither', p.effects.wither]);
     if (p.effects.levitation > 0) fx.push(['Levitation', p.effects.levitation]);
+    if (p.effects.regen > 0) fx.push(['Regeneration', p.effects.regen]);
+    if (p.effects.haste > 0) fx.push(['Haste', p.effects.haste]);
     const fxKey = fx.map((e) => e[0] + Math.ceil(e[1])).join();
     if (c.fx !== fxKey) {
       c.fx = fxKey;
@@ -1417,7 +1491,13 @@ export class UI {
       // what the anvil asks for, or what the grindstone gives
       const m = this.made(), p = G.player, n = this.container.note;
       if (this.container.kind === 'grind') n.textContent = m ? 'Takes the enchantments off and gives some experience back.' : 'Put an enchanted item or book in to take its enchantments off.';
-      else if (!m) n.textContent = 'An item with a book, with another of its kind, or with what it is made of.';
+      else if (!m) {
+        // (say why nothing comes of it, when it is a book that does not suit the thing)
+        const a = this.container.data.slots[0], b = this.container.data.slots[1];
+        n.textContent = a && b && b.id === ID.enchanted_book ? (a.id === ID.enchanted_book ? 'Those two books cannot be put together.' : 'Nothing in that book suits this. Each enchantment only goes on the things it is for.')
+          : a && !b ? 'Now add an enchanted book: every enchantment in it that suits this goes onto it. (Or another of its kind, or what it is made of, to mend it.)'
+          : 'Put a tool, weapon or piece of armour on the left and an enchanted book on the right.';
+      }
       else if (m.tooExpensive && !p.creative) n.textContent = 'Too expensive!';
       else n.textContent = `Costs ${m.cost} level${m.cost === 1 ? '' : 's'}` + (!p.creative && p.xpLevel < m.cost ? ` (you have ${p.xpLevel})` : '');
       n.classList.toggle('bad', !!m && !p.creative && (m.tooExpensive || p.xpLevel < m.cost));
@@ -1862,6 +1942,9 @@ export class UI {
     for (const [k, l] of enchList(s)) t.appendChild(h('div', ENCH[k].curse ? 'tip-ench curse' : 'tip-ench', enchLine(k, l)));
     if (it && it.durability) t.appendChild(h('div', 'tip-line', `Durability: ${it.durability - (s.dmg || 0)} / ${it.durability}`));
     if (it && it.food) t.appendChild(h('div', 'tip-line', `Restores ${it.food / 2} food`));
+    if (s.id === ID.treasure_map) t.appendChild(h('div', 'tip-line', 'Hold it and use it to read it'));
+    if (s.id === ID.charred_skull) t.appendChild(h('div', 'tip-line', 'Three on a T of soul sand wake the Blight'));
+    if (s.id === ID.golden_apple) t.appendChild(h('div', 'tip-line', 'Mends you for a while'));
   }
 
   // What a stack says about itself in one line (the toast when you select it)

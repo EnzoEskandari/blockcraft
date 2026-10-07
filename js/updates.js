@@ -40,7 +40,47 @@ const MARKET = {
   },
 };
 
+// Where three of the new lands meet: the striped tablelands of the badlands underfoot, a cherry grove on
+// one side and a badlands village under the mountain on the other, in the late afternoon. Close by, on a
+// little stone floor: two Charred Skulls on a T of soul sand, one short of waking the Blight.
+// (rad: how many chunks round the spot are made; the usual three would hide all this in the mist)
+const TABLELANDS = {
+  seed: 2024, at: [102, 102], view: [0, 0, 9], pitch: -0.14, time: 0.4, rad: 4,
+  build(put, sign, ground) {
+    const ex = 7, ez = -5, g = ground(ex, ez);
+    for (let x = -2; x <= 2; x++) for (let z = -1; z <= 1; z++) {
+      for (let y = Math.min(g, ground(ex + x, ez + z)); y < g; y++) put(ex + x, y, ez + z, 'terracotta');
+      put(ex + x, g, ez + z, 'stone_bricks');
+      for (let y = 1; y <= 4; y++) put(ex + x, g + y, ez + z, null);
+    }
+    put(ex, g + 1, ez, 'soul_sand');
+    for (const d of [-1, 0, 1]) put(ex + d, g + 2, ez, 'soul_sand');
+    put(ex - 1, g + 3, ez, 'charred_skull_block', 0); put(ex, g + 3, ez, 'charred_skull_block', 0);
+    put(ex + 2, g + 1, ez + 1, 'sign', 0); sign(ex + 2, g + 1, ez + 1, ['Blockcraft 1.8', 'Lands &', 'Legends']);
+  },
+};
+
 export const UPDATES = [
+  {
+    version: '1.8', name: 'Lands & Legends', date: '2026-10-06',
+    splashes: ['Eighteen new lands!', 'Cherry blossom!', 'X marks the spot!', 'Mind the pressure plate!', 'Three heads!', 'Down the mine!', 'Mooshroom!', 'To the badlands!',
+      'Ten kinds of village!', 'Light the beacon!', 'Bring a shovel!', 'Ice spikes!'],
+    scene: TABLELANDS,
+    notes: [
+      'Eighteen new lands, 27 in all: savanna, badlands with striped tablelands, birch and flower forests, cherry groves, meadows, sunflower plains, snowy taiga, ice spikes, old growth taiga with giant spruces, bamboo jungle, mushroom islands (no monsters there, only mooshrooms), snowy peaks, beaches, and four kinds of ocean with icebergs and coral reefs.',
+      'New blocks to build with: acacia and cherry wood, red sand and new terracotta, packed ice, mushroom blocks, podzol, coral, bamboo, lily pads and six new flowers.',
+      'Six new kinds of village, ten in all: savanna, badlands, cherry, jungle, birch and meadow villages, each built of its own land, with market stalls, flower gardens and lookout towers you can climb. Every smithy has an anvil.',
+      'Dungeons underground: mossy rooms with a monster spawner and chests.',
+      'Mineshafts: timbered galleries deep down, with far more ore in their walls than anywhere else, chests left behind, and cave spiders.',
+      'Buried treasure: every sunken ship carries a treasure map. Hold it and use it to read it; the red cross is where to dig. The chest has the best loot in the game.',
+      'The Blight, a three-headed boss. Set three blocks of soul sand in a row on top of a fourth, put three Charred Skulls on top, and stand back. It leaves a Blight Star, for making a beacon.',
+      'A beacon on nine blocks of iron, gold, diamond or emerald mends everyone near it and quickens their digging.',
+      'Outposts are proper watchtowers now, with one staircase winding to the top, tents, and a captured iron golem. Desert temples have their trap set: a pressure plate over the TNT.',
+      'Pressure plates (two stone, or two planks) set off TNT and open doors. Golden apples (an apple ringed with gold) mend you.',
+      'The anvil (three iron blocks over an iron ingot over three more) puts the enchantments of a book onto anything they suit; it says so now when a book does not suit.',
+      'All of this appears in land nobody has been to yet. Everything you have built and everywhere you have explored stays exactly as it was.',
+    ],
+  },
   {
     // a small update: it keeps the Trades & Enchantments picture
     version: '1.7.1', name: 'Join Codes', date: '2026-10-05',

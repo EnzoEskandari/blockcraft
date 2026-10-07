@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { G } from './game.js';
 import { BLOCKS, ITEMS, ID, B, canHarvest } from './blocks.js';
 import { throwEye } from './dimmobs.js';
+import { treasureFor } from './structures.js';
 import { activateEndPortal } from './dims.js';
 import { Inventory } from './inventory.js';
 import { moveBox, raycast, boxBlocked, touching } from './physics.js';
@@ -22,7 +23,7 @@ const tmpV = new THREE.Vector3();
 const toolOf = (it) => (it && !it.isBlock ? it.tool : null);
 
 // Items with a use of their own on right-click; anything else in the main hand lets an off-hand shield come up
-const USES = ['bow', 'bucket', 'water_bucket', 'lava_bucket', 'flint_and_steel', 'shade_pearl', 'shade_eye', 'wheat_seeds', 'crossbow', 'trident', 'fishing_rod', 'experience_bottle'];
+const USES = ['bow', 'bucket', 'water_bucket', 'lava_bucket', 'flint_and_steel', 'shade_pearl', 'shade_eye', 'wheat_seeds', 'crossbow', 'trident', 'fishing_rod', 'experience_bottle', 'treasure_map', 'charred_skull'];
 let shotSeq = 0;   // numbers crossbow shots, so one shot's kills can be counted together
 const noUse = (st) => { if (!st) return true; const it = ITEMS[st.id]; return !(it.isBlock || it.food || it.armor || USES.includes(it.key)); };
 const SHIELD_STOPS = ['mob', 'arrow', 'fireball', 'explosion', 'player'];
@@ -537,7 +538,7 @@ export class Player {
     const isFood = !!(it && it.food);
     const holdToEat = isFood && !this.frozen && !G.touchMode && input.useHeld;
     const autoEat = !!(this.eating && this.eating.auto && held && this.eating.id === held.id);
-    if ((holdToEat || autoEat) && this.food < 20 && !this.creative) {
+    if ((holdToEat || autoEat) && (this.food < 20 || held.id === ID.golden_apple) && !this.creative) {
       if (!this.eating || this.eating.id !== held.id) this.eating = { id: held.id, t: 0, crunch: 0, auto: false };
       const e = this.eating;
       e.t += dt;
@@ -595,7 +596,7 @@ export class Player {
       else if (target && target.mob) this.attack(target.mob);
       else if (isFood) {
         if (!this.use(target, true)) {
-          if (this.food < 20 && !this.creative) this.eating = { id: held.id, t: 0, crunch: 0, auto: true };
+          if ((this.food < 20 || held.id === ID.golden_apple) && !this.creative) this.eating = { id: held.id, t: 0, crunch: 0, auto: true };
           else this.hint('You are not hungry');
         }
       } else if (!this.use(target, true) && !this.useOff(target, true)) swingHand();
@@ -645,6 +646,8 @@ export class Player {
     this.food = Math.min(20, this.food + it.food);
     this.saturation = Math.min(this.food, this.saturation + it.sat);
     if (it.hungerChance && Math.random() < it.hungerChance) this.hungerEffect = 30;
+    // a golden apple mends you for a while, whatever ails you
+    if (it.id === ID.golden_apple) { this.health = Math.min(20, this.health + 4); this.addEffect('regen', 12); this.effects.poison = 0; this.effects.wither = 0; }
     this.inv.consumeHeld();
     this.eating = null;
     this.useCd = 0.3;
@@ -665,6 +668,7 @@ export class Player {
       if (eff) speed += eff * eff + 1;
     }
     if (toolOf(it) === 'sword' && def.cutout && def.atten) speed = 1.5;
+    if (this.effects.haste > 0) speed *= 1.3;   // (a beacon's doing)
     if (this.headInWater && !ench(this.armor[0], 'aqua_affinity')) speed /= 5;
     if (!this.onGround && !this.flying && !this.inWater) speed /= 5;
     // without a good enough pickaxe, stone and ores take much longer (and drop nothing)
@@ -807,6 +811,28 @@ export class Player {
       blockSound('gravel', 'place', { x: t.x + 0.5, y: t.y + 1, z: t.z + 0.5 });
       swingHand();
       if (!this.creative) { this.inv.damageHeld(1); G.ui.invChanged(); }
+      return true;
+    }
+    if (held.id === ID.treasure_map) {
+      // (a blank one, out of the creative inventory, takes on the nearest treasure the first time it is read)
+      if (!held.dmg && G.dim === 'overworld') { held.dmg = treasureFor(G.world, Math.floor(this.pos.x), Math.floor(this.pos.z)); G.ui.invChanged(); }
+      G.ui.openScreen('map', { code: held.dmg || 0 });
+      return true;
+    }
+    if (held.id === ID.charred_skull) {
+      // set down on a block, looking back at you; three in a row on a T of soul sand wake the Blight
+      if (!t) return false;
+      let x = t.x, y = t.y, z = t.z;
+      if (!BLOCKS[t.id].replaceable) { x += t.nx; y += t.ny; z += t.nz; }
+      const cur = G.world.getBlock(x, y, z);
+      if (y < 1 || y >= 126 || (cur !== 0 && !BLOCKS[cur].replaceable)) return false;
+      if (!G.world.isSolid(x, y - 1, z)) { this.hint('A skull needs a block to sit on'); return false; }
+      const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
+      G.game.placeBlock(x, y, z, B.charred_skull_block, Math.abs(fx) > Math.abs(fz) ? (fx > 0 ? 3 : 1) : (fz > 0 ? 0 : 2));
+      blockSound('stone', 'place', { x: x + 0.5, y: y + 0.5, z: z + 0.5 });
+      swingHand();
+      if (!this.creative) { this.inv.consumeHeld(); G.ui.invChanged(); }
+      this.useCd = 0.25;
       return true;
     }
     if (held.id === ID.wheat_seeds) {
@@ -1101,6 +1127,8 @@ export class Player {
       if (Math.random() < dt * 10) G.entities.particles.spawn(this.pos.x + (Math.random() - 0.5) * 0.6, this.pos.y + Math.random() * 1.6, this.pos.z + (Math.random() - 0.5) * 0.6, 0, 1, 0, 1, 0.6, 0.15, 0.12, 0.4, -0.05);
     }
     if (this.hungerEffect > 0) { this.hungerEffect -= dt; this.exhaustion += 0.1 * dt; }
+    // standing on a pressure plate
+    if (BLOCKS[w.getBlock(bx, Math.floor(this.pos.y + 0.02), bz)].plate && !this.flying) G.game.pressPlate(bx, Math.floor(this.pos.y + 0.02), bz);
     // touching a cactus pricks
     this.cactusT = Math.max(0, (this.cactusT || 0) - dt);
     if (this.cactusT <= 0 && touching(w, this, B.cactus)) { this.cactusT = 0.5; this.hurt(1, null, null, 'cactus'); }
@@ -1116,6 +1144,12 @@ export class Player {
       if (this.witherTick >= 2) { this.witherTick = 0; this.invul = 0; this.hurt(1, null, null, 'wither'); }
     }
     if (this.effects.slow > 0) this.effects.slow = Math.max(0, this.effects.slow - dt);
+    if (this.effects.haste > 0) this.effects.haste = Math.max(0, this.effects.haste - dt);
+    if (this.effects.regen > 0) {
+      this.effects.regen = Math.max(0, this.effects.regen - dt);
+      this.regenTick = (this.regenTick || 0) + dt;
+      if (this.regenTick >= 1.6) { this.regenTick = 0; if (this.health < 20 && !this.dead) { this.health = Math.min(20, this.health + 1); G.ui.invChanged(); } }
+    }
     if (this.effects.poison > 0) {
       this.effects.poison = Math.max(0, this.effects.poison - dt);
       this.poisonTick += dt;
@@ -1242,13 +1276,13 @@ export class Player {
       this.xpLevel = 0; this.xp = 0;
       if (lost) G.entities.spawnXp(this.pos.x, this.pos.y + 0.5, this.pos.z, lost, 4);
     }
-    const msgs = { lava: 'You tried to swim in lava', fireball: 'You were fireballed', wither: 'You withered away', fall: 'You hit the ground too hard', drown: 'You drowned', starve: 'You starved to death', void: 'You fell out of the world', explosion: 'You blew up', fire: 'You burned to death', magic: 'You were killed by magic', arrow: 'You were shot', pearl: 'You hit the ground too hard' };
+    const msgs = { skull: 'The Blight struck you down', lava: 'You tried to swim in lava', fireball: 'You were fireballed', wither: 'You withered away', fall: 'You hit the ground too hard', drown: 'You drowned', starve: 'You starved to death', void: 'You fell out of the world', explosion: 'You blew up', fire: 'You burned to death', magic: 'You were killed by magic', arrow: 'You were shot', pearl: 'You hit the ground too hard' };
     if (kind === 'player' && this.lastAttacker) msgs.player = `You were slain by ${this.lastAttacker}`;
     if (kind === 'admin') msgs.admin = `You were killed by ${this.lastAttacker || 'an admin'}`;
     msgs.cactus = 'You were pricked to death';
     G.ui.showDeath(msgs[kind] || 'You were slain');
     if (G.net) {
-      const told = { lava: 'tried to swim in lava', fireball: 'was fireballed', wither: 'withered away', fall: 'hit the ground too hard', drown: 'drowned', starve: 'starved to death', void: 'fell out of the world', explosion: 'blew up', fire: 'burned to death', magic: 'was killed by magic', arrow: 'was shot', pearl: 'hit the ground too hard' };
+      const told = { skull: 'was struck down by the Blight', lava: 'tried to swim in lava', fireball: 'was fireballed', wither: 'withered away', fall: 'hit the ground too hard', drown: 'drowned', starve: 'starved to death', void: 'fell out of the world', explosion: 'blew up', fire: 'burned to death', magic: 'was killed by magic', arrow: 'was shot', pearl: 'hit the ground too hard' };
       if (kind === 'player' && this.lastAttacker) told.player = `was slain by ${this.lastAttacker}`;
       if (kind === 'admin') told.admin = `was killed by ${this.lastAttacker || 'an admin'}`;
       told.cactus = 'was pricked to death';

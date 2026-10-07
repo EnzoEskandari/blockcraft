@@ -8,12 +8,13 @@ import { buildChunkMesh } from './mesher.js';
 import { LATEST } from './updates.js';
 import { signMesh, disposeSignMesh } from './signs.js';
 
-const RAD = 3;   // chunks made around the spot; those within RAD - 1 are drawn
+let RAD = 3;   // chunks made around the spot; those within RAD - 1 are drawn (a scene can ask for a wider view)
 const P = { world: null, todo: [], yaw: 0, shown: false, at: null, signs: [] };
 
 export function startPanorama() {
   const sc = LATEST.scene;
   if (P.world || !sc) return;
+  RAD = sc.rad || 3;
   const w = new World(sc.seed, 'overworld');
   for (const [x, y, z, key] of sc.place || []) w.setBlockAnywhere(x, y, z, B[key]);
   // where the view is from: a set spot, or (for a scene that is built) the world's spawn, with the scene around it

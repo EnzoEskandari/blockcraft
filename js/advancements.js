@@ -7,14 +7,13 @@ import { G } from './game.js';
 import { ITEMS, ID, B } from './blocks.js';
 import { sfx } from './audio.js';
 import { structuresNear } from './structures.js';
-import { BIOME_NAMES } from './constants.js';
+import { BIOME_NAMES, OVERWORLD_BIOMES } from './constants.js';
 import { DIM_BIOME_NAMES } from './dims.js';
 
 // Every monster there is to hunt, and every food there is to taste
 const MONSTERS = ['zombie', 'husk', 'drowned', 'zombie_villager', 'skeleton', 'stray', 'spider', 'boomer', 'witch', 'slime', 'shade', 'gloomwing', 'pillager', 'vindicator',
   'wailer', 'cinder', 'magma_slime', 'snoutling', 'snoutling_brute', 'rotting_snoutling', 'tusker', 'rotting_tusker', 'charred_skeleton', 'shademite', 'clamper', 'void_dragon'];
 const FOODS = () => ITEMS.filter((it) => it && it.food).map((it) => it.key);
-const OVERWORLD_BIOMES = BIOME_NAMES.map((_, i) => i);
 const NETHER_BIOMES = [20, 21, 22, 23, 24];
 
 // key, tab, title, what to do, icon (an item), experience; `has`: holding any of these items does it;
@@ -45,6 +44,9 @@ export const ADV = [
   { key: 'bastion_loot', tab: 'nether', title: 'Their Gold, Now Yours', desc: 'Open a chest in a bastion.', icon: 'gold_block', xp: 25 },
   { key: 'rod', tab: 'nether', title: 'Rod of Embers', desc: 'Take a rod from a Cinder.', icon: 'cinder_rod', xp: 20, has: ['cinder_rod'] },
   { key: 'skull', tab: 'nether', title: 'A Grim Keepsake', desc: "Get a Charred Skeleton's skull.", icon: 'charred_skull', xp: 50, has: ['charred_skull'] },
+  { key: 'blight_wake', tab: 'nether', title: 'Three Heads Are Worse Than One', desc: 'Wake the Blight: three Charred Skulls in a row on a T of soul sand.', icon: 'soul_sand', xp: 50 },
+  { key: 'blight', tab: 'nether', title: "Blight's End", desc: 'Destroy the Blight.', icon: 'blight_star', xp: 100, hard: true },
+  { key: 'beacon', tab: 'nether', title: 'A Light for Miles', desc: 'Stand by a beacon that is lit: one set on nine blocks of iron, gold, diamond or emerald.', icon: 'beacon', xp: 100, hard: true },
   { key: 'shortcut', tab: 'nether', title: 'A Shortcut Through Fire', desc: 'Use the Nether to travel 7,000 blocks in the Overworld.', icon: 'obsidian', xp: 100, hard: true },
   { key: 'nether_lands', tab: 'nether', title: 'Hot Spots', desc: 'Visit every kind of land in the Nether.', icon: 'crimson_nylium', xp: 100, hard: true, all: NETHER_BIOMES, names: (b) => DIM_BIOME_NAMES[b] },
   // ---- the End
@@ -67,6 +69,7 @@ export const ADV = [
   { key: 'pillager', tab: 'adventure', title: 'Their Own Medicine', desc: 'Kill a Pillager with a crossbow.', icon: 'crossbow', xp: 25 },
   { key: 'two_birds', tab: 'adventure', title: 'Two With One', desc: 'Kill two Gloomwings with one piercing bolt.', icon: 'gloom_membrane', xp: 65, hard: true },
   { key: 'skewer', tab: 'adventure', title: 'Skewered', desc: 'Kill five different kinds of creature with one crossbow shot.', icon: 'crossbow', xp: 85, hard: true },
+  { key: 'treasure', tab: 'adventure', title: 'X Marks the Spot', desc: 'Dig up a buried treasure. The map to it lies in a sunken ship.', icon: 'treasure_map', xp: 50 },
   { key: 'trident', tab: 'adventure', title: 'Stuck the Landing', desc: 'Hit something with a thrown trident.', icon: 'trident', xp: 25 },
   { key: 'lightning', tab: 'adventure', title: 'Bolt From the Blue', desc: 'Call lightning down on a villager with a Channeling trident.', icon: 'trident', xp: 50, hard: true },
   { key: 'fall', tab: 'adventure', title: 'The Long Way Down', desc: 'Fall a hundred blocks and live.', icon: 'water_bucket', xp: 30, hard: true },
@@ -132,6 +135,7 @@ export class Advancements {
     if (info.t === 'skeleton' && info.a >= 50) this.grant('sniper');
     if (info.t === 'wailer' && info.f) this.grant('fireball');
     if (info.t === 'void_dragon') this.grant('dragon');
+    if (info.t === 'blight') this.grant('blight');
     if (info.b) {
       if (info.t === 'pillager') this.grant('pillager');
       // everything one crossbow shot has killed

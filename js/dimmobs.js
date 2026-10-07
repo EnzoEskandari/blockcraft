@@ -1,5 +1,6 @@
-// Mobs of the Nether and the End (and the Void Dragon), their fireballs and bullets, and where they spawn.
-// Names and looks are this game's own: Wailer, Cinder, Snoutling, Tusker, Clamper, Void Dragon...
+// Mobs of the Nether and the End (and the Void Dragon), their fireballs and bullets, and where they spawn;
+// and the Blight, the three-headed boss woken with soul sand and Charred Skulls.
+// Names and looks are this game's own: Wailer, Cinder, Snoutling, Tusker, Clamper, Void Dragon, the Blight...
 import * as THREE from 'three';
 import { G } from './game.js';
 import { R, itemModel, tintModel } from './render.js';
@@ -132,6 +133,34 @@ Object.assign(MODELS, {
     for (const [x, z] of [[-5, 7], [5, 7], [-5, -7], [5, -7]]) parts.push({ name: 'leg' + (x > 0 ? 'R' : 'L') + (z > 0 ? 'f' : 'b'), size: [3, 7, 3], pos: [x, 5, z], off: [0, -3, 0], color: Dk });
     return parts;
   },
+});
+
+const blightFace = (big) => ({ front: (g, x, y) => {
+  const W = [232, 232, 236];
+  if (big) { rect(g, x + 1, y + 3, 2, 1, W); rect(g, x + 5, y + 3, 2, 1, W); rect(g, x + 2, y + 6, 4, 1, W); px(g, x + 3, y + 5, [120, 120, 126]); }
+  else { px(g, x + 1, y + 2, W); px(g, x + 4, y + 2, W); rect(g, x + 2, y + 4, 2, 1, W); }
+} });
+Object.assign(MODELS, {
+  blight: () => {
+    const Bk = [38, 38, 42], Dk = [24, 24, 28];
+    return [
+      { name: 'spine', size: [3, 10, 3], pos: [0, 13, 0], color: Bk },
+      { name: 'shoulders', size: [20, 3, 3], pos: [0, 19.5, 0], color: Bk },
+      { name: 'rib0', size: [11, 2, 2], pos: [0, 16, 0], color: Dk },
+      { name: 'rib1', size: [11, 2, 2], pos: [0, 13, 0], color: Dk },
+      { name: 'rib2', size: [9, 2, 2], pos: [0, 10, 0], color: Dk },
+      { name: 'tail', size: [3, 7, 3], pos: [0, 8, 0], off: [0, -3.5, 0], rot: [0.55, 0, 0], color: Bk },
+      { name: 'head', size: [8, 8, 8], pos: [0, 21, 0], off: [0, 4, 0], color: Bk, noise: 0.06, paint: blightFace(true) },
+      { name: 'headL', size: [6, 6, 6], pos: [-10, 20, 0], off: [0, 3, 0], color: Bk, noise: 0.06, paint: blightFace(false) },
+      { name: 'headR', size: [6, 6, 6], pos: [10, 20, 0], off: [0, 3, 0], color: Bk, noise: 0.06, paint: blightFace(false) },
+    ];
+  },
+  cave_spider: () => MODELS.spider().map((p) => ({ ...p, color: p.color && p.color[0] < 90 ? [22, 62, 78] : p.color })),
+  mooshroom: () => [
+    ...MODELS.cow().map((p) => (p.name === 'body' || p.name === 'head' ? { ...p, color: [168, 34, 30], spots: [226, 222, 214] } : p)),
+    { name: 'cap0', size: [4, 3, 4], pos: [-2, 23.5, -4], color: [200, 40, 36] },
+    { name: 'cap1', size: [4, 3, 4], pos: [3, 23.5, 3], color: [200, 40, 36] },
+  ],
 });
 
 // ---------------------------------------------------------------- shared helpers
@@ -330,6 +359,64 @@ class ClamperBullet {
   dispose() { R.scene.remove(this.mesh); this.mesh.geometry.dispose(); this.mesh.material.dispose(); }
 }
 
+// A skull spat by the Blight: it bursts where it lands, and whoever it strikes withers. The blue ones are
+// slower and burst harder.
+class BlightSkull {
+  constructor(x, y, z, vx, vy, vz, blue, owner, shooter) {
+    this.pos = { x, y, z }; this.vel = { x: vx, y: vy, z: vz };
+    this.blue = !!blue; this.owner = owner; this.shooter = shooter || null;
+    this.age = 0; this.removed = false; this.hw = 0.22;
+    this.mesh = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.45, 0.45), new THREE.MeshBasicMaterial({ color: blue ? 0x3a66d8 : 0x1c1c20, fog: false }));
+    R.scene.add(this.mesh);
+  }
+  update(dt) {
+    this.age += dt;
+    const sx = this.vel.x * dt, sy = this.vel.y * dt, sz = this.vel.z * dt;
+    const len = Math.hypot(sx, sy, sz) || 1e-6;
+    const dx = sx / len, dy = sy / len, dz = sz / len;
+    if (rand() < dt * 30) G.entities.particles.spawn(this.pos.x, this.pos.y, this.pos.z, (rand() - 0.5) * 0.6, (rand() - 0.5) * 0.6, (rand() - 0.5) * 0.6, this.blue ? 0.3 : 0.12, this.blue ? 0.4 : 0.12, this.blue ? 0.9 : 0.14, 0.12, 0.6, -0.02);
+    const pad = this.hw + 0.1;
+    if (this.owner !== 'fx') {
+      const box = (e) => rayBox(this.pos.x, this.pos.y, this.pos.z, dx, dy, dz, e.pos.x - e.hw - pad, e.pos.y - pad, e.pos.z - e.hw - pad, e.pos.x + e.hw + pad, e.pos.y + e.h + pad, e.pos.z + e.hw + pad);
+      for (const m of G.entities.mobs) {
+        if (m.dead || m === this.shooter) continue;
+        const t = box(m);
+        if (t >= 0 && t <= len) { this.strike(m); return; }
+      }
+      for (const q of players()) {
+        if (q.dead) continue;
+        const t = box(q);
+        if (t >= 0 && t <= len) { this.strike(q); return; }
+      }
+    }
+    const hit = raycast(G.world, this.pos.x, this.pos.y, this.pos.z, dx, dy, dz, len, (id) => BLOCKS[id].solid);
+    if (hit) { this.pos.x += dx * hit.dist; this.pos.y += dy * hit.dist; this.pos.z += dz * hit.dist; this.burst(); return; }
+    this.pos.x += sx; this.pos.y += sy; this.pos.z += sz;
+    this.mesh.position.set(this.pos.x, this.pos.y, this.pos.z);
+    this.mesh.rotation.y = Math.atan2(this.vel.x, this.vel.z);
+    if (this.age > 10 || this.pos.y < -10 || this.pos.y > CH + 30) this.removed = true;
+  }
+  strike(e) {
+    if (e.isPlayer) {
+      e.hurt(8, this.pos.x, this.pos.z, 'skull');
+      e.addEffect('wither', 10);
+    } else {
+      e.invul = 0;
+      e.hurt(8, this.pos.x, this.pos.z, false);
+      // the Blight feeds on what its skulls kill
+      const b = this.shooter;
+      if (e.dead && b && !b.dead) b.hp = Math.min(b.maxHp, b.hp + 5);
+    }
+    this.burst();
+  }
+  burst() {
+    this.removed = true;
+    if (this.owner === 'fx') return;   // the host sends the explosion
+    explode(this.pos.x, this.pos.y, this.pos.z, this.blue ? 1.7 : 1);
+  }
+  dispose() { R.scene.remove(this.mesh); this.mesh.geometry.dispose(); this.mesh.material.dispose(); }
+}
+
 // An eye of the shade flies towards the nearest stronghold, then drops (or shatters)
 class ThrownEye {
   constructor(p) {
@@ -390,6 +477,7 @@ Entities.prototype.projectileFx = function (kind, a) {
   if (kind === 'fb') this.projectiles.push(new Fireball(a[0], a[1], a[2], a[3], a[4], a[5], a[6], 'fx'));
   else if (kind === 'ac') this.projectiles.push(new AcidCloud(a[0], a[1], a[2], true));
   else if (kind === 'cb') this.projectiles.push(new ClamperBullet(a[0], a[1], a[2], G.player, 'fx'));
+  else if (kind === 'sk') this.projectiles.push(new BlightSkull(a[0], a[1], a[2], a[3], a[4], a[5], a[6], 'fx'));
 };
 
 // The fireball in front of the player, if any (to hit it back)
@@ -640,6 +728,133 @@ function finishDragon() {
   if (G.net) G.net.announce(msg); else G.ui.toast(msg);
 }
 
+// ---------------------------------------------------------------- the Blight
+// It fights the way the old three-headed terror does. Woken, it swells for eleven seconds and cannot be
+// hurt, then bursts. After that it flies at whoever is nearest: the middle head spits skulls at them while
+// the other two pick victims of their own (anything alive that is not undead). It mends itself slowly,
+// breaks whatever blocks are in its way a moment after it is hurt, and at half health grows a shell that
+// arrows cannot pierce and comes down to fight at close quarters.
+const BLIGHT_WAKE = 11;
+function blightVictims(m) {
+  const out = [];
+  for (const q of players()) if (!q.dead && q.mode === 'survival' && dist3(m, q) < 64) out.push(q);
+  return out;
+}
+function blightHead(m, i) {
+  if (i === 0) return [m.pos.x, m.pos.y + m.h * 0.86, m.pos.z];
+  const side = i === 1 ? -1 : 1;
+  return [m.pos.x + Math.cos(m.yaw) * 1.15 * side, m.pos.y + m.h * 0.8, m.pos.z - Math.sin(m.yaw) * 1.15 * side];
+}
+function blightSmash(m) {
+  const w = G.world;
+  const x0 = Math.floor(m.pos.x - 1.4), x1 = Math.floor(m.pos.x + 1.4), z0 = Math.floor(m.pos.z - 1.4), z1 = Math.floor(m.pos.z + 1.4);
+  let n = 0;
+  for (let y = Math.floor(m.pos.y); y <= Math.floor(m.pos.y + m.h + 0.5); y++) for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) {
+    const id = w.getBlock(x, y, z);
+    if (!id || BLOCKS[id].hardness < 0 || BLOCKS[id].render === 3) continue;   // (nothing breaks bedrock, portals or liquid)
+    G.game.removeBlock(x, y, z, rand() < 0.5);
+    n++;
+  }
+  if (n) sfx('explode', m.pos, { vol: 0.5, pitch: 1.4 });
+}
+function blightAI(m, dt) {
+  m.age += dt; m.hurtTime -= dt; m.invul -= dt; m.attackCd -= dt;
+  if (m.dead) {
+    m.deathTime += dt;
+    const P = G.entities.particles;
+    for (let i = 0; i < 5; i++) { const a = rand() * TAU; P.spawn(m.pos.x, m.pos.y + 1.6, m.pos.z, Math.cos(a) * 6, (rand() - 0.3) * 6, Math.sin(a) * 6, 0.9, 0.9, 1, 0.2, 1, 0); }
+    tintModel(m.model.root, 1.6, 0);
+    if (m.deathTime > 1.6) { smoke(m.pos.x, m.pos.y + 1.5, m.pos.z, 30, 1.6); m.removed = true; }
+    return;
+  }
+  // (only one that has just been summoned wakes: one that comes back with a saved world, a chunk loading
+  // again or a new host taking over is awake already)
+  const s = m.state || (m.state = { wake: m.fresh ? BLIGHT_WAKE : 0, cd: [2, 3, 3.6], targets: [null, null, null], pick: 0, regen: 0, smash: 0, stuck: 0, hp0: m.hp });
+  if (s.wake > 0) {
+    // waking: nothing can hurt it, and its strength fills up
+    s.wake -= dt;
+    m.invul = 0.3;
+    m.vel.x = m.vel.y = m.vel.z = 0;
+    m.hp = m.maxHp * (1 / 3 + (2 / 3) * (1 - Math.max(0, s.wake) / BLIGHT_WAKE));
+    m.waking = true;
+    if (s.wake <= 0) {
+      m.waking = false; m.fresh = false; m.hp = m.maxHp; s.hp0 = m.hp;
+      explode(m.pos.x, m.pos.y + 1.5, m.pos.z, 7);
+      sfx('dragon', m.pos, { vol: 1.5, pitch: 0.6 });
+    }
+    m.animate(dt, 0, 0);
+    return;
+  }
+  // it mends a point of health every second
+  s.regen += dt;
+  if (s.regen >= 1) { s.regen = 0; if (m.hp < m.maxHp) m.hp = Math.min(m.maxHp, m.hp + 1); }
+  const shell = m.hp <= m.maxHp / 2;
+  m.angry = shell;
+  // hurt: a second later it tears through the blocks round it
+  if (m.hp < s.hp0 - 0.5) s.smash = Math.max(s.smash, 1);
+  s.hp0 = m.hp;
+  if (s.smash > 0) { s.smash -= dt; if (s.smash <= 0) blightSmash(m); }
+  // victims: the nearest player for the middle head, anything living for the other two
+  s.pick -= dt;
+  if (s.pick <= 0) {
+    s.pick = 1;
+    const ps = blightVictims(m);
+    let main = null, bd = 1e9;
+    for (const q of ps) { const d = dist3(m, q); if (d < bd) { bd = d; main = q; } }
+    const others = [...ps];
+    for (const o of G.entities.mobs) if (o !== m && !o.dead && !o.removed && !o.def.undead && !o.def.boss && dist3(m, o) < 30) others.push(o);
+    if (!main && others.length) main = others[0];
+    s.targets[0] = main;
+    for (const i of [1, 2]) {
+      const t = s.targets[i];
+      if (!t || t.dead || t.removed || t.gone || dist3(m, t) > 40 || rand() < 0.15) s.targets[i] = others.length ? others[(rand() * others.length) | 0] : null;
+    }
+  }
+  const t = s.targets[0] && !s.targets[0].dead && !s.targets[0].removed && !s.targets[0].gone ? s.targets[0] : null;
+  let tx = m.pos.x, ty = m.pos.y, tz = m.pos.z, spd = 0;
+  if (t) {
+    const dx = t.pos.x - m.pos.x, dz = t.pos.z - m.pos.z, d = Math.hypot(dx, dz) || 1;
+    // hiding does not help: when it has not seen its victim for a couple of seconds it comes straight
+    // for them, through whatever is in the way
+    s.blind = m.canSee(t) ? 0 : (s.blind || 0) + dt;
+    const hunt = s.blind > 2;
+    const keep = hunt ? 1.5 : shell ? 3 : 9;
+    tx = t.pos.x - dx / d * keep; tz = t.pos.z - dz / d * keep;
+    ty = t.pos.y + (hunt ? 0.2 : shell ? 0.6 : 5);
+    spd = shell ? 6 : 5;
+    m.yaw = Math.atan2(dx, dz);
+    if (hunt) { s.dig = (s.dig || 0) + dt; if (s.dig > 0.9) { s.dig = 0; blightSmash(m); } }
+  } else {
+    // nobody about: hang in the air a little above the ground
+    let g = Math.floor(m.pos.y);
+    for (let k = 0; k < 12 && g > 1 && !G.world.isSolid(Math.floor(m.pos.x), g - 1, Math.floor(m.pos.z)); k++) g--;
+    ty = g + 3 + Math.sin(m.age) * 0.5; spd = 1.5;
+  }
+  const bx = m.pos.x, by = m.pos.y, bz = m.pos.z;
+  const far = steer(m, tx, ty, tz, spd, dt, 2.5);
+  // walled in: it breaks out
+  if (t && far > 2.5 && Math.hypot(m.pos.x - bx, m.pos.y - by, m.pos.z - bz) < spd * dt * 0.25) { s.stuck += dt; if (s.stuck > 0.7) { s.stuck = 0; blightSmash(m); } } else s.stuck = Math.max(0, s.stuck - dt);
+  // the three heads
+  for (let i = 0; i < 3; i++) {
+    s.cd[i] -= dt;
+    const v = s.targets[i];
+    if (s.cd[i] > 0 || !v || v.dead || v.removed || v.gone) continue;
+    if (dist3(m, v) > 44 || !m.canSee(v)) { s.cd[i] = 0.4; continue; }
+    s.cd[i] = i === 0 ? 2 : 2.2 + rand() * 1.6;
+    const blue = i === 0 && rand() < 0.14;
+    const [hx, hy, hz] = blightHead(m, i);
+    const ax = v.pos.x - hx, ay = v.pos.y + (v.h || 1.8) * 0.5 - hy, az = v.pos.z - hz, ad = Math.hypot(ax, ay, az) || 1, sp = blue ? 7 : 15;
+    const k = new BlightSkull(hx + ax / ad * 0.6, hy + ay / ad * 0.6, hz + az / ad * 0.6, ax / ad * sp, ay / ad * sp, az / ad * sp, blue, 'mob', m);
+    G.entities.projectiles.push(k);
+    sfx('fireball', m.pos, { vol: 0.9, pitch: blue ? 0.5 : 0.75 });
+    if (G.net) G.net.projectile('sk', [k.pos.x, k.pos.y, k.pos.z, k.vel.x, k.vel.y, k.vel.z, blue ? 1 : 0]);
+  }
+  m.soundCd -= dt;
+  if (m.soundCd <= 0) { m.soundCd = 5 + rand() * 6; sfx('wailer', m.pos, { vol: 1.2, pitch: 0.45 }); }
+  if (m.pos.y < -30) m.removed = true;
+  m.animate(dt, 0, 0);
+}
+
 // Snoutlings trade: toss them a gold ingot and they give something back
 const BARTER = [
   ['shade_pearl', 1, 2, 8], ['obsidian', 1, 1, 8], ['string', 3, 9, 10], ['nether_quartz', 5, 12, 10], ['iron_ingot', 1, 3, 6], ['leather', 2, 4, 10],
@@ -697,6 +912,24 @@ const anims = {
     m.cage.position.y = 0.75 + Math.sin(m.age * 2) * 0.12;
     m.cage.rotation.y = -m.age;
     tintModel(m.model.root, 1.4, m.hurtTime > 0 ? 0.6 : 0);
+  },
+  blight(m) {
+    const P = m.model.parts;
+    // (on a guest's screen: still filling up means it is waking)
+    const waking = m.proxy ? (m.wakeSeen = (m.wakeSeen ?? m.hp < m.maxHp * 0.97) && m.hp < m.maxHp * 0.995 && !m.angry) : !!m.waking;
+    m.model.inner.position.y = Math.sin(m.age * 2.2) * 0.12;
+    P.headL.rotation.y = Math.sin(m.age * 1.3) * 0.5; P.headR.rotation.y = Math.sin(m.age * 1.1 + 2) * 0.5;
+    P.headL.rotation.x = Math.sin(m.age * 0.9) * 0.2; P.headR.rotation.x = Math.sin(m.age * 1.2 + 1) * 0.2;
+    P.tail.rotation.x = 0.55 + Math.sin(m.age * 2.2) * 0.15;
+    const k = (m.baseScale || 1 / 16) * (waking ? 0.7 + 0.3 * (m.hp / m.maxHp) + Math.sin(m.age * 14) * 0.02 : 1);
+    m.model.inner.scale.setScalar(k);
+    if (waking) tintModel(m.model.root, 1 + 0.6 * Math.abs(Math.sin(m.age * 9)), 0.2);
+    else if (m.angry && !m.dead) tintModel(m.model.root, 1.1 + 0.25 * Math.sin(m.age * 12), m.hurtTime > 0 ? 0.6 : 0.12);   // the shell shimmers
+    if (!m.dead) {
+      G.boss = { name: m.def.name, hp: Math.max(0, m.hp), max: m.maxHp, until: G.clock + 1 };
+      const p = G.player;
+      if (G.adv && p && !p.dead && Math.hypot(p.pos.x - m.pos.x, p.pos.z - m.pos.z) < 40) G.adv.did('blight_wake');
+    }
   },
   dragon(m) {
     const P = m.model.parts;
@@ -759,6 +992,16 @@ Object.assign(MOB_TYPES, {
     drops: [] },
   void_dragon: { name: 'Void Dragon', hp: 200, w: 5, h: 3, speed: 11, persistent: true, heavy: true, boss: true, fireImmune: true, ai: dragonAI, animate: anims.dragon, anim: 'dragon', sound: 'dragon', pitch: 1,
     init: scaled(3), dispose: cleanup, drops: [] },
+});
+Object.assign(MOB_TYPES, {
+  blight: { name: 'The Blight', hp: 300, w: 1.1, h: 3.3, speed: 5, hostile: true, always: true, persistent: true, heavy: true, boss: true, flies: true, fireImmune: true, blastProof: true, undead: true, xp: 50,
+    ai: blightAI, animate: anims.blight, anim: 'blight', sound: 'wailer', pitch: 0.45, init: scaled(1.9),
+    // behind its shell (at half health) nothing shot or thrown gets through; nothing at all while it wakes
+    damageScale: (m, fx) => (m.waking ? 0 : m.angry && fx && (fx.arrow || fx.bolt || fx.shot || fx.fb) ? 0 : 1),
+    onDie: (m) => { if (isHost()) { const msg = 'The Blight has been destroyed!'; if (G.net) G.net.announce(msg); else G.ui.toast(msg); } },
+    drops: [drop('blight_star', 1, 1)] },
+  cave_spider: { ...MOB_TYPES.spider, name: 'Cave Spider', hp: 12, w: 0.8, h: 0.55, damage: 2, poisonHit: true, pitch: 1.4, init: scaled(0.62), arthropod: true },
+  mooshroom: { ...MOB_TYPES.cow, name: 'Mooshroom' },
 });
 // What each mob counts as for Smite (undead), Bane of Arthropods and Impaling, and the experience the
 // special ones leave (other monsters leave 5, animals 1 to 3)
@@ -854,7 +1097,7 @@ Entities.prototype.spawnDim = function () {
 };
 
 // Monster spawners (cinders in fortresses, shademites in strongholds)
-const SPAWNER_TYPES = ['cinder', 'shademite', 'zombie', 'skeleton', 'spider'];
+const SPAWNER_TYPES = ['cinder', 'shademite', 'zombie', 'skeleton', 'spider', 'cave_spider'];
 Entities.prototype.tickSpawners = function () {
   const w = G.world;
   if (!w.spawners || !w.spawners.size) return;

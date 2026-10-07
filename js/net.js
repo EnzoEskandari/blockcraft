@@ -787,7 +787,7 @@ export class Net {
       case 'boom': explosionFx(d.x, d.y, d.z, d.pw); break;
       case 'ar': { const a = d.a; G.entities.spawnArrow(a[0], a[1], a[2], a[3], a[4], a[5], 'fx', { effect: a[6] ? 'slow' : null }); break; }
       case 'th': { const a = d.a; G.entities.spawnPotion(a[0], a[1], a[2], a[3], a[4], a[5], a[6], true); break; }
-      case 'fb': case 'ac': case 'cb': G.entities.projectileFx(d.k, d.a); break;
+      case 'fb': case 'ac': case 'cb': case 'sk': G.entities.projectileFx(d.k, d.a); break;
       default: break;
     }
   }

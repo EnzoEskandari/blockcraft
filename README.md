@@ -54,6 +54,15 @@ How it works:
 - Animals, villagers and dropped items are kept when you walk away.
 - Press **T** (or the **T** button on iPad) to chat.
 
+## Lands & Legends (1.8)
+
+- **27 lands.** Each climate now has several kinds of land: savanna, badlands, birch and flower forests, cherry groves, meadows, sunflower plains, snowy taiga, ice spikes, old growth taiga, bamboo jungle, mushroom islands, snowy peaks, beaches and four kinds of ocean (`World.columnNew` in `js/world.js`; what grows where is in the `TREES` and `COVER` tables above it).
+- **Ten kinds of village** (`STYLE` and `VILLAGE_LANDS` in `js/structures.js`), with market stalls, flower gardens and lookout towers.
+- **Dungeons, mineshafts and buried treasure.** Mineshaft galleries have about five times as much ore in their walls as ordinary rock. Every sunken ship's treasure chest holds a map; the map screen draws the land round the treasure with a red cross on it.
+- **Outposts** are watchtowers with one winding staircase of half blocks; **desert temples** have a pressure plate over their TNT. Pressure plates set off TNT and open doors for players and mobs alike.
+- **The Blight** (`js/dimmobs.js`): three Charred Skulls in a row on a T of soul sand wake it. It swells for eleven seconds, bursts, and then fights as the old three-headed terror does: the middle head hunts the nearest player while the others pick victims of their own, it mends a point of health a second, tears through blocks, and at half health grows a shell that arrows cannot pierce. It leaves a Blight Star, for a **beacon**.
+- All of it appears only in land nobody has seen (generator version 4). In a world from an earlier version the new land eases into the old over two chunks, and a structure is either one of the old rules that reaches into explored land (kept, and built as it always was) or one of the new rules that keeps wholly to unseen land (`regionPlan` in `js/structures.js`).
+
 ## Trades & Enchantments (1.7)
 
 - **Experience:** killing monsters, mining ores, smelting, fishing, trading and achievements leave green orbs that fill the bar over the hotbar. Dying leaves some of it where you fell.
@@ -134,7 +143,7 @@ Caves are winding tunnels that slope down gently, branch and open onto the surfa
 Updating the game never deletes worlds:
 
 - **Old saves keep loading.** Every block and item keeps its number forever, and every enchantment, profession and achievement its name (`tools/ids.json`); worlds saved by every earlier version are checked against each new one before it ships (`tools/check-saves.html`).
-- **Explored land is left alone**, the way Minecraft leaves the chunks it has saved. A world remembers which version of the generator first made every chunk anyone has been to (`World.gens`, saved as `gens`), and those chunks are always made that way again. What an update adds to the land (new caves in 1.6, job blocks and door steps in villages in 1.7) only appears in places nobody has seen; a village someone has seen part of is finished the way it was begun. When the generator changes, raise `GEN` in `js/world.js` and make the new part depend on `world.genAt(cx, cz)` (or `plan.gen` for structures).
+- **Explored land is left alone**, the way Minecraft leaves the chunks it has saved. A world remembers which version of the generator first made every chunk anyone has been to (`World.gens`, saved as `gens`), and those chunks are always made that way again. What an update adds to the land (new caves in 1.6, job blocks and door steps in villages in 1.7, the new lands and structures of 1.8) only appears in places nobody has seen; a village someone has seen part of is finished the way it was begun. When the generator changes, raise `GEN` in `js/world.js` and make the new part depend on `world.genAt(cx, cz)` (or `plan.gen` for structures).
 - **Updates don't interrupt players.** When Render restarts the server for an update, whoever is running each world sends one last save first. Everyone reconnects by themselves a few seconds later, with the same items. If the page is out of date, the game says to reload it.
 - **The database is never skipped.** If the database can't be reached, the server waits for it instead of saving anywhere temporary. The game still loads, and online worlds open again as soon as the database answers.
 - **Daily backups.** Before each online world's first save of the day, the server keeps a copy of it and of everyone's items, for the last 7 days. To roll a world back, run `node tools/restore.mjs` with your `DATABASE_URL` (instructions at the top of that file).

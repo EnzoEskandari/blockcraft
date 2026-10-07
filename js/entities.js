@@ -7,7 +7,7 @@ import { moveBox, raycast, rayBox, boxBlocked, touching } from './physics.js';
 import { sfx } from './audio.js';
 import { mulberry32, hashString } from './noise.js';
 import { tileColors } from './textures.js';
-import { CH, SEA, BIOME } from './constants.js';
+import { CH, SEA, BIOME, FROZEN } from './constants.js';
 import { makeTrades, levelOf, LEVEL_NAMES, PROFESSIONS } from './villagers.js';
 import { villagerPlan, villagerSleep, wake } from './villagerai.js';
 import { cleanEnch, ench, randomBook, randomlyEnchanted } from './enchant.js';
@@ -703,7 +703,7 @@ class Mob {
       G.net.send({ k: 'hit', id: this.netId, d: amount, x: fromX, z: fromZ, kb, p: byPlayer ? 1 : 0, ...(fx && (fx.fire || fx.loot || fx.arrow || fx.fb) ? { f: fx } : {}) });
       return true;
     }
-    if (this.def.damageScale) amount *= this.def.damageScale(this);
+    if (this.def.damageScale) { amount *= this.def.damageScale(this, fx); if (amount <= 0) return false; }
     if (this.sleeping) wake(this);
     if (fx && fx.fire && !this.def.fireImmune) this.fire = Math.max(this.fire, fx.fire);
     // whoever hit it last gets its experience (and the luck of their Looting)
@@ -988,6 +988,7 @@ class Mob {
           if (def.golem) { if (t.isPlayer) t.vel.y = 9; else t.vel.y = 10; sfx('golem', this.pos); }
           if (def.launch) t.vel.y = def.launch;
           if (def.witherHit && t.isPlayer) t.addEffect('wither', 6);
+          if (def.poisonHit && t.isPlayer) t.addEffect('poison', 7);
           if (def.zombieLike && this.model.parts.arm0) this.model.parts.arm0.rotation.x = this.model.parts.arm1.rotation.x = -2.1;
           if (this.type === 'vindicator') this.model.parts.arm1.rotation.x = -2.6;
         }
@@ -1916,7 +1917,7 @@ export function explosionDamage(x, y, z, r, skip = null, mobs = true) {
     e.vel.y += 4 + impact * 6;
     e.vel.z += (ez / n) * impact * 14;
   };
-  if (mobs) for (const m of G.entities.mobs) if (!m.dead && !m.removed) hurtOne(m, false);
+  if (mobs) for (const m of G.entities.mobs) if (!m.dead && !m.removed && !m.def.blastProof) hurtOne(m, false);
   for (const q of players()) if (!q.dead && q !== skip) hurtOne(q, true);
 }
 
@@ -1933,7 +1934,7 @@ export function explode(x, y, z, power) {
     if (d > r * (0.75 + rand() * 0.35)) continue;
     const X = bx + dx, Y = by + dy, Z = bz + dz;
     const id = w.getBlock(X, Y, Z);
-    if (!id || id === B.water || id === B.bedrock || id === B.obsidian) continue;
+    if (!id || id === B.water || id === B.bedrock || id === B.obsidian || BLOCKS[id].hardness < 0) continue;   // (nor portals and their frames)
     removed.push([X, Y, Z, id]);
   }
   for (const [X, Y, Z, id] of removed) {
@@ -2172,6 +2173,16 @@ export class Entities {
     if (orbMat) { const k = 0.5 + 0.5 * Math.sin(performance.now() / 160); orbMat.color.setRGB(0.55 + 0.45 * k, 1, 0.25 * (1 - k)); }
     this.particles.update(dt);
     this.spawnTimer -= dt;
+    this.plateTimer = (this.plateTimer || 0) - dt;
+    if (this.plateTimer <= 0 && !isClient()) {
+      this.plateTimer = 0.25;
+      const w = G.world;
+      for (const m of this.mobs) {
+        if (m.dead || m.def.flies) continue;
+        const x = Math.floor(m.pos.x), y = Math.floor(m.pos.y + 0.02), z = Math.floor(m.pos.z);
+        if (BLOCKS[w.getBlock(x, y, z)].plate) G.game.pressPlate(x, y, z);
+      }
+    }
     if (this.spawnTimer <= 0) {
       this.spawnTimer = 1;
       if (!isClient()) { this.spawnHostiles(); this.despawn(); if (this.tickSpawners) this.tickSpawners(); }
@@ -2202,8 +2213,10 @@ export class Entities {
     if (w.dim !== 'overworld' || seen) return;
     if (rand() > 0.14) return;
     if (this.mobs.filter((m) => PASSIVE.includes(m.type)).length >= 28) return;
-    const type = PASSIVE[(rand() * PASSIVE.length) | 0];
     const baseX = (rand() * 12 | 0) + 2, baseZ = (rand() * 12 | 0) + 2;
+    // (on the mushroom islands there are only mooshrooms)
+    const shroom = chunk.biomes[(baseZ << 4) | baseX] === BIOME.MUSHROOM;
+    const type = shroom ? 'mooshroom' : PASSIVE[(rand() * PASSIVE.length) | 0];
     const n = 2 + (rand() * 3 | 0);
     const variant = type === 'sheep' ? sheepVariant() : 0;
     for (let i = 0; i < n; i++) {
@@ -2211,7 +2224,7 @@ export class Entities {
       let y = Math.min(CH - 2, chunk.maxY);
       while (y > 0 && (!chunk.blocks[(y << 8) | (lz << 4) | lx] || BLOCKS[chunk.blocks[(y << 8) | (lz << 4) | lx]].replaceable)) y--;
       const top = chunk.blocks[(y << 8) | (lz << 4) | lx];
-      if (top !== B.grass && top !== B.snowy_grass) continue;
+      if (shroom ? top !== B.mycelium : (top !== B.grass && top !== B.snowy_grass && top !== B.podzol)) continue;
       const x = chunk.cx * 16 + lx + 0.5, z = chunk.cz * 16 + lz + 0.5;
       this.spawnMob(type, x, y + 1, z, { variant });
     }
@@ -2242,6 +2255,7 @@ export class Entities {
       const c = w.getChunk(x >> 4, z >> 4);
       if (!c || !c.light) continue;
       const biome = c.biomes[((z & 15) << 4) | (x & 15)];
+      if (biome === BIOME.MUSHROOM) continue;   // no monster sets foot on a mushroom island
       // Drowned rise out of deep water now and then: at night, or in the day only where it is very deep
       if (rand() < 0.06 && dist >= 24) {
         let y = SEA;
@@ -2273,9 +2287,9 @@ export class Entities {
       let type, opts = {};
       if (biome === BIOME.SWAMP && r < 20) { type = 'slime'; }
       else if (r < 28) {
-        type = biome === BIOME.DESERT && rand() < 0.8 ? 'husk' : rand() < 0.06 ? 'zombie_villager' : 'zombie';
+        type = (biome === BIOME.DESERT || biome === BIOME.BADLANDS) && rand() < 0.8 ? 'husk' : rand() < 0.06 ? 'zombie_villager' : 'zombie';
         if (type !== 'zombie_villager' && rand() < 0.05) opts.baby = true;
-      } else if (r < 54) type = biome === BIOME.SNOWY && rand() < 0.8 ? 'stray' : 'skeleton';
+      } else if (r < 54) type = FROZEN.has(biome) && rand() < 0.8 ? 'stray' : 'skeleton';
       else if (r < 76) type = 'spider';
       else if (r < 94) type = 'boomer';
       else if (r < 98) type = 'shade';
