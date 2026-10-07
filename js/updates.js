@@ -62,17 +62,6 @@ const TABLELANDS = {
 
 export const UPDATES = [
   {
-    // a small update: it keeps the Lands & Legends picture
-    version: '1.8.1', name: 'Admin Tools', date: '2026-10-06',
-    splashes: ['Eighteen new lands!', 'Cherry blossom!', 'X marks the spot!', 'Mind the pressure plate!', 'Three heads!', 'Down the mine!', 'Mooshroom!', 'To the badlands!',
-      'Ten kinds of village!', 'Light the beacon!', 'Bring a shovel!', 'Ice spikes!'],
-    scene: TABLELANDS,
-    notes: [
-      'Admins see every online world in the Multiplayer list and can walk into any of them.',
-      'Admins can switch between survival and creative in any world: the button in the game menu, or /creative and /survival in chat.',
-    ],
-  },
-  {
     version: '1.8', name: 'Lands & Legends', date: '2026-10-06',
     splashes: ['Eighteen new lands!', 'Cherry blossom!', 'X marks the spot!', 'Mind the pressure plate!', 'Three heads!', 'Down the mine!', 'Mooshroom!', 'To the badlands!',
       'Ten kinds of village!', 'Light the beacon!', 'Bring a shovel!', 'Ice spikes!'],
