@@ -224,6 +224,7 @@ const server = http.createServer(async (req, res) => {
       const who = await accountFrom(bearer(req));
       if (!isAdmin(who)) { json(res, 403, { error: 'Only admins can do that.' }); return; }
       const b = await readBody(req);
+      if (b.action === 'reload') { json(res, 200, { msg: reloadEveryone() }); return; }
       json(res, 200, { msg: await adminAction(who, String(b.action || ''), String(b.name || ''), String(b.reason || '').slice(0, 80)) });
       return;
     }
@@ -526,6 +527,16 @@ async function adminAction(admin, action, name, reason) {
   return `Unknown action ${action}.`;
 }
 
+// Everyone in every online world saves, loads the newest version of the game and comes straight back in
+function reloadEveryone() {
+  const qs = [...wss.clients].filter((q) => q.room && q.readyState === 1);
+  const old = qs.filter((q) => !(q.caps >= 2)).map((q) => q.name);
+  for (const q of qs) if (q.caps >= 2) send(q, { t: 'admin', a: 'reload' });
+  const n = qs.length - old.length;
+  if (!qs.length) return 'Nobody is in an online world right now. Everyone gets the newest version the next time they open the game.';
+  return `Reloading the game for ${n} player${n === 1 ? '' : 's'}.` + (old.length ? ` ${old.join(', ')} ${old.length === 1 ? 'is' : 'are'} on a page from before this existed and must reload by hand this once.` : '');
+}
+
 // Chat commands (anything starting with /)
 async function command(ws, text) {
   const acc = accounts.get(ws.account);
@@ -564,12 +575,7 @@ async function command(ws, text) {
     return `Brought ${a.name} to you.`;
   }
   // everyone in every online world saves, loads the newest version of the game and comes straight back in
-  if (c === 'reload') {
-    const qs = [...wss.clients].filter((q) => q.room && q.readyState === 1);
-    const old = qs.filter((q) => !(q.caps >= 2)).map((q) => q.name);
-    for (const q of qs) if (q.caps >= 2) send(q, { t: 'admin', a: 'reload' });
-    return `Reloading the game for ${qs.length - old.length} player${qs.length - old.length === 1 ? '' : 's'}.` + (old.length ? ` ${old.join(', ')} ${old.length === 1 ? 'is' : 'are'} on a page from before this command existed and must reload by hand this once.` : '');
-  }
+  if (c === 'reload') return reloadEveryone();
   if (c === 'help') return 'Admin commands: /reload (everyone gets the newest version), /where name, /tp name, /bring name, /creative, /survival, /kill name, /kick name, /ban name [reason], /unban name, /op name, /deop name, /players (everyone online), /accounts (every account), /list';
   if (c === 'players') {
     const on = playerList().filter((x) => x.online.length);

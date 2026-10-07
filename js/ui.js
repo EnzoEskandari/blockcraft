@@ -147,6 +147,11 @@ export class UI {
       else if (e.key === 'Escape') { e.preventDefault(); this.back(); }
     }));
     on('b-admin-back', () => this.back());
+    // everyone in an online world saves, gets the newest version and comes back in
+    on('b-admin-reload', async () => {
+      $('admin-status').textContent = 'Reloading…';
+      try { $('admin-status').textContent = await G.game.adminAction('reload', '', ''); } catch (err) { $('admin-status').textContent = err && err.message ? err.message : 'That did not work.'; }
+    });
     on('b-admin-kill', () => this.adminDo('kill'));
     on('b-admin-kick', () => this.adminDo('kick'));
     on('b-admin-ban', () => this.adminDo(this.adminSel && this.adminSel.banned ? 'unban' : 'ban'));
