@@ -531,10 +531,14 @@ async function adminAction(admin, action, name, reason) {
 function reloadEveryone() {
   const qs = [...wss.clients].filter((q) => q.room && q.readyState === 1);
   const old = qs.filter((q) => !(q.caps >= 2)).map((q) => q.name);
-  for (const q of qs) if (q.caps >= 2) send(q, { t: 'admin', a: 'reload' });
+  for (const q of qs) {
+    if (q.caps >= 2) send(q, { t: 'admin', a: 'reload' });
+    // (a page from before this existed cannot be made to reload: it is told to, in words it does show)
+    else send(q, { t: 'cmd', msg: 'Blockcraft has been updated. Please reload this page now to get the new version.' });
+  }
   const n = qs.length - old.length;
   if (!qs.length) return 'Nobody is in an online world right now. Everyone gets the newest version the next time they open the game.';
-  return `Reloading the game for ${n} player${n === 1 ? '' : 's'}.` + (old.length ? ` ${old.join(', ')} ${old.length === 1 ? 'is' : 'are'} on a page from before this existed and must reload by hand this once.` : '');
+  return `Reloading the game for ${n} player${n === 1 ? '' : 's'}.` + (old.length ? ` ${old.join(', ')} ${old.length === 1 ? 'is' : 'are'} on a page from before this existed and cannot be reloaded from here: they have been shown a message asking them to reload.` : '');
 }
 
 // Chat commands (anything starting with /)
