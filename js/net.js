@@ -2,7 +2,7 @@
 // and the others join as guests. Guests send what they do to the host and draw what the host tells them.
 // Messages travel through the Blockcraft server (server.js), which only relays them within a room code.
 import * as THREE from 'three';
-import { G, store } from './game.js';
+import { G, store, load } from './game.js';
 import { R, itemModel, tintModel } from './render.js';
 import { buildModel, holdInHand, lightAt, explosionFx, explosionDamage, spawnBlockParticles } from './entities.js';
 import { BLOCKS, B, ITEMS } from './blocks.js';
@@ -309,7 +309,13 @@ export class Net {
   // in case the server ever loses it
   sendMe(data) {
     this.raw({ t: 'me', data });
-    if (this.code && G.account) store('online.' + this.code + '@me', { name: G.account.name, data });
+    if (this.code && G.account) {
+      store('online.' + this.code + '@me', { name: G.account.name, data });
+      // which accounts have played this world in this browser: its spare copy is shown to them and nobody else
+      const who = load('online.' + this.code + '@who'), me = G.account.name.toLowerCase();
+      const list = Array.isArray(who) ? who : [];
+      if (!list.includes(me)) store('online.' + this.code + '@who', [...list, me].slice(-20));
+    }
   }
 
   raw(m) { if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(m)); }

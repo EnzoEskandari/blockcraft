@@ -1127,6 +1127,7 @@ export const Game = {
     if (!r.ok && r.status !== 404) throw new Error(b.error || 'Could not delete that world.');
     for (const d of DIMS) remove('online.' + dimKey(id, d));
     remove('online.' + id + '@me');
+    remove('online.' + id + '@who');
     return b;
   },
 
@@ -1137,7 +1138,13 @@ export const Game = {
       for (let i = 0; i < localStorage.length; i++) {
         const m = (localStorage.key(i) || '').match(/^blockcraft\.online\.([A-Z2-9]{6})$/);
         const b = m && load('online.' + m[1]);
-        if (b && b.meta && b.meta.id === m[1]) out.push({ id: b.meta.id, name: b.meta.name, mode: b.meta.mode, seed: b.meta.seed, created: b.meta.created });
+        if (!b || !b.meta || b.meta.id !== m[1]) continue;
+        // only the worlds this account has played here: someone else signed in on the same device does not
+        // get to see them (a world is joined with its maker's code, and no other way)
+        const me = G.account ? G.account.name.toLowerCase() : '';
+        const who = load('online.' + m[1] + '@who'), rec = load('online.' + m[1] + '@me');
+        const played = Array.isArray(who) ? who.includes(me) : !!(rec && String(rec.name).toLowerCase() === me);
+        if (me && played) out.push({ id: b.meta.id, name: b.meta.name, mode: b.meta.mode, seed: b.meta.seed, created: b.meta.created });
       }
     } catch { /* storage unavailable */ }
     return out;
