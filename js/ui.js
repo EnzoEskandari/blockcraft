@@ -704,7 +704,8 @@ export class UI {
     if (!this.signedIn()) { this.pendingWorld = id; return false; }
     // an admin going into a world someone else made says how first: to play, or to watch unseen
     const w = (this.online || []).find((x) => x.id === id);
-    if (!how && G.account && G.account.admin && !(w && w.mine && !w.other)) {
+    // (and into their own, when someone is in it already)
+    if (!how && G.account && G.account.admin && (!(w && w.mine && !w.other) || w.players > 0)) {
       how = await this.askHowToJoin(w ? w.name : id);
       if (!how) return false;
     }

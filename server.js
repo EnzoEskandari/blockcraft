@@ -397,6 +397,7 @@ async function enterWorld(ws, m) {
   ws.account = acc.id;
   // an admin may come in unseen: nobody is told, and they are left out of every list of who is playing
   ws.spec = !!m.spec && isAdmin(acc);
+  ws.caps = m.caps | 0;   // what this player's page knows how to do (1: keeps a spectator out of sight)
   const id = String(m.id || '').toUpperCase();
   ws.world = id;
   // already in this world (any dimension) from another tab or device: that one steps aside
@@ -443,6 +444,13 @@ async function enterWorld(ws, m) {
   const r = rooms.get(key);
   if (r && r.host.readyState === 1) {
     if (playersIn(id) >= MAX_PLAYERS) { send(ws, { t: 'error', msg: 'That world is full.' }); return; }
+    // The player running the world is the one who keeps a spectator out of sight. If their page is from
+    // before spectating existed it would announce them like anyone else, so nobody goes in unseen until
+    // that player has reloaded.
+    if (ws.spec && !(r.host.caps >= 1)) {
+      send(ws, { t: 'error', msg: `${r.host.name || 'The player running this world'} has not reloaded the game since spectating was added, so you would be seen. Try again once they have reloaded (the game tells them to), or choose Play.` });
+      return;
+    }
     const pid = r.next++;
     r.peers.set(pid, ws);
     ws.room = key; ws.pid = pid;
