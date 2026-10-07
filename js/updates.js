@@ -62,6 +62,19 @@ const TABLELANDS = {
 
 export const UPDATES = [
   {
+    // a small update: it keeps the Lands & Legends picture
+    version: '1.8.1', name: 'Creative & Recipes', date: '2026-10-06',
+    splashes: ['Search for it!', 'Eighteen new lands!', 'Cherry blossom!', 'X marks the spot!', 'Mind the pressure plate!', 'Three heads!', 'Down the mine!', 'Mooshroom!',
+      'To the badlands!', 'Ten kinds of village!', 'Light the beacon!', 'Ice spikes!'],
+    scene: TABLELANDS,
+    notes: [
+      'Creative mode has the same inventory as survival now, with armour, the off hand and crafting. Every block and item is in the panel beside it: pick one up, or Shift-click (on iPad, tap) to put a stack straight in your inventory. A bin throws things away.',
+      'Search: type a name to find an item or a recipe.',
+      'Pick a recipe you cannot make yet and it shows what it takes: laid out as you would craft it, with a tick or a cross by each thing and how many you have.',
+      'On iPad, hold your finger on a villager (or any creature) to hit it. A tap on a villager still opens its trades.',
+    ],
+  },
+  {
     version: '1.8', name: 'Lands & Legends', date: '2026-10-06',
     splashes: ['Eighteen new lands!', 'Cherry blossom!', 'X marks the spot!', 'Mind the pressure plate!', 'Three heads!', 'Down the mine!', 'Mooshroom!', 'To the badlands!',
       'Ten kinds of village!', 'Light the beacon!', 'Bring a shovel!', 'Ice spikes!'],

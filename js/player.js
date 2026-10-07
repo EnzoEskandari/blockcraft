@@ -589,6 +589,14 @@ export class Player {
     } else this.mining = null;
     showHighlight(target && target.block ? target.block : null, this.mining ? this.mining.progress : 0);
 
+    // Touch: a finger held on a mob keeps hitting it. (A tap on a villager opens its trades, so this is
+    // how a villager is hit on a touch screen.)
+    this.holdHit = Math.max(0, (this.holdHit || 0) - dt);
+    if (input.touchHold && target && target.mob && !this.frozen && this.holdHit <= 0) {
+      this.attack(target.mob);
+      this.holdHit = 0.55;
+    }
+
     // Touch tap: hit a mob, otherwise use/place; with food in hand a tap starts eating
     if (input.tap && !this.frozen) {
       if (this.eating && this.eating.auto) this.eating = null;

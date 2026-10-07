@@ -460,11 +460,28 @@
   .recipe-book .slot.recipe.locked { background: #767676; }
   .recipe-book .slot.recipe.locked img { opacity: 0.3; filter: grayscale(1); }
   .recipe-book .empty { margin: 2px 0; font-size: 19px; color: #555; }
+  .recipe-book .book-tabs { display: flex; gap: 6px; }
+  .recipe-book .book-search { box-sizing: border-box; width: 100%; height: 34px; margin: 6px 0; padding: 0 8px; font: inherit; font-size: 20px; color: #fff; background: #555; border: 2px solid var(--slot-lo); box-shadow: inset 2px 2px 0 #3a3a3a; }
+  .recipe-book .book-search::placeholder { color: #c8c8c8; }
+  .recipe-book .book-foot { display: flex; gap: 8px; align-items: flex-end; justify-content: space-between; }
+  .recipe-book .book-foot .hint { flex: 1; }
+  .recipe-book .slot.bin { flex: none; background: #8b3a3a; box-shadow: inset 2px 2px 0 #c06060, inset -2px -2px 0 #3a1010; }
+  .recipe-book .slot.bin::after { content: '✕'; position: absolute; inset: 0; display: grid; place-items: center; color: #fff; font-size: 24px; pointer-events: none; }
+  .recipe-book .needs { margin: 6px 0 2px; padding: 6px; background: #b4b4b4; border: 2px solid var(--slot-lo); }
+  .recipe-book .needs-title { font-size: 21px; color: #222; margin-bottom: 4px; }
+  .recipe-book .needs-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .recipe-book .needs-grid { grid-template-columns: repeat(var(--cols), calc(var(--slot-size) * 0.72)); }
+  .recipe-book .slot.mini { width: calc(var(--slot-size) * 0.72); height: calc(var(--slot-size) * 0.72); cursor: default; }
+  .recipe-book .slot.mini.lack { background: #a07c7c; }
+  .recipe-book .slot.mini.lack img { opacity: 0.5; }
+  .recipe-book .need { font-size: 19px; line-height: 1.15; }
+  .recipe-book .need.ok { color: #1f5a12; }
+  .recipe-book .need.bad { color: #8a1c1c; }
   .recipe-book .status { min-height: 1.1em; font-size: 20px; color: #2c5a18; }
   .recipe-book .status.bad { color: #8a1c1c; }
   @media (max-width: 720px) {
     .recipe-book { order: 2; width: auto; }
-    .recipe-book .grid.recipes { grid-template-columns: repeat(9, var(--slot-size)); max-height: calc(var(--slot-size) * 2.6); }
+    .recipe-book .grid.recipes { grid-template-columns: repeat(9, var(--slot-size)); max-height: calc(var(--slot-size) * 3.2); }
   }
 
   #cursor-stack { position: fixed; left: 0; top: 0; width: var(--slot-size); height: var(--slot-size); margin: calc(var(--slot-size) / -2) 0 0 calc(var(--slot-size) / -2); pointer-events: none; z-index: 30; }
@@ -708,6 +725,7 @@
         <dt>Drag</dt><dd>Look around</dd>
         <dt>Tap a block</dt><dd>Place a block there · use · attack</dd>
         <dt>Hold a block</dt><dd>Mine it, whatever you are holding · slide to mine the next one</dd>
+        <dt>Tap a villager</dt><dd>Trade · hold your finger on it to hit it</dd>
         <dt>Stick to the top</dt><dd>Sprint</dd>
         <dt>Tap with food</dt><dd>Eat (tap again to stop)</dd>
         <dt>⤒</dt><dd>Jump · swim up · double-tap to fly</dd>

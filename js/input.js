@@ -288,6 +288,7 @@ export function pollInput(dt) {
   input.sprint = k('ControlLeft') || k('ControlRight') || touch.sprintLatch
     || (touch.joyId !== null && touch.joyDY < -0.92 && Math.abs(touch.joyDX) < 0.45);
   input.mine = mouseL || touch.holding;
+  input.touchHold = touch.holding;
   input.useHeld = mouseR;
 
   // Without pointer lock the view turns when the cursor nears the screen edge

@@ -22,7 +22,7 @@ const h = (tag, cls, text) => {
   return e;
 };
 
-const CONTAINERS = ['inventory', 'crafting', 'furnace', 'chest', 'creative', 'trade', 'enchant', 'anvil', 'grind'];
+const CONTAINERS = ['inventory', 'crafting', 'furnace', 'chest', 'trade', 'enchant', 'anvil', 'grind'];
 const TEMP = ['enchant', 'anvil', 'grind'];   // screens whose slots only hold things while they are open
 const SPLASHES = ['Now on iPad!', 'Punch a tree!', 'Made of blocks!', 'Mind the Boomers!', '100% procedural!', 'Try the caves!', 'Smooth lighting!', 'Hold to mine!', 'Seeds are fun!'];
 
@@ -236,6 +236,7 @@ export class UI {
   isInventoryScreen() { return CONTAINERS.includes(G.screen); }
 
   openScreen(name, data) {
+    if (name === 'creative') name = 'inventory';
     if (G.screen === name && !CONTAINERS.includes(name)) return;
     if (G.screen) {
       if (CONTAINERS.includes(G.screen)) this.closeContainer();
@@ -1366,6 +1367,7 @@ export class UI {
     if (ref.kind === 'result') return this.craftResult();
     if (ref.kind === 'made') { const m = this.made(); return m ? m.out : null; }
     if (ref.kind === 'palette') return stack(ref.id, 1, 0, ref.e || null);
+    if (ref.kind === 'bin') return null;
     return ref.arr[ref.i];
   }
 
@@ -1378,7 +1380,7 @@ export class UI {
     const add = (parent, ref) => { const el = this.slot(ref); parent.appendChild(el); this.container.els.push(el); return el; };
     const grid = (cols, cls) => { const g = h('div', 'grid ' + (cls || '')); g.style.setProperty('--cols', cols); return g; };
 
-    const titles = { inventory: 'Crafting', crafting: 'Crafting', furnace: 'Furnace', chest: 'Chest', creative: 'Creative Inventory', enchant: 'Enchant', anvil: 'Repair & Combine', grind: 'Grindstone' };
+    const titles = { inventory: 'Crafting', crafting: 'Crafting', furnace: 'Furnace', chest: 'Chest', enchant: 'Enchant', anvil: 'Repair & Combine', grind: 'Grindstone' };
     const head = h('div', 'panel-head');
     head.appendChild(h('div', 'panel-title', titles[kind]));
     const close = h('button', 'close', '✕');
@@ -1495,25 +1497,6 @@ export class UI {
       const g = grid(9);
       for (let i = 0; i < 27; i++) add(g, { kind: 'normal', arr: data.slots, i });
       panel.appendChild(g);
-    } else if (kind === 'creative') {
-      this.craft = null;
-      const pal = grid(9, 'palette');
-      for (const id of creativeList()) add(pal, { kind: 'palette', id });
-      // a book for every enchantment, at its highest level
-      for (const k of Object.keys(ENCH)) add(pal, { kind: 'palette', id: ID.enchanted_book, e: { [k]: ENCH[k].max } });
-      panel.appendChild(pal);
-      panel.appendChild(h('div', 'hint', G.touchMode ? 'Tap an item to put a full stack in the selected hotbar slot.' : 'Click an item to put a full stack in the selected hotbar slot. Right-click puts just one.'));
-      const row = h('div', 'hotbar-edit');
-      const hb = grid(9);
-      for (let i = 0; i < 9; i++) add(hb, { kind: 'select', arr: inv.slots, i });
-      row.appendChild(hb);
-      const trash = h('button', 'trash', 'Clear');
-      trash.type = 'button';
-      trash.addEventListener('click', () => { inv.slots[inv.selected] = null; this.invChanged(); sfx('click'); });
-      row.appendChild(trash);
-      panel.appendChild(row);
-      this.refreshContainer();
-      return;
     }
 
     panel.appendChild(h('div', 'panel-title', 'Inventory'));
@@ -1633,36 +1616,103 @@ export class UI {
   }
 
   // ---------------------------------------------------------------- recipe book
+  // The panel beside the inventory and the crafting table. In survival it is the recipe book; in creative
+  // it also lists every block and item there is. Both can be searched by name.
   buildRecipeBook() {
     const panel = $('recipe-panel');
     panel.innerHTML = '';
+    const creative = G.player.creative;
+    if (!creative) this.bookTab = 'recipes';
+    else if (this.bookTabFor !== 'creative') { this.bookTab = 'items'; this.recipeFilter = 'all'; }   // (in creative there is nothing to craft from: show every recipe)
+    this.bookTabFor = creative ? 'creative' : 'survival';
+    this.bookSearch = '';
     const head = h('div', 'panel-head');
-    head.appendChild(h('div', 'panel-title', 'Recipes'));
+    const tabs = {};
+    if (creative) {
+      const row = h('div', 'book-tabs');
+      for (const [key, label] of [['items', 'Items'], ['recipes', 'Recipes']]) {
+        const t = h('button', 'filter', label);
+        t.type = 'button';
+        t.addEventListener('click', () => {
+          if (this.bookTab === key) return;
+          this.bookTab = key;
+          search.value = ''; this.bookSearch = '';
+          this.book.key = ''; this.book.shown = null;
+          sync();
+          this.renderRecipeBook();
+          sfx('click');
+        });
+        tabs[key] = t;
+        row.appendChild(t);
+      }
+      head.appendChild(row);
+    } else head.appendChild(h('div', 'panel-title', 'Recipes'));
     const filter = h('button', 'filter');
     filter.type = 'button';
-    const syncFilter = () => {
-      const all = this.recipeFilter === 'all';
-      filter.textContent = all ? 'All' : 'Craftable';
-      filter.setAttribute('aria-pressed', String(!all));
-      filter.title = all ? 'Showing every recipe. Tap to show only what you can craft.' : 'Showing what you can craft. Tap to show every recipe.';
-    };
     filter.addEventListener('click', () => {
       this.recipeFilter = this.recipeFilter === 'all' ? 'craftable' : 'all';
-      syncFilter();
+      sync();
       this.book.key = '';
       this.renderRecipeBook();
       sfx('click');
     });
-    syncFilter();
     head.appendChild(filter);
     panel.appendChild(head);
+    const search = h('input', 'book-search');
+    search.type = 'text';
+    search.autocomplete = 'off';
+    search.spellcheck = false;
+    search.setAttribute('autocapitalize', 'off');
+    search.setAttribute('enterkeyhint', 'search');
+    search.setAttribute('aria-label', 'Search by name');
+    search.addEventListener('input', () => { this.bookSearch = search.value; this.renderRecipeBook(); });
+    // Enter puts the keyboard away; Escape clears the search first, then leaves the box
+    search.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); search.blur(); }
+      if (e.key === 'Escape') { e.preventDefault(); if (search.value) { search.value = ''; this.bookSearch = ''; this.renderRecipeBook(); } else search.blur(); }
+    });
+    search.addEventListener('pointerdown', (e) => e.stopPropagation());
     const grid = h('div', 'grid recipes');
-    const empty = h('p', 'empty', 'Nothing to craft yet. Break a tree trunk to collect logs, then come back.');
+    const empty = h('p', 'empty', '');
+    const detail = h('div', 'needs');
+    detail.hidden = true;
     const status = h('div', 'status');
-    const hint = h('div', 'hint', G.touchMode ? 'Tap a recipe to craft it. Hold it to craft a full stack.' : 'Click a recipe to craft it. Shift-click to craft a full stack.');
-    panel.append(grid, empty, status, hint);
-    this.book = { grid, empty, status, key: '', statusTimer: 0 };
+    const foot = h('div', 'book-foot');
+    const hint = h('div', 'hint', '');
+    foot.appendChild(hint);
+    // (creative) somewhere to throw things away: put what you are holding on it
+    const bin = this.slot({ kind: 'bin' });
+    bin.classList.add('bin');
+    bin.title = 'Bin: put something here to throw it away';
+    foot.appendChild(bin);
+    panel.append(search, grid, empty, detail, status, foot);
+    const sync = () => {
+      const items = this.bookTab === 'items', all = this.recipeFilter === 'all';
+      for (const [key, t] of Object.entries(tabs)) t.setAttribute('aria-pressed', String(this.bookTab === key));
+      filter.hidden = items;
+      filter.textContent = all ? 'All' : 'Craftable';
+      filter.setAttribute('aria-pressed', String(!all));
+      filter.title = all ? 'Showing every recipe. Tap to show only what you can craft.' : 'Showing what you can craft. Tap to show every recipe.';
+      search.placeholder = items ? 'Search items…' : 'Search recipes…';
+      bin.hidden = !creative;
+      if (items) detail.hidden = true;
+      hint.textContent = items
+        ? (G.touchMode ? 'Tap an item to put a stack in your inventory. To throw something away, pick it up and tap the bin.' : 'Click an item to pick up a stack (right-click for one, Shift-click to put it straight in your inventory). The bin throws away what you are holding.')
+        : (G.touchMode ? 'Tap a recipe to craft it, or to see what it needs. Hold it to craft a full stack.' : 'Click a recipe to craft it, or to see what it needs. Shift-click to craft a full stack.');
+    };
+    this.book = { grid, empty, status, detail, key: '', statusTimer: 0, shown: null };
+    sync();
     this.renderRecipeBook();
+  }
+
+  // Everything the creative list offers: every block and item, then a book for each enchantment at its highest
+  paletteRefs() {
+    if (!this.palette) {
+      this.palette = creativeList().map((id) => ({ kind: 'palette', id }));
+      for (const k of Object.keys(ENCH)) this.palette.push({ kind: 'palette', id: ID.enchanted_book, e: { [k]: ENCH[k].max } });
+      for (const r of this.palette) r.name = this.describe(stack(r.id, 1, 0, r.e || null)).toLowerCase();
+    }
+    return this.palette;
   }
 
   // Counts items in the inventory plus anything already placed in the crafting grid
@@ -1675,21 +1725,77 @@ export class UI {
   renderRecipeBook() {
     const b = this.book;
     if (!b || !this.craft) return;
+    const q = (this.bookSearch || '').trim().toLowerCase();
+    if (this.bookTab === 'items') {
+      const key = 'items:' + q;
+      if (key === b.key) return;
+      b.key = key;
+      b.grid.innerHTML = '';
+      let n = 0;
+      for (const ref of this.paletteRefs()) {
+        if (q && !ref.name.includes(q)) continue;
+        const el = this.slot(ref);
+        this.renderSlot(el, this.refGet(ref));
+        b.grid.appendChild(el);
+        n++;
+      }
+      b.grid.scrollTop = 0;
+      b.empty.textContent = 'Nothing is called that.';
+      b.empty.hidden = n > 0;
+      return;
+    }
     const count = this.craftCount();
     const size = this.craft.n;
     const list = [];
     RECIPES.forEach((rec, i) => {
       const fits = rec.size <= size;
       const ok = fits && craftableTimes(count, rec) > 0;
-      if (this.recipeFilter === 'all' || ok) list.push({ rec, i, ok, fits });
+      // a search looks through every recipe, whether or not it can be made right now
+      if (q ? itemName(rec.out.id).toLowerCase().includes(q) : (this.recipeFilter === 'all' || ok)) list.push({ rec, i, ok, fits });
     });
     list.sort((a, c) => (c.ok - a.ok) || (c.fits - a.fits) || (a.i - c.i));
-    const key = list.map((e) => e.i + (e.ok ? 'y' : e.fits ? 'n' : 't')).join(',');
+    if (b.shown) this.showNeeds(b.shown);   // (what you have changes as you go)
+    const key = q + '|' + list.map((e) => e.i + (e.ok ? 'y' : e.fits ? 'n' : 't')).join(',');
     if (key === b.key) return;
     b.key = key;
     b.grid.innerHTML = '';
     for (const e of list) b.grid.appendChild(this.recipeTile(e));
+    b.empty.textContent = q ? 'No recipe is called that.' : 'Nothing to craft yet. Break a tree trunk to collect logs, then come back. (Press All to see every recipe.)';
     b.empty.hidden = list.length > 0;
+  }
+
+  // What a recipe takes, drawn the way it is laid out, with a tick or a cross by each thing and how
+  // many of it you have. Shown when a recipe is picked that cannot be made yet.
+  showNeeds(rec) {
+    const b = this.book;
+    if (!b) return;
+    b.shown = rec;
+    const d = b.detail, count = this.craftCount();
+    d.innerHTML = '';
+    d.hidden = false;
+    d.appendChild(h('div', 'needs-title', `${itemName(rec.out.id)}${rec.out.count > 1 ? ' ×' + rec.out.count : ''}`));
+    const n = rec.size, cells = new Array(n * n).fill(null);
+    if (rec.shapeless) rec.ings.forEach((set, i) => { cells[i] = set; });
+    else for (let r = 0; r < rec.h; r++) for (let c = 0; c < rec.w; c++) cells[r * n + c] = rec.cells[r * rec.w + c];
+    // (of a group, like any planks, the kind you have is the one shown)
+    const pick = (set) => { const ids = [...set]; return ids.find((id) => count(id) > 0) || ids[0]; };
+    const row = h('div', 'needs-row');
+    const g = h('div', 'grid needs-grid');
+    g.style.setProperty('--cols', n);
+    for (const set of cells) {
+      const el = h('div', 'slot mini');
+      if (set) { const id = pick(set); this.renderSlot(el, stack(id, 1)); el.classList.toggle('lack', count(id) < 1 && ![...set].some((x) => count(x) > 0)); }
+      g.appendChild(el);
+    }
+    const out = h('div', 'slot mini');
+    this.renderSlot(out, stack(rec.out.id, rec.out.count));
+    row.append(g, h('div', 'arrow'), out);
+    d.appendChild(row);
+    for (const grp of rec.groups) {
+      const have = grp.ids.reduce((t, id) => t + count(id), 0);
+      d.appendChild(h('div', have >= grp.n ? 'need ok' : 'need bad', `${have >= grp.n ? '✓' : '✗'} ${grp.n} × ${grp.label || itemName(grp.ids[0])} (you have ${have})`));
+    }
+    if (this.craft && rec.size > this.craft.n) d.appendChild(h('div', 'need bad', '✗ Needs a crafting table'));
   }
 
   recipeTile({ rec, ok, fits }) {
@@ -1761,6 +1867,7 @@ export class UI {
     this.hideTooltip();
     if (!this.craft || rec.size > this.craft.n) {
       this.setBookStatus('Needs a crafting table', true);
+      this.showNeeds(rec);
       sfx('click', null, { vol: 0.4 });
       return;
     }
@@ -1768,11 +1875,13 @@ export class UI {
     this.returnGrid();
     const times = craftableTimes((id) => inv.count(id), rec);
     if (times < 1) {
-      this.setBookStatus('Missing ingredients', true);
+      this.setBookStatus('You need:', true);
+      this.showNeeds(rec);
       sfx('click', null, { vol: 0.4 });
       this.refreshContainer();
       return;
     }
+    if (this.book) { this.book.shown = null; this.book.detail.hidden = true; }
     const per = rec.out.count;
     const n = stackful ? Math.max(1, Math.min(times, Math.floor(maxStack(rec.out.id) / per))) : 1;
     let made = 0;
@@ -1802,12 +1911,20 @@ export class UI {
     const inv = G.player.inv;
     sfx('click', null, { vol: 0.4 });
     if (ref.kind === 'palette') {
-      const n = shift || G.touchMode ? maxStack(ref.id) : (button === 2 ? 1 : maxStack(ref.id));
-      inv.slots[inv.selected] = stack(ref.id, n, 0, ref.e ? { ...ref.e } : null);
-      this.toast(this.describe(inv.slots[inv.selected]));
-      this.invChanged();
+      const max = maxStack(ref.id);
+      const full = stack(ref.id, max, 0, ref.e ? { ...ref.e } : null);
+      const c0 = this.cursor;
+      if (G.touchMode || shift) {
+        // a tap (or shift-click) puts a full stack straight into the inventory
+        const left = inv.add(full.id, full.count, 0, full.e);
+        this.toast(left >= full.count ? 'Your inventory is full' : this.describe(full) + (max > 1 ? ' ×' + (full.count - left) : ''));
+      } else if (!c0) this.cursor = button === 2 ? { ...full, count: 1 } : full;
+      else if (sameItem(c0, full) && c0.count < max) c0.count = button === 2 ? c0.count + 1 : max;
+      else this.cursor = null;   // (clicking the list with something else in hand throws it away, as in Minecraft)
+      this.refreshContainer();
       return;
     }
+    if (ref.kind === 'bin') { if (this.cursor) { this.cursor = null; sfx('pop', null, { vol: 0.4 }); this.refreshContainer(); } return; }
     if (ref.kind === 'select') { inv.selected = ref.i; this.invChanged(true); return; }
     if (ref.kind === 'result') { this.takeResult(shift); return; }
     if (ref.kind === 'made') { this.takeMade(shift); return; }
