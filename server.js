@@ -390,6 +390,7 @@ async function flushRecord(world, account) {
 const rooms = new Map();   // world id -> { host, peers: Map(id -> ws), next }
 const send = (ws, msg) => { if (ws && ws.readyState === 1) ws.send(typeof msg === 'string' ? msg : JSON.stringify(msg)); };
 
+const MIN_PAGE = 2;   // the oldest page that may join (see `caps`)
 // Someone opening an online world: they run it if nobody is in that dimension yet, otherwise they join whoever does
 async function enterWorld(ws, m) {
   if (!store || stopping) { send(ws, { t: 'error', msg: stopping ? 'Blockcraft is updating. Reconnecting…' : notReady(), retry: true }); return; }
@@ -398,7 +399,10 @@ async function enterWorld(ws, m) {
   ws.account = acc.id;
   // an admin may come in unseen: nobody is told, and they are left out of every list of who is playing
   ws.spec = !!m.spec && isAdmin(acc);
-  ws.caps = m.caps | 0;   // what this player's page knows how to do (1: keeps a spectator out of sight)
+  ws.caps = m.caps | 0;   // what this player's page knows how to do (1: keeps a spectator out of sight, 2: reloads when told)
+  // A page older than that is not let into a world: it is told to reload. (Every update restarts this
+  // server, which puts everyone out for a moment; whoever is on an old page meets this on the way back in.)
+  if (ws.caps < MIN_PAGE) { send(ws, { t: 'error', msg: 'Blockcraft has been updated. Reload this page to get the new version, then join again.' }); return; }
   const id = String(m.id || '').toUpperCase();
   ws.world = id;
   // already in this world (any dimension) from another tab or device: that one steps aside
