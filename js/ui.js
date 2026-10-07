@@ -281,7 +281,7 @@ export class UI {
     const admin = !!(G.account && G.account.admin);
     const CMDS = admin ? [['where', 'where a player is', 1], ['tp', 'go to a player', 1], ['bring', 'fetch a player to you', 1], ['creative', 'creative mode'], ['survival', 'survival mode'],
       ['kill', 'kill a player', 1], ['kick', 'send a player out', 1], ['ban', 'ban a player', 1], ['unban', 'let a player back', 1], ['op', 'make a player an admin', 1], ['deop', 'take admin away', 1],
-      ['players', 'everyone online'], ['accounts', 'every account'], ['list', 'who is here'], ['help', 'all the commands']]
+      ['reload', 'update the game for everyone'], ['players', 'everyone online'], ['accounts', 'every account'], ['list', 'who is here'], ['help', 'all the commands']]
       : [['list', 'who is here'], ['help', 'the commands']];
     const m = text.match(/^\/(\S*)(\s+(\S*))?$/);
     if (!m) return;

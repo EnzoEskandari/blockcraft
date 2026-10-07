@@ -563,7 +563,14 @@ async function command(ws, text) {
     send(q, { t: 'admin', a: 'goto', x: ws.at.x, y: ws.at.y, z: ws.at.z });
     return `Brought ${a.name} to you.`;
   }
-  if (c === 'help') return 'Admin commands: /where name, /tp name, /bring name, /creative, /survival, /kill name, /kick name, /ban name [reason], /unban name, /op name, /deop name, /players (everyone online), /accounts (every account), /list';
+  // everyone in every online world saves, loads the newest version of the game and comes straight back in
+  if (c === 'reload') {
+    const qs = [...wss.clients].filter((q) => q.room && q.readyState === 1);
+    const old = qs.filter((q) => !(q.caps >= 2)).map((q) => q.name);
+    for (const q of qs) if (q.caps >= 2) send(q, { t: 'admin', a: 'reload' });
+    return `Reloading the game for ${qs.length - old.length} player${qs.length - old.length === 1 ? '' : 's'}.` + (old.length ? ` ${old.join(', ')} ${old.length === 1 ? 'is' : 'are'} on a page from before this command existed and must reload by hand this once.` : '');
+  }
+  if (c === 'help') return 'Admin commands: /reload (everyone gets the newest version), /where name, /tp name, /bring name, /creative, /survival, /kill name, /kick name, /ban name [reason], /unban name, /op name, /deop name, /players (everyone online), /accounts (every account), /list';
   if (c === 'players') {
     const on = playerList().filter((x) => x.online.length);
     return on.length ? 'Online: ' + on.map((x) => `${x.name} in ${x.online.join(', ')}`).join('; ') : 'Nobody is in an online world.';

@@ -268,7 +268,7 @@ export class Net {
       let timer = setTimeout(() => fail('The multiplayer server did not answer. Check your connection and try again.', true), 25000);
       ws.onopen = () => {
         onStatus('Joining…');
-        ws.send(JSON.stringify({ t: 'world', id: worldId, dim, token: account.token, haves, mine, spec: spec || undefined, caps: 1 }));
+        ws.send(JSON.stringify({ t: 'world', id: worldId, dim, token: account.token, haves, mine, spec: spec || undefined, caps: 2 }));   // (caps: 1 hides spectators, 2 reloads when an admin says so)
       };
       ws.onerror = () => {};
       ws.onclose = () => {
@@ -393,6 +393,14 @@ export class Net {
   adminDid(m) {
     const by = String(m.by || 'An admin').slice(0, 16);
     if (m.a === 'mode') { G.game.setMode(m.mode); return; }
+    if (m.a === 'reload') {
+      // save first (whoever runs the world sends it to the server), then load the page afresh and walk back in
+      const code = this.code;
+      if (this.role === 'host') G.game.saveNow(); else this.saveGuest();
+      G.ui.toast('Updating the game…', 5);
+      setTimeout(() => { location.href = location.pathname + (code ? '?world=' + code : ''); }, this.role === 'host' ? 1800 : 700);
+      return;
+    }
     if (m.a === 'goto') {
       const p = G.player;
       if (p && Number.isFinite(m.x + m.y + m.z)) { p.pos.x = m.x + 0.5; p.pos.y = m.y + 0.2; p.pos.z = m.z + 0.5; p.vel.x = p.vel.y = p.vel.z = 0; p.fallDist = 0; p.safeLanding = G.clock + 15; }

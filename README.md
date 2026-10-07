@@ -102,6 +102,7 @@ In any online world's chat (press **T**):
 - `/kick name`: sends them out of the world.
 - `/ban name reason`: bans them from multiplayer and signs them out everywhere. `/unban name` lets them back.
 - `/op name`, `/deop name`: give or take away admin.
+- `/reload`: everyone in an online world saves, loads the newest version of the game and comes straight back in.
 - `/where name`: where that player is, or where they were when they were last online.
 - `/tp name`: go to them (or to where they were last seen), when you are in the same world and dimension. `/bring name`: fetch them to you.
 - Commands and their answers show only to whoever typed them, never in the chat.
