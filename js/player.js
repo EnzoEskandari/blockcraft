@@ -268,7 +268,7 @@ export class Player {
     if (!chunkHere || !chunkHere.meshed) { this.frozen = true; }
     else if (this.frozen) {
       this.frozen = false;
-      while (boxBlocked(w, this.pos.x, this.pos.y, this.pos.z, this.hw, this.h) && this.pos.y < 126) this.pos.y += 1;
+      while (!this.spectator && boxBlocked(w, this.pos.x, this.pos.y, this.pos.z, this.hw, this.h) && this.pos.y < 126) this.pos.y += 1;
     }
 
     if (G.sleeping) {
@@ -303,6 +303,8 @@ export class Player {
     }
     if (input.swapHands && !this.dead) this.swapHands();
     if (!this.creative) this.flying = false;
+    // a spectator always flies, and water and lava are nothing to them
+    if (this.spectator) { this.flying = true; this.inWater = this.headInWater = this.inLava = this.headInLava = false; }
 
     this.sneaking = input.sneak && !this.flying && !this.inWater;
     let fwd = input.moveZ, str = input.moveX;
@@ -370,7 +372,13 @@ export class Player {
       if (dz && !boxBlocked(w, P.x + dx, P.y - 0.6, P.z + dz, this.hw, 0.6)) { dz = 0; this.vel.z = 0; }
     }
     const ox = this.pos.x, oz = this.pos.z, oyPos = this.pos.y;
-    const res = moveBox(w, this, dx, dy, dz, this.flying || this.inWater ? 0 : 0.6);   // slabs are walked up without a jump
+    let res;
+    if (this.spectator) {
+      // a spectator passes through blocks, as in Minecraft (kept inside the height of the world)
+      this.pos.x += dx; this.pos.z += dz;
+      this.pos.y = Math.max(1, Math.min(140, this.pos.y + dy));
+      res = { x: false, y: false, z: false, ground: false };
+    } else res = moveBox(w, this, dx, dy, dz, this.flying || this.inWater ? 0 : 0.6);   // slabs are walked up without a jump
     if (res.x) this.vel.x = 0;
     if (res.z) this.vel.z = 0;
     const wasGround = this.onGround;
