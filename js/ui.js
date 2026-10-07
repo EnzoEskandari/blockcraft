@@ -292,7 +292,7 @@ export class UI {
       const cmd = CMDS.find(([c]) => c === m[1].toLowerCase());
       if (!cmd || !cmd[2]) return;
       // the players here first, then (for an admin) every account on the server
-      const here = G.net ? [...G.net.players.values()].map((a) => a.name).filter(Boolean) : [];
+      const here = G.net ? [...G.net.players.values()].filter((a) => !a.hidden).map((a) => a.name).filter(Boolean) : [];
       if (admin && !this.allNames && !this.namesAsked) { this.namesAsked = true; G.game.adminPlayers().then((l) => { this.allNames = l.map((x) => x.name); if (G.screen === 'chat') this.chatHints(); }, () => { this.namesAsked = false; }); }
       const names = [...new Set([...here, ...(this.allNames || [])])].filter((n) => n !== (G.account && G.account.name));
       const part = (m[3] || '').toLowerCase();
@@ -698,18 +698,39 @@ export class UI {
   }
 
   // Resolves true once you are in
-  async playOnline(id = this.selectedOnline) {
+  // `how`: 'play' or 'spectate', when it has been settled already
+  async playOnline(id = this.selectedOnline, how = null) {
     if (!id || this.busy) return false;
     if (!this.signedIn()) { this.pendingWorld = id; return false; }
+    // an admin going into a world someone else made says how first: to play, or to watch unseen
+    const w = (this.online || []).find((x) => x.id === id);
+    if (!how && G.account && G.account.admin && !(w && w.mine && !w.other)) {
+      how = await this.askHowToJoin(w ? w.name : id);
+      if (!how) return false;
+    }
+    G.spectate = how === 'spectate';
     this.busy = true;
     this.syncOnlineButtons();
     this.mpStatus('Connecting…');
     let ok = true;
     try { await G.game.joinWorld(id, (t) => this.mpStatus(t)); }
     catch (err) { ok = false; this.mpStatus(err && err.message ? err.message : 'Could not join that world.'); }
+    if (ok && G.net && G.net.spec) this.toast('Spectating: nobody can see you', 5);
     this.busy = false;
     this.syncOnlineButtons();
     return ok;
+  }
+
+  // (admins) the question before going into someone else's world; resolves 'play', 'spectate' or null
+  askHowToJoin(name) {
+    const box = $('join-how');
+    $('join-how-text').textContent = `How do you want to go into ${name}?`;
+    box.hidden = false;
+    return new Promise((resolve) => {
+      const done = (v) => { box.hidden = true; for (const [id] of opts) $(id).onclick = null; resolve(v); };
+      const opts = [['b-join-play', 'play'], ['b-join-spectate', 'spectate'], ['b-join-cancel', null]];
+      for (const [id, v] of opts) $(id).onclick = () => done(v);
+    });
   }
 
   // Joining a friend's world by typing its code (a whole link pasted in works as well: the code is its last part)
@@ -881,9 +902,11 @@ export class UI {
     $('mp-code-show').textContent = meta.online;
     if (!net) { $('mp-players').textContent = ''; return; }
     const names = [net.role === 'host' ? `${net.name} (you)` : net.hostName];
-    for (const a of net.players.values()) if (a.id !== 0) names.push(a.name);
+    for (const a of net.players.values()) if (a.id !== 0 && !a.hidden) names.push(a.name);
     if (net.role === 'client') names.push(`${net.name} (you)`);
-    $('mp-players').textContent = names.length > 1 ? 'Playing: ' + names.join(', ') : 'Nobody else is here right now.';
+    const shown = names.filter(Boolean);
+    $('mp-players').textContent = (net.spec ? 'You are spectating: nobody can see you, and you cannot touch anything. ' : '')
+      + (shown.length > 1 ? 'Playing: ' + shown.join(', ') : 'Nobody else is here right now.');
   }
 
   chatLine(text, sys) {

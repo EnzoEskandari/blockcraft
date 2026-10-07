@@ -240,6 +240,8 @@ export class Player {
 
   // ------------------------------------------------------------ per frame
   update(dt, input) {
+    // a spectator looks and moves, and nothing else
+    if (this.spectator) input = { ...input, attackPressed: false, usePressed: false, useHeld: false, tap: false, mine: false, touchHold: false, drop: false, dropAll: false, pick: false, swapHands: false };
     const w = G.world;
     this.hurtTime = Math.max(0, this.hurtTime - dt);
     this.invul -= dt;
@@ -1136,7 +1138,7 @@ export class Player {
     }
     if (this.hungerEffect > 0) { this.hungerEffect -= dt; this.exhaustion += 0.1 * dt; }
     // standing on a pressure plate
-    if (BLOCKS[w.getBlock(bx, Math.floor(this.pos.y + 0.02), bz)].plate && !this.flying) G.game.pressPlate(bx, Math.floor(this.pos.y + 0.02), bz);
+    if (BLOCKS[w.getBlock(bx, Math.floor(this.pos.y + 0.02), bz)].plate && !this.flying && !this.spectator) G.game.pressPlate(bx, Math.floor(this.pos.y + 0.02), bz);
     // touching a cactus pricks
     this.cactusT = Math.max(0, (this.cactusT || 0) - dt);
     if (this.cactusT <= 0 && touching(w, this, B.cactus)) { this.cactusT = 0.5; this.hurt(1, null, null, 'cactus'); }
@@ -1201,6 +1203,7 @@ export class Player {
 
   // axe: the blow came from an axe, which knocks a shield down for a while; by: the mob that struck it
   hurt(amount, fromX, fromZ, kind, axe = false, by = null) {
+    if (this.spectator) return;
     if (this.dead) return;
     if (this.creative && kind !== 'void') return;
     if (this.invul > 0 && kind !== 'void') return;

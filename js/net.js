@@ -166,8 +166,8 @@ export class Avatar {
     this.hurtTime -= dt;
     if (this.dead) this.deathTime += dt;
     const show = !this.dead || this.deathTime < 1.2;
-    root.visible = show;
-    this.tag.visible = show && !this.sneaking && !this.dead;
+    root.visible = show && !this.hidden;
+    this.tag.visible = show && !this.sneaking && !this.dead && !this.hidden;
 
     this.phase += hs * dt * 4;
     const sw = Math.sin(this.phase) * Math.min(1, hs / 2) * 0.9;
@@ -252,7 +252,7 @@ export class Net {
   // otherwise they join whoever does (resolves { net, snap }).
   // `mine` is this browser's copy of the player's own record, used only if the server lost theirs.
   // A failure worth trying again (server restarting or unreachable) rejects with err.retry set.
-  static connect(worldId, account, haves, onStatus = () => {}, dim = null, mine = null) {
+  static connect(worldId, account, haves, onStatus = () => {}, dim = null, mine = null, spec = false) {
     const url = serverURL();
     if (!url) return Promise.reject(new Error('Multiplayer only works on the Blockcraft website.'));
     if (!account) return Promise.reject(new Error('Sign in to play online.'));
@@ -268,7 +268,7 @@ export class Net {
       let timer = setTimeout(() => fail('The multiplayer server did not answer. Check your connection and try again.', true), 25000);
       ws.onopen = () => {
         onStatus('Joining…');
-        ws.send(JSON.stringify({ t: 'world', id: worldId, dim, token: account.token, haves, mine }));
+        ws.send(JSON.stringify({ t: 'world', id: worldId, dim, token: account.token, haves, mine, spec: spec || undefined }));
       };
       ws.onerror = () => {};
       ws.onclose = () => {
@@ -283,12 +283,14 @@ export class Net {
         if (m.t === 'hostworld') {
           clearTimeout(timer);
           net.role = 'host'; net.id = 0; net.hostName = name;
+          net.spec = !!m.spec;   // (spectating: the server agreed this player goes unseen)
           settled = true;
           resolve({ net, host: m, dim: m.dim, me: m.me || null, build: m.build });
           return;
         }
         if (m.t === 'joined') {
           net.role = 'client'; net.id = m.id;
+          net.spec = !!m.spec;
           onStatus('Downloading the world…');
           // the world comes from the player who is running it: a big one over a slow connection takes a while
           clearTimeout(timer);
@@ -358,7 +360,7 @@ export class Net {
 
   onRaw(m) {
     if (m.t === 'msg') { this.onMsg(m.from, m.d); return; }
-    if (m.t === 'peer') { this.peerInfo.set(m.id, { name: m.name, account: m.account }); return; }   // they say hello once their page is ready
+    if (m.t === 'peer') { this.peerInfo.set(m.id, { name: m.name, account: m.account, spec: !!m.spec }); return; }   // they say hello once their page is ready
     if (m.t === 'replaced') {
       // save everything first (the world if we run it, our inventory if not), then step aside
       if (this.role === 'host') G.game.saveNow();
@@ -383,7 +385,7 @@ export class Net {
       this.saveGuest();
       this.shutdown();
       if (G.net === this) G.net = null;
-      G.game.rejoin(this.code, m.wait || 0, `${this.hostName || 'The host'} left. Taking over the world…`);
+      G.game.rejoin(this.code, m.wait || 0, this.hostName ? `${this.hostName} left. Taking over the world…` : 'Reconnecting to the world…');
     }
   }
 
@@ -413,7 +415,7 @@ export class Net {
   // Who mobs can see: on the host that is everyone, on a guest only this player
   targets() {
     const out = [G.player];
-    if (this.role === 'host') for (const a of this.players.values()) if (a.ready && !a.gone) out.push(a);
+    if (this.role === 'host') for (const a of this.players.values()) if (a.ready && !a.gone && !a.hidden) out.push(a);   // (nothing goes for someone spectating)
     return out;
   }
 
@@ -432,22 +434,24 @@ export class Net {
     a.dispose();
     this.players.delete(id);
     for (const s of this.watch.values()) s.delete(id);
-    if (this.role === 'host') {
+    if (this.role === 'host' && !a.hidden) {
       this.chat(null, `${a.name} left the game`);
       this.send({ k: 'chat', t: `${a.name} left the game`, sys: 1 });
       this.sendRoster();
     }
   }
 
-  sendRoster() {
-    const l = [[0, this.name, 0]];
-    for (const a of this.players.values()) l.push([a.id, a.name, a.slot]);
-    this.send({ k: 'roster', l });
+  // (`only`: just to that guest: someone spectating is told who is here without anyone being told of them)
+  sendRoster(only = null) {
+    // whoever is spectating is on nobody's list: not the one running the world, not a guest
+    const l = this.spec ? [] : [[0, this.name, 0]];
+    for (const a of this.players.values()) if (!a.hidden) l.push([a.id, a.name, a.slot]);
+    if (only !== null) this.sendTo(only, { k: 'roster', l }); else this.send({ k: 'roster', l });
   }
 
   allAsleep() {
     if (this.role !== 'host') return false;
-    for (const a of this.players.values()) if (a.ready && !a.sleeping && !a.dead) return false;
+    for (const a of this.players.values()) if (a.ready && !a.sleeping && !a.dead && !a.hidden) return false;
     return true;
   }
 
@@ -468,6 +472,7 @@ export class Net {
     if (!text) return;
     // commands (/list, and for admins /kill, /ban...) go to the server, not to everyone
     if (text[0] === '/') { this.raw({ t: 'cmd', text }); return; }
+    if (this.spec) { G.ui.toast('You are spectating: nobody can hear you.', 4); return; }
     this.chat(this.name, text);
     if (this.role === 'host') this.send({ k: 'chat', n: this.name, t: text });
     else this.send({ k: 'chat', t: text });
@@ -611,7 +616,9 @@ export class Net {
         const name = info.name;
         const a = this.addPlayer(from, name, slot);
         a.account = info.account;
+        a.hidden = !!info.spec;
         this.sendTo(from, G.game.worldSnapshot(info.account, name));
+        if (a.hidden) { this.sendRoster(from); break; }   // spectating: nobody is told, and they are not on the list
         this.sendRoster();
         this.announce(`${name} joined the game`);
         break;
@@ -638,7 +645,7 @@ export class Net {
         break;
       case 'pick': {
         const it = this.itemIndex.get(d.n);
-        if (!a || !it || it.removed || it.age < it.pickupDelay - 0.3) return;
+        if (!a || a.hidden || !it || it.removed || it.age < it.pickupDelay - 0.3) return;
         if (Math.hypot(a.pos.x - it.pos.x, a.pos.z - it.pos.z) > 5) return;
         const give = Math.min(it.count, Math.max(0, d.r | 0));
         if (!give) return;
@@ -698,7 +705,7 @@ export class Net {
         this.sendExcept(from, { k: 'sign', x: d.x | 0, y: d.y | 0, z: d.z | 0, l: G.game.signText(d.x | 0, d.y | 0, d.z | 0) });
         break;
       case 'chat': {
-        if (!a) return;
+        if (!a || a.hidden) return;
         const t = String(d.t || '').slice(0, 120);
         if (d.sys) { this.chat(null, t); this.sendExcept(from, { k: 'chat', t, sys: 1 }); }
         else { this.chat(a.name, t); this.sendExcept(from, { k: 'chat', n: a.name, t }); }
@@ -717,7 +724,7 @@ export class Net {
   onGuestMsg(d) {
     const w = G.world, p = G.player;
     switch (d.k) {
-      case 'world': this.hostName = d.host || 'the host'; if (this.onWorld) { const f = this.onWorld; this.onWorld = null; f(d); } break;
+      case 'world': this.hostName = d.host === '' ? '' : d.host || 'the host'; if (this.onWorld) { const f = this.onWorld; this.onWorld = null; f(d); } break;
       case 'kick': if (this.onKick) this.onKick(d.msg); break;
       case 'roster': {
         const keep = new Set();

@@ -1380,7 +1380,7 @@ class ItemEntity {
     }
 
     const p = G.player;
-    if (!p.dead && this.age > this.pickupDelay) {
+    if (!p.dead && !p.spectator && this.age > this.pickupDelay) {
       const dx = p.pos.x - this.pos.x, dy = p.pos.y + 0.8 - this.pos.y, dz = p.pos.z - this.pos.z;
       if (dx * dx + dz * dz < 2.2 && Math.abs(dy) < 1.8) {
         if (this.proxy) {

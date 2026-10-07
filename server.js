@@ -163,7 +163,7 @@ function newId() {
 }
 
 const cleanName = (n, max = 16) => String(n || '').replace(/[^\w .'!-]/g, '').trim().slice(0, max);
-const playersIn = (id) => DIMS.reduce((n, d) => { const r = rooms.get(roomKey(id, d)); return n + (r ? 1 + r.peers.size : 0); }, 0);
+const playersIn = (id) => DIMS.reduce((n, d) => { const r = rooms.get(roomKey(id, d)); return n + (r ? [r.host, ...r.peers.values()].filter((q) => !q.spec).length : 0); }, 0);
 
 // ---------------------------------------------------------------- HTTP
 const server = http.createServer(async (req, res) => {
@@ -395,6 +395,8 @@ async function enterWorld(ws, m) {
   const acc = await accountFrom(m.token);
   if (!acc) { send(ws, { t: 'error', msg: 'Sign in to play online.', signedOut: true }); return; }
   ws.account = acc.id;
+  // an admin may come in unseen: nobody is told, and they are left out of every list of who is playing
+  ws.spec = !!m.spec && isAdmin(acc);
   const id = String(m.id || '').toUpperCase();
   ws.world = id;
   // already in this world (any dimension) from another tab or device: that one steps aside
@@ -444,8 +446,8 @@ async function enterWorld(ws, m) {
     const pid = r.next++;
     r.peers.set(pid, ws);
     ws.room = key; ws.pid = pid;
-    send(ws, { t: 'joined', id: pid, code: id, dim, me, build: BUILD });
-    send(r.host, { t: 'peer', id: pid, name: ws.name, account: acc.id });
+    send(ws, { t: 'joined', id: pid, code: id, dim, me, build: BUILD, spec: ws.spec || undefined });
+    send(r.host, { t: 'peer', id: pid, name: ws.name, account: acc.id, spec: ws.spec || undefined });
     return;
   }
   // Nobody is running this dimension: this player runs it
@@ -455,7 +457,7 @@ async function enterWorld(ws, m) {
   if (have && (have.v || 0) > (rm.v || 0)) useLocal = true;   // their copy is newer than the server's
   else if (dim !== 'overworld' && have && !saves.has(key) && !(await store.getSave(key))) useLocal = true;
   const save = useLocal ? null : await latestSave(key);
-  send(ws, { t: 'hostworld', meta, dim, v: rm.v || 0, save, useLocal, me, build: BUILD });
+  send(ws, { t: 'hostworld', meta, dim, v: rm.v || 0, save, useLocal, me, build: BUILD, spec: ws.spec || undefined });
 }
 
 // ---------------------------------------------------------------- admin
@@ -523,7 +525,7 @@ async function command(ws, text) {
   const c = (cmd || '').toLowerCase();
   if (c === 'list') {
     const here = String(ws.room || '').split('~')[0];
-    const names = [...wss.clients].filter((q) => q.room && q.room.split('~')[0] === here && q.name).map((q) => q.name);
+    const names = [...wss.clients].filter((q) => q.room && q.room.split('~')[0] === here && q.name && (!q.spec || isAdmin(acc))).map((q) => q.name + (q.spec ? ' (spectating)' : ''));
     return `${names.length} playing here: ${names.join(', ')}`;
   }
   if (!isAdmin(acc)) return c === 'help' ? 'Commands: /list (who is playing here). The rest are for admins.' : `Only admins can use /${c}.`;

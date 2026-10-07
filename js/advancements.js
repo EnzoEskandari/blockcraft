@@ -105,7 +105,7 @@ export class Advancements {
     sfx('achieve', null, { vol: 0.8 });
     G.ui.achievement(a);
     if (a.xp) G.entities.spawnXp(p.pos.x, p.pos.y + 1.2, p.pos.z, a.xp, 0.6);
-    if (G.net) G.net.announce(`${G.net.name} has made the achievement [${a.title}]`);
+    if (G.net && !G.net.spec) G.net.announce(`${G.net.name} has made the achievement [${a.title}]`);
     if (G.game.saveSoon) G.game.saveSoon();
   }
   // One part of an achievement that has many (a monster killed, a land visited, a food eaten)

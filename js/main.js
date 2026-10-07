@@ -1160,7 +1160,7 @@ export const Game = {
     // and of this player's own items there, in case the server lost them
     const rec = load('online.' + id + '@me');
     const mine = rec && rec.data && String(rec.name).toLowerCase() === String(acc.name).toLowerCase() ? rec.data : null;
-    const res = await Net.connect(id, acc, haves, onStatus, dim, mine);
+    const res = await Net.connect(id, acc, haves, onStatus, dim, mine, !!G.spectate);
     noteBuild(res.build);
     G.net = res.net;
     const room = DIMS.includes(res.dim) ? res.dim : 'overworld';
@@ -1217,7 +1217,7 @@ export const Game = {
   worldSnapshot(account, name) {
     const w = G.world, p = G.player;
     return {
-      k: 'world', host: G.net.name, name: G.worldMeta.name, seed: w.seed, mode: G.worldMeta.mode,
+      k: 'world', host: G.net.spec ? '' : G.net.name, name: G.worldMeta.name, seed: w.seed, mode: G.worldMeta.mode,
       time: G.time, day: G.day || 0, nns: G.nightsNoSleep || 0,
       spawn: w.worldSpawn || p.spawn, edits: packEdits(w), guest: playerRecord(w.guests, account, name),
       legacy: w.legacy ? [...w.legacy] : null, gens: packGens(w), signs: Object.fromEntries(w.signs),
@@ -1418,6 +1418,8 @@ function startRemoteWorld(snap, onlineId, dim = 'overworld', me = null) {
   const p = new Player();
   p.mode = G.worldMeta.mode;
   if (S.modeFor && S.modeFor.world === (G.worldMeta.online || G.worldMeta.id)) p.mode = S.modeFor.mode; else S.modeFor = null;
+  // spectating: unseen, unharmed, flying, and touching nothing (their items stay as they were)
+  if (G.net && G.net.spec && G.worldMeta.online) { p.mode = 'creative'; p.spectator = true; p.flying = true; }
   G.player = p;
   if (!G.entities) G.entities = new Entities();
   G.clock = 0;
@@ -1487,6 +1489,8 @@ function startWorld(meta, data, opts = {}) {
   const p = new Player();
   p.mode = meta.mode;
   if (S.modeFor && S.modeFor.world === (G.worldMeta.online || G.worldMeta.id)) p.mode = S.modeFor.mode; else S.modeFor = null;
+  // spectating: unseen, unharmed, flying, and touching nothing (their items stay as they were)
+  if (G.net && G.net.spec && G.worldMeta.online) { p.mode = 'creative'; p.spectator = true; p.flying = true; }
   G.player = p;
   if (!G.entities) G.entities = new Entities();
   G.clock = 0;
