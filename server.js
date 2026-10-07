@@ -467,8 +467,18 @@ function playerList() {
     name: a.name, created: a.created || 0, admin: isAdmin(a), owner: ADMIN_NAMES.has(a.name.toLowerCase()),
     banned: a.banned ? { by: a.banned.by, reason: a.banned.reason || '', at: a.banned.at } : null,
     online: socketsOf(a.id).filter((q) => q.room).map(placeOf),
+    spot: spotText(liveSpot(a) || a.seen), seenAt: liveSpot(a) ? 0 : a.seen ? a.seen.t : null,
   })).sort((x, y) => (y.online.length - x.online.length) || x.name.localeCompare(y.name));
 }
+
+// Where an account is, or was when it was last in a world: "World (Nether) at 10, 64, -3"
+const agoText = (t) => { const m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 2880 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`; };
+function spotText(seen) {
+  if (!seen) return null;
+  const w = worlds.get(seen.w);
+  return `${w ? w.name : 'a world that is gone'}${seen.d ? ` (${seen.d === 'nether' ? 'Nether' : 'End'})` : ''} at ${seen.x}, ${seen.y}, ${seen.z}`;
+}
+const liveSpot = (a) => { const q = socketsOf(a.id).find((x) => x.room && x.at); return q ? q.at : null; };
 
 // kill, kick, ban, unban, op and deop someone; the answer is a sentence for the admin
 async function adminAction(admin, action, name, reason) {
@@ -524,7 +534,26 @@ async function command(ws, text) {
     send(ws, { t: 'admin', a: 'mode', mode: want });
     return `You are in ${want} mode.`;
   }
-  if (c === 'help') return 'Admin commands: /creative, /survival, /kill name, /kick name, /ban name [reason], /unban name, /op name, /deop name, /players (everyone online), /accounts (every account), /list';
+  if (c === 'where' || c === 'tp' || c === 'bring') {
+    const a = name ? await accountNamed(name.trim()) : null;
+    if (!a) return name ? `There is no player called ${name}.` : 'Say which player.';
+    const live = liveSpot(a), seen = live || a.seen;
+    if (c === 'where') return !seen ? `${a.name} has not been in a world since this was added.` : live ? `${a.name} is in ${spotText(live)}.` : `${a.name} is offline. Last seen in ${spotText(seen)}, ${agoText(seen.t)}.`;
+    const here = String(ws.room || '').split('~');
+    if (c === 'tp') {
+      if (!seen) return `Nobody knows where ${a.name} is yet.`;
+      if (!ws.room) return 'Join a world first.';
+      if (seen.w !== here[0] || seen.d !== (here[1] || '')) return `${a.name} ${live ? 'is' : 'was last'} in ${spotText(seen)}. Go to that world${seen.d ? ' and its ' + (seen.d === 'nether' ? 'Nether' : 'End') : ''} first, then /tp again.`;
+      send(ws, { t: 'admin', a: 'goto', x: seen.x, y: seen.y, z: seen.z });
+      return live ? `Teleported to ${a.name}.` : `Teleported to where ${a.name} was last seen (${agoText(seen.t)}).`;
+    }
+    const q = socketsOf(a.id).find((x) => x.room);
+    if (!q) return `${a.name} is not online.`;
+    if (q.room !== ws.room || !ws.at) return `${a.name} is in ${placeOf(q)}. You can only bring someone who is in the same world as you.`;
+    send(q, { t: 'admin', a: 'goto', x: ws.at.x, y: ws.at.y, z: ws.at.z });
+    return `Brought ${a.name} to you.`;
+  }
+  if (c === 'help') return 'Admin commands: /where name, /tp name, /bring name, /creative, /survival, /kill name, /kick name, /ban name [reason], /unban name, /op name, /deop name, /players (everyone online), /accounts (every account), /list';
   if (c === 'players') {
     const on = playerList().filter((x) => x.online.length);
     return on.length ? 'Online: ' + on.map((x) => `${x.name} in ${x.online.join(', ')}`).join('; ') : 'Nobody is in an online world.';
@@ -565,6 +594,14 @@ wss.on('connection', (ws) => {
       return;
     }
     if (m.t === 'me' && ws.world && ws.account && m.data && typeof m.data === 'object') { putRecord(ws.world, ws.account, m.data); return; }
+    // where each player is, every few seconds: kept for admins (/where, /tp), and remembered when they leave
+    if (m.t === 'at' && ws.account && ws.room && Number.isFinite(m.x + m.y + m.z)) {
+      const [w, d] = String(ws.room).split('~');
+      ws.at = { w, d: d || '', x: Math.round(m.x), y: Math.round(m.y), z: Math.round(m.z), t: Date.now() };
+      const a = accounts.get(ws.account);
+      if (a) a.seen = ws.at;
+      return;
+    }
     if (m.t === 'cmd' && ws.account && typeof m.text === 'string') {
       try { send(ws, { t: 'cmd', msg: await command(ws, m.text.slice(0, 200)) }); } catch (err) { send(ws, { t: 'cmd', msg: 'That did not work: ' + err.message }); }
       return;
@@ -582,6 +619,8 @@ wss.on('connection', (ws) => {
 
   ws.on('close', async () => {
     if (ws.world && ws.account) flushRecord(ws.world, ws.account);
+    // (where they were when they left stays with their account)
+    if (ws.at && ws.account && accounts.get(ws.account)) store.putAccount(accounts.get(ws.account)).catch(() => {});
     const id = ws.room;
     const r = id && rooms.get(id);
     if (!r) return;

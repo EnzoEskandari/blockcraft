@@ -722,7 +722,8 @@ export class UI {
       row.appendChild(h('strong', null, pl.name + (pl.admin ? '  (admin)' : '')));
       const st = h('span', pl.banned ? 'tag-banned' : pl.online.length ? 'tag-online' : null,
         pl.banned ? `Banned by ${pl.banned.by}${pl.banned.reason ? ': ' + pl.banned.reason : ''}`
-          : pl.online.length ? `Playing in ${pl.online.join(', ')}` : `Joined ${new Date(pl.created || Date.now()).toLocaleDateString()}`);
+          : pl.online.length ? `Playing in ${pl.spot || pl.online.join(', ')}`
+            : pl.spot ? `Offline · last seen in ${pl.spot}, ${new Date(pl.seenAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}` : `Joined ${new Date(pl.created || Date.now()).toLocaleDateString()}`);
       row.appendChild(st);
       if (this.adminSel && this.adminSel.name === pl.name) row.classList.add('sel');
       row.addEventListener('click', () => {
@@ -865,11 +866,11 @@ export class UI {
     }
   }
 
-  toast(text) {
+  toast(text, secs = 2) {
     const t = $('toast');
     t.textContent = text;
     t.classList.add('show');
-    this.toastTimer = 2;
+    this.toastTimer = secs;
   }
 
   // ---------------------------------------------------------------- worlds

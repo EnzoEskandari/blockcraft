@@ -102,6 +102,9 @@ In any online world's chat (press **T**):
 - `/kick name`: sends them out of the world.
 - `/ban name reason`: bans them from multiplayer and signs them out everywhere. `/unban name` lets them back.
 - `/op name`, `/deop name`: give or take away admin.
+- `/where name`: where that player is, or where they were when they were last online.
+- `/tp name`: go to them (or to where they were last seen), when you are in the same world and dimension. `/bring name`: fetch them to you.
+- Commands and their answers show only to whoever typed them, never in the chat.
 - `/creative`, `/survival` (or `/gamemode creative`): switch your own mode, in any world. The game menu has a button for the same thing.
 - `/players`: who is online, and where. `/accounts`: every account. `/list`: who is in this world (anyone can use this).
 

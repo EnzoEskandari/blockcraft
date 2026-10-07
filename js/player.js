@@ -396,7 +396,7 @@ export class Player {
     if (!this.onGround && fell > 0 && !this.flying && !this.inWater) this.fallDist += fell;
     if (this.inWater || this.inLava || this.flying || this.effects.levitation > 0) this.fallDist = 0;
     if (this.onGround && !wasGround) {
-      if (this.fallDist > 3 && !this.creative) {
+      if (this.fallDist > 3 && !this.creative && !(G.clock < (this.safeLanding || 0))) {   // (no harm in the fall after a teleport)
         this.hurt(Math.floor(this.fallDist - 3), null, null, 'fall');
         sfx('fall');
       }

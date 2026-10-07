@@ -369,7 +369,7 @@ export class Net {
       else this.saveGuest();
       return;
     }
-    if (m.t === 'cmd') { this.chat(null, String(m.msg || '')); return; }
+    if (m.t === 'cmd') { G.ui.toast(String(m.msg || ''), 7); return; }   // (shown to you alone, not in the chat)
     if (m.t === 'admin') { this.adminDid(m); return; }
     if (m.t === 'left') { this.removePlayer(m.id); return; }
     if (m.t === 'rehost') {
@@ -385,6 +385,11 @@ export class Net {
   adminDid(m) {
     const by = String(m.by || 'An admin').slice(0, 16);
     if (m.a === 'mode') { G.game.setMode(m.mode); return; }
+    if (m.a === 'goto') {
+      const p = G.player;
+      if (p && Number.isFinite(m.x + m.y + m.z)) { p.pos.x = m.x + 0.5; p.pos.y = m.y + 0.2; p.pos.z = m.z + 0.5; p.vel.x = p.vel.y = p.vel.z = 0; p.fallDist = 0; p.safeLanding = G.clock + 15; }
+      return;
+    }
     if (m.a === 'kill') {
       const p = G.player;
       if (p && !p.dead) { p.lastAttacker = by; p.die('admin'); }
@@ -456,7 +461,7 @@ export class Net {
     text = String(text).trim().slice(0, 120);
     if (!text) return;
     // commands (/list, and for admins /kill, /ban...) go to the server, not to everyone
-    if (text[0] === '/') { this.chat(null, text); this.raw({ t: 'cmd', text }); return; }
+    if (text[0] === '/') { this.raw({ t: 'cmd', text }); return; }
     this.chat(this.name, text);
     if (this.role === 'host') this.send({ k: 'chat', n: this.name, t: text });
     else this.send({ k: 'chat', t: text });
@@ -800,6 +805,9 @@ export class Net {
   // ------------------------------------------------------------ every frame
   update(dt) {
     if (this.closed || !G.world || !G.player) return;
+    // the server is told where this player is every few seconds (for admins, and for where they were last seen)
+    this.atT = (this.atT || 0) - dt;
+    if (this.atT <= 0) { this.atT = 3; const q = G.player.pos; this.raw({ t: 'at', x: q.x, y: q.y, z: q.z }); }
     this.saveT -= dt;
     if (this.saveT <= 0) { this.saveT = 5; this.saveGuest(); }
     for (const a of this.players.values()) a.update(dt);
