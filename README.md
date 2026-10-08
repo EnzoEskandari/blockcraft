@@ -56,6 +56,7 @@ How it works:
 
 ## Sun & Storms (1.9.1) and A New Look (1.9)
 
+- **1.9.3** made shadows cheap: the land's shadow picture (`drawLand`) is drawn again only when the sun has moved on a little, you have walked eight blocks from its middle, or a chunk in it was re-meshed (`landChanged`); animals, players and dropped items have a small picture of their own, drawn every frame (`drawBodies`), and the lamp's views are split the same way. The pictures are read with the graphics card's own depth comparison (`sampler2DShadow`), four readings for a soft edge. With Shadows off the blocks get the shader without any of this (`SHADOWS` define); if a card refuses the shadow shader, `render()` notices the error and falls back to it.
 - **1.9.2** made shadows keep to the pixels of the blocks they fall on: the fragment shader moves each lookup to the middle of the texture pixel it is in (`snap` in `CHUNK_FS`), from where the block stands rather than where the wind has pushed it. Plants cast shadows and are looked up a little towards the light so as not to shade themselves.
 - **Lamp shadows** (1.9.2): the lamp lighting the place you are in or looking at (`findLamp`) gets six small depth views side by side in one picture (`drawLamp`), and lamp light is dimmed where that lamp is the one lighting a spot but cannot see it. Lamp light itself still spreads block to block as before.
 - **The character is kept with the account** (1.9.2): `POST /api/look`, returned with the account on sign-in and `/api/me`; `adoptAccountLook` in `js/skins.js` decides which copy wins.

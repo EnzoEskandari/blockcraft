@@ -7,6 +7,7 @@ import { moveBox, raycast, rayBox, boxBlocked, touching } from './physics.js';
 import { sfx } from './audio.js';
 import { mulberry32, hashString } from './noise.js';
 import { tileColors } from './textures.js';
+import { BIOME_TINT } from './mesher.js';
 import { CH, SEA, BIOME, FROZEN } from './constants.js';
 import { lookOf, lookParts } from './skins.js';
 import { makeTrades, levelOf, LEVEL_NAMES, PROFESSIONS } from './villagers.js';
@@ -49,9 +50,10 @@ class Particles {
     this.points.frustumCulled = false;
     R.scene.add(this.points);
   }
-  spawn(x, y, z, vx, vy, vz, r, g, b, size, life, grav = 1) {
+  // (`drift`: a falling leaf, which flutters from side to side and never falls fast)
+  spawn(x, y, z, vx, vy, vz, r, g, b, size, life, grav = 1, drift = 0) {
     if (this.list.length >= PMAX) this.list.shift();
-    this.list.push({ x, y, z, vx, vy, vz, r, g, b, size, life, max: life, grav });
+    this.list.push({ x, y, z, vx, vy, vz, r, g, b, size, life, max: life, grav, drift });
   }
   update(dt) {
     const L = this.list, w = G.world;
@@ -61,6 +63,11 @@ class Particles {
       p.life -= dt;
       if (p.life <= 0) continue;
       p.vy -= 18 * p.grav * dt;
+      if (p.drift) {
+        const t = (p.max - p.life) * 2.6 + p.drift;
+        p.vx += Math.sin(t) * 1.5 * dt; p.vz += Math.cos(t * 0.8) * 1.5 * dt;
+        if (p.vy < -0.8) p.vy = -0.8;
+      }
       const drag = Math.max(0, 1 - 1.5 * dt);
       p.vx *= drag; p.vz *= drag;
       const nx = p.x + p.vx * dt, ny = p.y + p.vy * dt, nz = p.z + p.vz * dt;
@@ -82,6 +89,29 @@ class Particles {
     this.mat.uniforms.uScale.value = R.renderer.domElement.height / (2 * Math.tan(R.camera.fov * Math.PI / 360));
   }
   clear() { this.list.length = 0; this.geo.setDrawRange(0, 0); }
+}
+
+// Leaves come down from the trees round you now and then, each the colour of the tree it fell from
+// (cherry trees shed the most). Only where there is open air under the leaf to fall through.
+const LEAF_RATE = {};
+let leafDue = 0;
+export function leafFall(dt) {
+  const p = G.player, w = G.world, E = G.entities;
+  if (!p || !w || !E || G.dim !== 'overworld') return;
+  if (!LEAF_RATE.done) { LEAF_RATE.done = true; for (const b of BLOCKS) if (b && b.key.endsWith('_leaves')) LEAF_RATE[b.id] = b.key === 'cherry_leaves' ? 1 : 0.5; }
+  leafDue += dt * 480;   // places looked at each second
+  while (leafDue >= 1) {
+    leafDue -= 1;
+    const x = Math.floor(p.pos.x + (rand() - 0.5) * 30), y = Math.floor(p.pos.y + (rand() - 0.25) * 18), z = Math.floor(p.pos.z + (rand() - 0.5) * 30);
+    const id = w.getBlock(x, y, z), rate = LEAF_RATE[id];
+    if (!rate || rand() > rate || w.getBlock(x, y - 1, z) !== 0) continue;
+    const def = BLOCKS[id], cols = tileColors(def.faces[0]), c = cols[(rand() * cols.length) | 0];
+    const ch = w.getChunk(x >> 4, z >> 4);
+    const tint = def.tint && ch && ch.biomes ? BIOME_TINT[ch.biomes[(z & 15) * 16 + (x & 15)]] || [1, 1, 1] : [1, 1, 1];
+    const L = lightAt(x + 0.5, y - 0.5, z + 0.5) * (0.85 + rand() * 0.25);
+    E.particles.spawn(x + rand(), y - 0.05, z + rand(), (rand() - 0.5) * 0.4, -0.15, (rand() - 0.5) * 0.4,
+      c[0] * tint[0] * L, c[1] * tint[1] * L, c[2] * tint[2] * L, 0.075 + rand() * 0.04, 5 + rand() * 4, 0.04, 1 + rand() * 6);
+  }
 }
 
 export function blockParticles(x, y, z, id, n = 26, face = null) {

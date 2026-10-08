@@ -1151,8 +1151,8 @@ export class UI {
         b.addEventListener('click', () => {
           sfx('click');
           if (o.toggle) G.settings[o.key] = !G.settings[o.key];
-          if (o.key === 'shadows') G.settings.shadowsPicked = true;   // (chosen by hand: the game leaves it alone from now on)
           else G.settings[o.key] = o.cycle[(o.cycle.indexOf(G.settings[o.key]) + 1) % o.cycle.length];
+          if (o.key === 'shadows') G.settings.shadowsPicked = true;   // (chosen by hand: the game leaves it alone from now on)
           this.applySetting(o.key);
           sync();
         });
@@ -1166,11 +1166,13 @@ export class UI {
         input.min = o.min; input.max = o.max; input.step = o.step;
         const text = h('span');
         const sync = () => { input.value = G.settings[o.key]; text.textContent = `${o.label}: ${o.fmt(+G.settings[o.key])}`; };
+        // (while a slider is being dragged the setting takes effect at once; it is written down when let go)
         input.addEventListener('input', () => {
           G.settings[o.key] = +input.value;
           text.textContent = `${o.label}: ${o.fmt(+input.value)}`;
-          this.applySetting(o.key);
+          this.applySetting(o.key, true);
         });
+        input.addEventListener('change', () => saveSettings());
         wrap.append(input, text);
         grid.appendChild(wrap);
         this.optionSync.push(sync);
@@ -1180,8 +1182,10 @@ export class UI {
 
   syncOptions() { this.optionSync.forEach((f) => f()); }
 
-  applySetting(key) {
-    saveSettings();
+  applySetting(key, dragging = false) {
+    // (saved straight away for a button; a moment after the last movement of a slider)
+    clearTimeout(this.saveTimer);
+    if (dragging) this.saveTimer = setTimeout(saveSettings, 400); else saveSettings();
     if (key === 'volume') setVolume(G.settings.volume);
     if (key === 'renderDist' && G.game) G.game.renderDistChanged();
     if (key === 'touch') {

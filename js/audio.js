@@ -31,8 +31,11 @@ export function rainSound(level) {
     const g = ctx.createGain(); g.gain.value = 0;
     src.connect(hp); hp.connect(lp); lp.connect(g); g.connect(master);
     src.start();
-    rain = { g, lp };
+    rain = { g, lp, level: -1 };
   }
+  // (only when it has changed: this is asked every frame)
+  if (Math.abs(level - rain.level) < 0.02 && !(level <= 0 && rain.level > 0)) return;
+  rain.level = level;
   rain.g.gain.setTargetAtTime(Math.max(0, level) * 0.16, ctx.currentTime, 0.4);
   // (muffled when it is quiet: that is rain heard from indoors)
   rain.lp.frequency.setTargetAtTime(level > 0.6 ? 6500 : 1800 + level * 4000, ctx.currentTime, 0.4);

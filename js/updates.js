@@ -67,6 +67,21 @@ const LAKESIDE = { seed: 2024, at: [2, -22], view: [0, 0, 12.5], pitch: -0.03, t
 export const UPDATES = [
   {
     // a small update: it keeps the A New Look picture
+    version: '1.9.3', name: 'Wind & Leaves', date: '2026-10-07',
+    splashes: ['Faster!', 'Leaves on the wind!', 'Mind your shadow!', 'Light a torch!', 'Looks like rain!', 'Same you, any device!', 'Cherry petals!', 'Surprise me!',
+      'Golden hour!', 'Who are you today?', 'A gust!', 'The Wither!'],
+    scene: LAKESIDE,
+    notes: [
+      'Much faster. The shadows of the land are now drawn only when they change, not every frame, which was most of what made the game slow.',
+      'Shadows have soft edges and glide as the sun moves, or as an animal walks, instead of jumping from dot to dot.',
+      'More wind: grass, flowers and leaves sway further, and gusts pass through them.',
+      'Leaves drift down from the trees, each the colour of the tree it fell from. Cherry trees shed the most.',
+      'Fixed: the on and off switches in Options (Auto-Jump, View Bobbing, Show Coordinates) did nothing and were not saved.',
+      'Turning Shadows off in Options now makes the game faster still, for slower devices.',
+    ],
+  },
+  {
+    // a small update: it keeps the A New Look picture
     version: '1.9.2', name: 'Lamps & Shadows', date: '2026-10-07',
     splashes: ['Mind your shadow!', 'Light a torch!', 'Looks like rain!', 'Same you, any device!', 'Glowstone glows!', 'Thunder!', 'Nice hat!', 'Surprise me!',
       'Golden hour!', 'Who are you today?', 'Bring a coat!', 'The Wither!'],

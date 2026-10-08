@@ -19,22 +19,26 @@ uniform float uLavaLayer;
 uniform vec3 uSunDir;
 uniform float uDirK;
 uniform mat4 uShadowFromView;
+uniform mat4 uEntsFromView;
 varying vec3 vUv;
 varying vec3 vCol;
 varying vec4 vL;
 varying vec4 vS;
 varying vec3 vShadow;
+varying vec3 vEnts;
 varying vec3 vView;
 varying vec3 vCell;
 varying vec4 vN;
 void main() {
   vec3 pos = position;
-  // grass, flowers and leaves stir in the wind (aTex.w says how much this corner moves)
+  // grass, flowers and leaves stir in the wind (aTex.w says how much this corner moves), more when a
+  // gust comes through
   if (aTex.w > 0.5) {
     vec4 wp = modelMatrix * vec4(position, 1.0);
     float k = aTex.w / 255.0, t = uTime * 1.7;
-    pos.x += sin(t + wp.x * 0.7 + wp.z * 0.45 + wp.y * 0.35) * 0.9 * k;
-    pos.z += cos(t * 0.8 + wp.x * 0.5 - wp.z * 0.6) * 0.75 * k;
+    k *= 0.65 + 0.35 * sin(uTime * 0.31 + wp.x * 0.06 + wp.z * 0.045);
+    pos.x += sin(t + wp.x * 0.7 + wp.z * 0.45 + wp.y * 0.35) * 1.7 * k;
+    pos.z += cos(t * 0.8 + wp.x * 0.5 - wp.z * 0.6) * 1.4 * k;
   }
   vec4 mv = modelViewMatrix * vec4(pos, 1.0);
   gl_Position = projectionMatrix * mv;
@@ -56,6 +60,7 @@ void main() {
   float shade = face < 1.5 ? 0.6 : face < 2.5 ? 1.0 : face < 3.5 ? 0.5 : face < 5.5 ? 0.8 : 1.0;
   vS = vec4(plant > 0.5 ? 0.7 : max(dot(n, uSunDir), 0.0) * 1.12, mix(shade, sqrt(shade), uDirK), shade, glow);
   vShadow = (uShadowFromView * still).xyz;
+  vEnts = (uEntsFromView * still).xyz;
   vView = still.xyz * mat3(viewMatrix);
   // where this is among the blocks (east and south wrapped, so the numbers stay small enough to be exact)
   vCell = vec3(mod(modelMatrix[3].x, 256.0), 0.0, mod(modelMatrix[3].z, 256.0)) + position / 16.0;
@@ -66,12 +71,18 @@ void main() {
 // LAMP_B turn a distance from the lamp into the depth stored there)
 const LAMP_NEAR = 0.08, LAMP_FAR = 18;
 const CHUNK_FS = `
+precision highp sampler2DShadow;
 uniform sampler2DArray uAtlas;
-uniform sampler2D uShadowMap;
-uniform sampler2D uLampMap;
+#ifdef SHADOWS
+uniform sampler2DShadow uShadowMap;
+uniform sampler2DShadow uShadowEnts;
+uniform sampler2DShadow uLampMap;
+uniform sampler2DShadow uLampEnts;
+#endif
 uniform float uShadowOn;
 uniform float uShadowTexel;
 uniform mat3 uShadowLin;
+uniform mat3 uEntsLin;
 uniform vec4 uLamp;
 uniform vec3 uLampCell;
 uniform float uLampLevel;
@@ -92,21 +103,20 @@ varying vec3 vCol;
 varying vec4 vL;
 varying vec4 vS;
 varying vec3 vShadow;
+varying vec3 vEnts;
 varying vec3 vView;
 varying vec3 vCell;
 varying vec4 vN;
 float curve(float l) { return mix(l / (4.0 - 3.0 * l), l, uGamma); }
-// how much of the sun reaches this point: four readings of the shadow map, blended, for a soft edge
+#ifdef SHADOWS
+// How much of the sun reaches this point. Each reading of the shadow map is itself a blend of the four
+// dots round it (the graphics card does that), and four of them a little apart give an edge that is soft
+// over two or three dots: a shadow creeping with the sun, or following an animal, fades from dot to dot
+// instead of jumping.
 float sunAt(vec3 sc) {
-  vec2 t = sc.xy / uShadowTexel - 0.5;
-  vec2 f = fract(t);
-  vec2 base = (floor(t) + 0.5) * uShadowTexel;
-  float z = sc.z - 0.00006;
-  float a = step(z, texture2D(uShadowMap, base).r);
-  float b = step(z, texture2D(uShadowMap, base + vec2(uShadowTexel, 0.0)).r);
-  float c = step(z, texture2D(uShadowMap, base + vec2(0.0, uShadowTexel)).r);
-  float d = step(z, texture2D(uShadowMap, base + vec2(uShadowTexel)).r);
-  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+  float z = sc.z - 0.00006, t = uShadowTexel;
+  return 0.25 * (texture(uShadowMap, vec3(sc.xy + t * vec2(-0.75, -0.25), z)) + texture(uShadowMap, vec3(sc.xy + t * vec2(0.25, -0.75), z))
+    + texture(uShadowMap, vec3(sc.xy + t * vec2(0.75, 0.25), z)) + texture(uShadowMap, vec3(sc.xy + t * vec2(-0.25, 0.75), z)));
 }
 // whether the lamp can see a point (v: from the lamp to it), by the one of its six views that looks that way
 float lampSees(vec3 v, float back) {
@@ -121,8 +131,9 @@ float lampSees(vec3 v, float back) {
   vec2 at = (vec2(mod(tile, 3.0), floor(tile / 3.0)) + uv) / vec2(3.0, 2.0);
   float mm = max(m - back, 0.1);
   float depth = 0.5 * (${((LAMP_FAR + LAMP_NEAR) / (LAMP_FAR - LAMP_NEAR)).toFixed(6)} - ${(2 * LAMP_FAR * LAMP_NEAR / (LAMP_FAR - LAMP_NEAR)).toFixed(6)} / mm) + 0.5;
-  return step(depth, texture2D(uLampMap, at).r);
+  return min(texture(uLampMap, vec3(at, depth)), texture(uLampEnts, vec3(at, depth)));
 }
+#endif
 void main() {
   vec4 c;
   float sky = vL.x, blk = vL.y;
@@ -133,24 +144,33 @@ void main() {
   else if (water) c = texture(uAtlas, vec3(vUv.x, vUv.y - uTime * 0.35, vUv.z));   // and falls
   else c = texture(uAtlas, vUv);
   if (c.a < uAlphaTest) discard;
+  // the sun (or the moon): read from the shadow map around you, and guessed from the open sky further off
+  float open = smoothstep(0.7, 0.97, sky);
+  float lit = open;
+  float lamp = 1.0;
+#ifdef SHADOWS
   // Shadows keep to the dots of the thing they fall on: each dot of its texture is looked up as one
   // point (its middle, a hair off the surface), so a shadow's edge runs along the dots and never
   // wavers across them. A plant is looked up a little towards the light, so as not to shade itself.
   vec3 n = vN.xyz;
   vec3 snap = (floor((vCell + n * 0.02) * 16.0) + 0.5) / 16.0 - vCell;
-  // the sun (or the moon): read from the shadow map around you, and guessed from the open sky further off
-  float open = smoothstep(0.7, 0.97, sky);
-  float lit = open;
-  if (uShadowOn > 0.5) {
-    vec3 sc = vShadow + uShadowLin * (snap + uSunDir * (0.8 * vN.w));
+  // (nothing to look up for a side turned from the sun, or somewhere the sky does not reach)
+  if (uShadowOn > 0.5 && vS.x > 0.001 && sky > 0.1) {
+    vec3 shift = snap + uSunDir * (0.8 * vN.w);
+    vec3 sc = vShadow + uShadowLin * shift;
     vec2 e = abs(sc.xy - 0.5) * 2.0;
     float edge = smoothstep(0.8, 0.98, max(max(e.x, e.y), abs(sc.z - 0.5) * 2.0));
-    if (edge < 1.0) lit = mix(sunAt(sc) * smoothstep(0.12, 0.45, sky), open, edge);
+    if (edge < 1.0) {
+      float s = sunAt(sc);
+      // animals, players and things on the ground have a picture of their own, drawn afresh each frame
+      vec3 ec = vEnts + uEntsLin * shift;
+      if (ec.x > 0.0 && ec.x < 1.0 && ec.y > 0.0 && ec.y < 1.0) s = min(s, texture(uShadowEnts, vec3(ec.xy, ec.z - 0.0002)));
+      lit = mix(s * smoothstep(0.12, 0.45, sky), open, edge);
+    }
   }
   // The nearest lamp casts shadows too. Lamp light spreads from block to block and knows nothing of what
   // stands in its way, so where this lamp is the one lighting a spot (the light there is what the lamp
   // would give with nothing between), the spot is dimmed if the lamp cannot in fact see it.
-  float lamp = 1.0;
   if (uLamp.w > 0.01 && blk > 0.05) {
     vec3 v = vView + snap - uLamp.xyz;
     vec3 a = abs(vView + snap - uLampCell + n * 0.5);
@@ -162,6 +182,7 @@ void main() {
       lamp = mix(1.0, mix(0.25, 1.0, lampSees(v, mix(0.07, 0.9, vN.w)) * facing), w);
     }
   }
+#endif
   // light from the whole sky, plus the sun where it shines; lamps and fire are warm, and add to it
   vec3 skyPart = curve(sky * uDaylight) * (uSkyLight * vS.y + uSunLight * vS.x * lit);
   vec3 blkPart = curve(blk) * lamp * vS.z * vec3(1.1, 0.96, 0.8);
@@ -273,6 +294,10 @@ export function initRenderer(container) {
     uSunLight: { value: new THREE.Color(0, 0, 0) },
     uSkyGlow: { value: new THREE.Color(0.7, 0.8, 1) },
     uShadowMap: { value: null },
+    uShadowEnts: { value: null },
+    uEntsFromView: { value: new THREE.Matrix4() },
+    uEntsLin: { value: new THREE.Matrix3() },
+    uLampEnts: { value: null },
     uShadowOn: { value: 0 },
     uShadowTexel: { value: 1 / 1024 },
     uShadowFromView: { value: new THREE.Matrix4() },
@@ -283,12 +308,14 @@ export function initRenderer(container) {
     uLampLevel: { value: 14 },
   };
   R.shared = shared;
+  // (SHADOWS: the shader with the shadow pictures in it; without, the plain one, which is quicker)
+  R.shadowShader = G.settings.shadows !== false;
   R.opaqueMat = new THREE.ShaderMaterial({
-    uniforms: { ...shared, uAlphaTest: { value: 0.5 } },
+    uniforms: { ...shared, uAlphaTest: { value: 0.5 } }, defines: R.shadowShader ? { SHADOWS: '' } : {},
     vertexShader: CHUNK_VS, fragmentShader: CHUNK_FS,
   });
   R.transMat = new THREE.ShaderMaterial({
-    uniforms: { ...shared, uAlphaTest: { value: 0.02 } },
+    uniforms: { ...shared, uAlphaTest: { value: 0.02 } }, defines: R.shadowShader ? { SHADOWS: '' } : {},
     vertexShader: CHUNK_VS, fragmentShader: CHUNK_FS,
     transparent: true, depthWrite: false, side: THREE.DoubleSide,
   });
@@ -316,23 +343,40 @@ function onResize() {
 // The sun's view of the land around you is drawn into a depth picture; the blocks' shader looks each point
 // up in it to see whether the sun reaches there. What is drawn is the far side of everything (the faces
 // turned away from the sun), so nothing lit can ever shade itself.
-const lightVP = new THREE.Matrix4(), tmpM = new THREE.Matrix4();
+//
+// Drawing the land a second time is the dearest thing the game does, so it is done only when the picture
+// would come out different: the sun has moved on a little, you have walked some way from its middle, or
+// the land in it has changed. Animals, players and things on the ground move all the time, and have a
+// small picture of their own that is drawn every frame.
+const lightVP = new THREE.Matrix4(), entsVP = new THREE.Matrix4();
 const BIAS = new THREE.Matrix4().set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1);
 const sx = new THREE.Vector3(), sy = new THREE.Vector3(), sc = new THREE.Vector3();
 const UP_Z = new THREE.Vector3(0, 0, 1);
 
+// A picture that holds depths only, read by the shader as "is this point nearer than what is stored?"
+function depthTarget(w, h) {
+  const t = new THREE.WebGLRenderTarget(w, h, { depthBuffer: true, stencilBuffer: false });
+  t.texture.minFilter = t.texture.magFilter = THREE.NearestFilter;
+  t.texture.generateMipmaps = false;
+  t.depthTexture = new THREE.DepthTexture(w, h);
+  t.depthTexture.minFilter = t.depthTexture.magFilter = THREE.LinearFilter;
+  t.depthTexture.compareFunction = THREE.LessEqualCompare;
+  return t;
+}
+
 function buildShadows() {
   // (sixteen dots of the picture or more to a block, the same as a block's own texture)
-  const size = 2048, reach = isTouchDevice ? 56 : 64;
-  const target = new THREE.WebGLRenderTarget(size, size, { depthBuffer: true, stencilBuffer: false });
-  target.texture.minFilter = target.texture.magFilter = THREE.NearestFilter;
-  target.texture.generateMipmaps = false;
-  target.depthTexture = new THREE.DepthTexture(size, size);
-  target.depthTexture.minFilter = target.depthTexture.magFilter = THREE.NearestFilter;
+  const size = 2048, reach = isTouchDevice ? 56 : 64, esize = 1024, ereach = isTouchDevice ? 28 : 32;
+  const target = depthTarget(size, size), back = depthTarget(size, size), ents = depthTarget(esize, esize);
   const camera = new THREE.OrthographicCamera(-reach, reach, reach, -reach, 1, 420);
   camera.layers.set(1);
+  const ecam = new THREE.OrthographicCamera(-ereach, ereach, ereach, -ereach, 1, 420);
+  ecam.layers.set(2);
   R.shadow = {
-    size, reach, target, camera, age: 99, drawn: false,
+    size, reach, target, back, camera, esize, ereach, ents, ecam, age: 99, drawn: false, entCalls: 0,
+    dirty: true, at: 0, gap: isTouchDevice ? 170 : 100, centre: new THREE.Vector3(), dir: new THREE.Vector3(),
+    // (a drawing of the land under way: which part comes next, and where it was aimed)
+    part: -1, parts: isTouchDevice ? 4 : 2, toCentre: new THREE.Vector3(), toDir: new THREE.Vector3(), toVP: new THREE.Matrix4(),
     hole: { value: new THREE.Vector4() },
     // (the bodies of animals, monsters and players, and things lying on the ground: both sides, as some are flat)
     bodies: new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, colorWrite: false }),
@@ -341,55 +385,124 @@ function buildShadows() {
     uniforms: { uAtlas: R.shared.uAtlas, uHole: R.shadow.hole }, vertexShader: SHADOW_VS, fragmentShader: SHADOW_FS, side: THREE.BackSide, colorWrite: false,
   });
   R.shared.uShadowMap.value = target.depthTexture;
+  R.shared.uShadowEnts.value = ents.depthTexture;
   R.shared.uShadowTexel.value = 1 / size;
 
   // The nearest lamp's shadows: what it sees in each of six directions, side by side in one picture
+  // (and the same again for the things that move)
   const tile = isTouchDevice ? 256 : 512;
-  const lt = new THREE.WebGLRenderTarget(tile * 3, tile * 2, { depthBuffer: true, stencilBuffer: false });
-  lt.texture.minFilter = lt.texture.magFilter = THREE.NearestFilter;
-  lt.texture.generateMipmaps = false;
-  lt.depthTexture = new THREE.DepthTexture(tile * 3, tile * 2);
-  lt.depthTexture.minFilter = lt.depthTexture.magFilter = THREE.NearestFilter;
-  lt.scissorTest = true;
+  const lt = depthTarget(tile * 3, tile * 2), le = depthTarget(tile * 3, tile * 2);
+  lt.scissorTest = le.scissorTest = true;
   // (looking east, west, up, down, south, north: the same order, and the same idea of "up", as the shader's)
   const views = [[1, 0, 0, 0, 1, 0], [-1, 0, 0, 0, 1, 0], [0, 1, 0, 0, 0, 1], [0, -1, 0, 0, 0, -1], [0, 0, 1, 0, 1, 0], [0, 0, -1, 0, 1, 0]];
   R.lamp = {
-    tile, target: lt, views, camera: new THREE.PerspectiveCamera(90, 1, LAMP_NEAR, LAMP_FAR),
+    tile, target: lt, ents: le, views, camera: new THREE.PerspectiveCamera(90, 1, LAMP_NEAR, LAMP_FAR),
     at: null, pos: new THREE.Vector3(), cell: new THREE.Vector3(), level: 14, hole: 0.87, on: 0, scan: 0, age: 99,
+    dirty: true, landAt: 0, bare: false,
   };
   R.shared.uLampMap.value = lt.depthTexture;
+  R.shared.uLampEnts.value = le.depthTexture;
+  // (every one of these pictures has to exist before the land is first drawn, whether or not it has been
+  // needed yet: the blocks' shader names them all, and will draw nothing if one is missing)
+  for (const t of [target, back, ents, lt, le]) { R.renderer.setRenderTarget(t); R.renderer.clear(); }
+  R.renderer.setRenderTarget(null);
 }
 
-function drawShadows() {
-  const S = R.shadow, cam = S.camera, L = R.shared.uSunDir.value;
-  // the picture is centred on you, moved a whole pixel of it at a time so that shadows do not shimmer
+// Where a picture taken along the light should be centred: on you, moved a whole dot of it at a time so
+// that shadows do not shimmer as you walk
+function aimAlongLight(cam, reach, size) {
+  const L = R.shared.uSunDir.value, c = R.camera.position;
   sx.crossVectors(UP_Z, L).normalize();
   sy.crossVectors(L, sx);
-  const texel = 2 * S.reach / S.size, c = R.camera.position;
+  const texel = 2 * reach / size;
   const ax = Math.round(c.dot(sx) / texel) * texel - c.dot(sx), ay = Math.round(c.dot(sy) / texel) * texel - c.dot(sy);
   sc.copy(c).addScaledVector(sx, ax).addScaledVector(sy, ay);
   cam.position.copy(sc).addScaledVector(L, 210);
   cam.up.copy(UP_Z);
   cam.lookAt(sc);
   cam.updateMatrixWorld();
-  lightVP.copy(BIAS).multiply(cam.projectionMatrix).multiply(cam.matrixWorldInverse);
-  R.shared.uShadowLin.value.setFromMatrix4(lightVP);
-  const r = R.renderer, scene = R.scene, fog = scene.fog;
+}
+
+// The land, as the sun sees it. Drawing all of it is a great deal of work for one frame, so (unless it is
+// wanted at once) it is drawn a part at a time over a few frames, into a second picture that takes the
+// place of the first when it is whole. The chunks are shared out among four layers, checkerboard fashion
+// (see placeMesh), and a part is one or two of those.
+function drawLand(atOnce) {
+  const S = R.shadow, cam = S.camera, r = R.renderer, scene = R.scene, fog = scene.fog;
+  if (S.part < 0) {
+    aimAlongLight(cam, S.reach, S.size);
+    S.toCentre.copy(sc);
+    S.toDir.copy(R.shared.uSunDir.value);
+    S.toVP.copy(BIAS).multiply(cam.projectionMatrix).multiply(cam.matrixWorldInverse);
+    S.dirty = false;
+    S.part = 0;
+    r.setRenderTarget(S.back);
+    r.clear();
+  }
   scene.fog = null;
   S.hole.value.w = 0;
-  r.setRenderTarget(S.target);
-  r.clear();
+  r.setRenderTarget(S.back);
   scene.overrideMaterial = S.blocks;
-  cam.layers.set(1);
-  r.render(scene, cam);
-  // (and the bodies of animals, monsters and players: layer 2, set where their models are built)
-  scene.overrideMaterial = S.bodies;
-  cam.layers.set(2);
+  if (atOnce) { cam.layers.set(1); S.part = S.parts; } else {
+    const per = 4 / S.parts;
+    cam.layers.disableAll();
+    for (let k = 0; k < per; k++) cam.layers.enable(10 + S.part * per + k);
+    S.part++;
+  }
   r.render(scene, cam);
   scene.overrideMaterial = null;
   scene.fog = fog;
   r.setRenderTarget(null);
-  S.drawn = true;
+  if (S.part >= S.parts) {
+    // whole: it becomes the picture the blocks are lit by
+    [S.target, S.back] = [S.back, S.target];
+    lightVP.copy(S.toVP);
+    R.shared.uShadowLin.value.setFromMatrix4(lightVP);
+    R.shared.uShadowMap.value = S.target.depthTexture;
+    S.centre.copy(S.toCentre); S.dir.copy(S.toDir);
+    S.drawn = true; S.part = -1; S.at = performance.now();
+  }
+}
+
+// The things that move (layer 2, set where their models are built), near you
+function drawBodies() {
+  const S = R.shadow, cam = S.ecam, r = R.renderer, scene = R.scene, fog = scene.fog;
+  aimAlongLight(cam, S.ereach, S.esize);
+  entsVP.copy(BIAS).multiply(cam.projectionMatrix).multiply(cam.matrixWorldInverse);
+  R.shared.uEntsLin.value.setFromMatrix4(entsVP);
+  scene.fog = null;
+  r.setRenderTarget(S.ents);
+  r.clear();
+  scene.overrideMaterial = S.bodies;
+  r.render(scene, cam);
+  S.entCalls = r.info.render.calls;
+  scene.overrideMaterial = null;
+  scene.fog = fog;
+  r.setRenderTarget(null);
+}
+
+function sunShadows() {
+  const S = R.shadow, L = R.shared.uSunDir.value, c = R.camera.position;
+  let due = true, now = true;
+  if (S.drawn) {
+    const turned = 1 - S.dir.dot(L), dx = c.x - S.centre.x, dy = c.y - S.centre.y, dz = c.z - S.centre.z;
+    const far = dx * dx + dy * dy + dz * dz;
+    // (a fourteenth of a degree of sun, or eight blocks of walking; at once if the time was changed or you were moved)
+    due = S.dirty || turned > 8e-7 || far > 64;
+    now = turned > 2e-4 || far > 900;
+  }
+  if (S.part >= 0) drawLand(false);
+  else if (due && (now || performance.now() - S.at >= S.gap)) drawLand(now);
+  // (every frame, so that a shadow keeps step with what casts it; every other where there is a crowd)
+  if (++S.age >= (S.entCalls > (isTouchDevice ? 70 : 140) ? 2 : 1)) { S.age = 0; drawBodies(); }
+}
+
+// A chunk's blocks were drawn afresh (something was built or dug, or it has just loaded): pictures it
+// is in are out of date
+function landChanged(chunk) {
+  const S = R.shadow, L = R.lamp, x = chunk.cx * 16 + 8, z = chunk.cz * 16 + 8;
+  if (S && Math.abs(x - S.centre.x) < S.reach + 56 && Math.abs(z - S.centre.z) < S.reach + 56) S.dirty = true;
+  if (L && L.at && Math.abs(x - L.pos.x) < LAMP_FAR + 9 && Math.abs(z - L.pos.z) < LAMP_FAR + 9) L.dirty = true;
 }
 
 // ---------------------------------------------------------------- lamp shadows
@@ -436,33 +549,39 @@ function findLamp() {
 }
 
 const lampTo = new THREE.Vector3();
-function drawLamp() {
+// The lamp's six views of the land (layer 1) or of the things that move (layer 2)
+function drawLamp(target, layer) {
   const L = R.lamp, S = R.shadow, cam = L.camera, r = R.renderer, scene = R.scene, fog = scene.fog, T = L.tile;
   scene.fog = null;
   S.hole.value.set(L.pos.x, L.pos.y, L.pos.z, L.hole);
-  L.target.viewport.set(0, 0, T * 3, T * 2);
-  L.target.scissor.set(0, 0, T * 3, T * 2);
-  r.setRenderTarget(L.target);
+  target.viewport.set(0, 0, T * 3, T * 2);
+  target.scissor.set(0, 0, T * 3, T * 2);
+  r.setRenderTarget(target);
   r.clear();
   cam.position.copy(L.pos);
+  cam.layers.set(layer);
+  scene.overrideMaterial = layer === 1 ? S.blocks : S.bodies;
   L.views.forEach(([fx, fy, fz, ux, uy, uz], i) => {
     cam.up.set(ux, uy, uz);
     cam.lookAt(lampTo.set(L.pos.x + fx, L.pos.y + fy, L.pos.z + fz));
     cam.updateMatrixWorld();
-    L.target.viewport.set((i % 3) * T, Math.floor(i / 3) * T, T, T);
-    L.target.scissor.copy(L.target.viewport);
-    r.setRenderTarget(L.target);
-    scene.overrideMaterial = S.blocks;
-    cam.layers.set(1);
-    r.render(scene, cam);
-    scene.overrideMaterial = S.bodies;
-    cam.layers.set(2);
+    target.viewport.set((i % 3) * T, Math.floor(i / 3) * T, T, T);
+    target.scissor.copy(target.viewport);
+    r.setRenderTarget(target);
     r.render(scene, cam);
   });
   scene.overrideMaterial = null;
   scene.fog = fog;
   S.hole.value.w = 0;
   r.setRenderTarget(null);
+}
+// Is anything that casts a shadow near the lamp?
+function bodiesNear(pos, reach) {
+  const E = G.entities, r2 = reach * reach;
+  const near = (o) => { const p = o && o.pos; return !!p && (p.x - pos.x) ** 2 + (p.y - pos.y) ** 2 + (p.z - pos.z) ** 2 < r2; };
+  if (E && ((E.mobs && E.mobs.some(near)) || (E.items && E.items.some(near)))) return true;
+  if (G.net && G.net.players) for (const a of G.net.players.values()) if (near(a)) return true;
+  return false;
 }
 
 // Where a lamp's light is taken to come from. A torch: its flame. A block that shines does so from the
@@ -484,7 +603,7 @@ function placeLamp(at) {
     if (n === 2 && !sx && !sy && !sz) { if (ex) sx = c.x > x ? 1 : -1; else if (up) sy = c.y > y ? 1 : -1; else sz = c.z > z ? 1 : -1; }
     if (n >= 1 && n <= 2 && (sx || sy || sz)) { L.pos.set(x + sx * 0.53, y + sy * 0.53, z + sz * 0.53); L.hole = 0.2; } else L.pos.set(x, y, z);
   }
-  if (lampWas.distanceToSquared(L.pos) > 0.0001) L.age = 99;
+  if (lampWas.distanceToSquared(L.pos) > 0.0001) L.dirty = true;
 }
 
 // Each frame: choose the lamp now and then, fade its shadows in, and draw them every few frames
@@ -497,14 +616,19 @@ function updateLamp(dt, wanted) {
     const found = findLamp(), was = L.at;
     if (!found) L.at = null;
     else {
-      if (!was || was.x !== found.x || was.y !== found.y || was.z !== found.z) { L.on = 0; L.age = 99; }
+      if (!was || was.x !== found.x || was.y !== found.y || was.z !== found.z) { L.on = 0; L.dirty = true; L.landAt = 0; }
       L.at = found;
       L.level = BLOCKS[found.id].light;
       placeLamp(found);
     }
   }
   if (!L.at) { L.on = 0; u.w = 0; return; }
-  if (++L.age >= (isTouchDevice ? 4 : 2)) { L.age = 0; drawLamp(); }
+  // the land round the lamp only when it has changed; the things that move every few frames, if any are near
+  if (L.dirty && performance.now() - L.landAt >= 120) { drawLamp(L.target, 1); L.dirty = false; L.landAt = performance.now(); }
+  if (++L.age >= (isTouchDevice ? 3 : 2)) {
+    L.age = 0;
+    if (bodiesNear(L.pos, LAMP_FAR + 1)) { drawLamp(L.ents, 2); L.bare = false; } else if (!L.bare) { drawLamp(L.ents, 3); L.bare = true; }
+  }
   L.on = Math.min(1, L.on + dt * 2.5);
   const c = R.camera.position;
   u.set(L.pos.x - c.x, L.pos.y - c.y, L.pos.z - c.z, L.on);
@@ -887,7 +1011,8 @@ function geometry(d) {
 
 function placeMesh(geo, mat, chunk) {
   const m = new THREE.Mesh(geo, mat);
-  if (mat === R.opaqueMat) m.layers.enable(1);   // (solid blocks cast shadows)
+  // (solid blocks cast shadows: layer 1 is all of them, 10 to 13 a quarter each)
+  if (mat === R.opaqueMat) { m.layers.enable(1); m.layers.enable(10 + (chunk.cx & 1) + (chunk.cz & 1) * 2); }
   m.position.set(chunk.cx * 16, 0, chunk.cz * 16);
   m.scale.setScalar(1 / 16);
   m.matrixAutoUpdate = false;
@@ -898,6 +1023,7 @@ function placeMesh(geo, mat, chunk) {
 
 export function setChunkMeshes(chunk, data) {
   disposeChunkMeshes(chunk);
+  landChanged(chunk);
   if (data.opaque) chunk.mesh = placeMesh(geometry(data.opaque), R.opaqueMat, chunk);
   if (data.trans) chunk.water = placeMesh(geometry(data.trans), R.transMat, chunk);
 }
@@ -905,7 +1031,7 @@ export function setChunkMeshes(chunk, data) {
 export function disposeChunkMeshes(chunk) {
   for (const k of ['mesh', 'water']) {
     const m = chunk[k];
-    if (m) { R.scene.remove(m); m.geometry.dispose(); chunk[k] = null; }
+    if (m) { R.scene.remove(m); m.geometry.dispose(); chunk[k] = null; if (k === 'mesh') landChanged(chunk); }
   }
 }
 
@@ -1035,17 +1161,36 @@ export function updateSky(time, dt, underwater, inLava) {
 }
 
 export function render() {
-  const r = R.renderer, S = R.shadow, sh = R.shared;
-  // the shadows are redrawn as you and the sun move (every frame on a computer, every other on a tablet)
-  const want = G.settings.shadows !== false && sh.uDirK.value > 0.02 && G.dim !== 'nether' && G.dim !== 'end';
-  if (want && (++S.age >= (isTouchDevice ? 2 : 1) || !S.drawn)) { S.age = 0; drawShadows(); }
-  if (!want) S.drawn = false;
-  sh.uShadowOn.value = want && S.drawn ? 1 : 0;
-  updateLamp(R.frameDt || 0, G.settings.shadows !== false && G.state === 'playing');
+  const r = R.renderer, S = R.shadow, sh = R.shared, scene = R.scene;
+  // (everything in the world is put in its place once; the several drawings of this frame all use that)
+  scene.updateMatrixWorld();
+  scene.matrixWorldAutoUpdate = false;
   R.camera.updateMatrixWorld();
+  // With shadows off the blocks get the plain shader, which has less to do.
+  const shadows = G.settings.shadows !== false && !R.shadowBroken;
+  if (shadows !== R.shadowShader) {
+    R.shadowShader = shadows;
+    for (const m of [R.opaqueMat, R.transMat]) { m.defines = shadows ? { SHADOWS: '' } : {}; m.needsUpdate = true; }
+    R.frames = 0;
+  }
+  // A graphics card that will not draw with the shadow shader says so, and draws nothing. Rather than
+  // leave the world blank, that is looked for now and then and the plain shader used from then on.
+  if (shadows) {
+    const n = R.frames = (R.frames || 0) + 1, gl = r.getContext();
+    if (n === 4) while (gl.getError() !== gl.NO_ERROR) { /* (whatever went before is not ours) */ }
+    else if (n === 40 || (n > 40 && n % 300 === 0)) {
+      if (gl.getError() !== gl.NO_ERROR) { R.shadowBroken = true; console.warn('Blockcraft: the shadow shader would not draw here; shadows are off.'); }
+    }
+  }
+  const want = shadows && sh.uDirK.value > 0.02 && G.dim !== 'nether' && G.dim !== 'end';
+  if (want) sunShadows(); else { S.drawn = false; S.part = -1; }
+  sh.uShadowOn.value = want && S.drawn ? 1 : 0;
+  updateLamp(R.frameDt || 0, shadows && G.state === 'playing');
   sh.uShadowFromView.value.copy(lightVP).multiply(R.camera.matrixWorld);
+  sh.uEntsFromView.value.copy(entsVP).multiply(R.camera.matrixWorld);
   r.clear();
-  r.render(R.scene, R.camera);
+  r.render(scene, R.camera);
+  scene.matrixWorldAutoUpdate = true;
   if (R.handHolder.visible) {
     r.clearDepth();
     r.render(R.handScene, R.handCamera);

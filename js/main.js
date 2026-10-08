@@ -9,7 +9,7 @@ import { Advancements } from './advancements.js';
 import { initMesher, buildChunkMesh, computeLight } from './mesher.js';
 import { R, initRenderer, setChunkMeshes, disposeChunkMeshes, updateSky, render } from './render.js';
 import { Player } from './player.js';
-import { Entities, spawnBlockParticles, explode } from './entities.js';
+import { Entities, spawnBlockParticles, explode, leafFall } from './entities.js';
 import { UI } from './ui.js';
 import { input, initInput, pollInput, endFrame, setTouchMode, requestLock, exitLock } from './input.js';
 import { initAudio, blockSound, sfx } from './audio.js';
@@ -1748,6 +1748,7 @@ function frame(dt) {
     }
     G.player.update(dt, input);
     G.entities.update(dt);
+    leafFall(dt);
     if (host) {
       processUpdates();
       processWater();

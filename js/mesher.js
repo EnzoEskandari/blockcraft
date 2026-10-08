@@ -21,7 +21,7 @@ const FACE = new Uint8Array(256 * 6), FRONT = new Uint8Array(256);
 // Blocks with a shape of their own: id -> for each way they can face, boxes [x0, y0, z0, x1, y1, z1, layers]
 const MODELS = [];
 
-const BIOME_TINT = [
+export const BIOME_TINT = [
   [1, 1, 1], [0.86, 1, 0.84], [1, 0.93, 0.6], [0.76, 0.92, 0.84], [0.8, 0.9, 0.94], [0.8, 0.93, 0.86],
   [0.62, 0.74, 0.46], [0.8, 1, 0.62], [0.66, 0.84, 0.58],
   // savanna, badlands, birch forest, flower forest, cherry grove, snowy taiga, ice spikes, mushroom fields, meadow, old growth taiga, sunflower plains
@@ -373,7 +373,7 @@ export function buildChunkMesh(world, chunk) {
         const tint = TINT[id] ? BIOME_TINT[biomes[z * 16 + x]] : null;
         if (rt === RENDER.CUBE) {
           const buf = TRANS[id] ? TB : OB;
-          buf.sway = LEAFY[id] ? 70 : 0;
+          buf.sway = LEAFY[id] ? 110 : 0;
           const cull = CULLSAME[id] || TRANS[id];
           let front = -1;
           if (FACING[id]) front = [4, 1, 5, 0][meta ? meta[(y << 8) | (z << 4) | x] & 3 : 0];
