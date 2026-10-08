@@ -81,6 +81,7 @@ uniform sampler2DShadow uLampEnts;
 #endif
 uniform float uShadowOn;
 uniform float uShadowTexel;
+uniform vec2 uShadowFar;
 uniform mat3 uShadowLin;
 uniform mat3 uEntsLin;
 uniform vec4 uLamp;
@@ -158,13 +159,19 @@ void main() {
   if (uShadowOn > 0.5 && vS.x > 0.001 && sky > 0.1) {
     vec3 shift = snap + uSunDir * (0.8 * vN.w);
     vec3 sc = vShadow + uShadowLin * shift;
+    // (shadows fade out by how far a thing is from you; the picture they are read from reaches further
+    // than that whichever way you have walked since it was drawn, so nothing changes when it is redrawn)
+    float edge = smoothstep(uShadowFar.x - 10.0, uShadowFar.x, vL.z);
     vec2 e = abs(sc.xy - 0.5) * 2.0;
-    float edge = smoothstep(0.8, 0.98, max(max(e.x, e.y), abs(sc.z - 0.5) * 2.0));
+    if (max(max(e.x, e.y), abs(sc.z - 0.5) * 2.0) > 0.995) edge = 1.0;
     if (edge < 1.0) {
       float s = sunAt(sc);
       // animals, players and things on the ground have a picture of their own, drawn afresh each frame
-      vec3 ec = vEnts + uEntsLin * shift;
-      if (ec.x > 0.0 && ec.x < 1.0 && ec.y > 0.0 && ec.y < 1.0) s = min(s, texture(uShadowEnts, vec3(ec.xy, ec.z - 0.0002)));
+      float nearby = 1.0 - smoothstep(uShadowFar.y - 6.0, uShadowFar.y, vL.z);
+      if (nearby > 0.0) {
+        vec3 ec = vEnts + uEntsLin * shift;
+        if (ec.x > 0.0 && ec.x < 1.0 && ec.y > 0.0 && ec.y < 1.0) s = min(s, mix(1.0, texture(uShadowEnts, vec3(ec.xy, ec.z - 0.0002)), nearby));
+      }
       lit = mix(s * smoothstep(0.12, 0.45, sky), open, edge);
     }
   }
@@ -298,6 +305,7 @@ export function initRenderer(container) {
     uEntsFromView: { value: new THREE.Matrix4() },
     uEntsLin: { value: new THREE.Matrix3() },
     uLampEnts: { value: null },
+    uShadowFar: { value: new THREE.Vector2(54, 30) },
     uShadowOn: { value: 0 },
     uShadowTexel: { value: 1 / 1024 },
     uShadowFromView: { value: new THREE.Matrix4() },
@@ -376,6 +384,7 @@ function buildShadows() {
     size, reach, target, back, camera, esize, ereach, ents, ecam, age: 99, drawn: false, entCalls: 0,
     dirty: true, at: 0, gap: isTouchDevice ? 170 : 100, centre: new THREE.Vector3(), dir: new THREE.Vector3(),
     // (a drawing of the land under way: which part comes next, and where it was aimed)
+    anchor: new THREE.Vector3(1e9, 0, 0), eanchor: new THREE.Vector3(1e9, 0, 0), turned: true,
     part: -1, parts: isTouchDevice ? 4 : 2, toCentre: new THREE.Vector3(), toDir: new THREE.Vector3(), toVP: new THREE.Matrix4(),
     hole: { value: new THREE.Vector4() },
     // (the bodies of animals, monsters and players, and things lying on the ground: both sides, as some are flat)
@@ -387,6 +396,7 @@ function buildShadows() {
   R.shared.uShadowMap.value = target.depthTexture;
   R.shared.uShadowEnts.value = ents.depthTexture;
   R.shared.uShadowTexel.value = 1 / size;
+  R.shared.uShadowFar.value.set(reach - 10, ereach - 2);
 
   // The nearest lamp's shadows: what it sees in each of six directions, side by side in one picture
   // (and the same again for the things that move)
@@ -398,7 +408,7 @@ function buildShadows() {
   R.lamp = {
     tile, target: lt, ents: le, views, camera: new THREE.PerspectiveCamera(90, 1, LAMP_NEAR, LAMP_FAR),
     at: null, pos: new THREE.Vector3(), cell: new THREE.Vector3(), level: 14, hole: 0.87, on: 0, scan: 0, age: 99,
-    dirty: true, landAt: 0, bare: false,
+    dirty: true, landAt: 0, bare: false, want: null, power: 1, strength: 1,
   };
   R.shared.uLampMap.value = lt.depthTexture;
   R.shared.uLampEnts.value = le.depthTexture;
@@ -408,15 +418,20 @@ function buildShadows() {
   R.renderer.setRenderTarget(null);
 }
 
-// Where a picture taken along the light should be centred: on you, moved a whole dot of it at a time so
-// that shadows do not shimmer as you walk
-function aimAlongLight(cam, reach, size) {
-  const L = R.shared.uSunDir.value, c = R.camera.position;
+// Where a picture taken along the light `L` should be centred: on you, moved a whole dot of the picture
+// at a time so that shadows do not shimmer as you walk. The dots are counted from a spot near you
+// (`anchor`, moved only when you have gone far from it) and not from the middle of the world: out
+// there, the slightest turn of the sun would slide every dot of the picture across the land.
+const rel = new THREE.Vector3();
+function aimAlongLight(cam, reach, size, L, anchor) {
+  const c = R.camera.position;
+  if (Math.abs(c.x - anchor.x) > 48 || Math.abs(c.y - anchor.y) > 48 || Math.abs(c.z - anchor.z) > 48) anchor.set(Math.round(c.x / 16) * 16, Math.round(c.y / 16) * 16, Math.round(c.z / 16) * 16);
   sx.crossVectors(UP_Z, L).normalize();
   sy.crossVectors(L, sx);
   const texel = 2 * reach / size;
-  const ax = Math.round(c.dot(sx) / texel) * texel - c.dot(sx), ay = Math.round(c.dot(sy) / texel) * texel - c.dot(sy);
-  sc.copy(c).addScaledVector(sx, ax).addScaledVector(sy, ay);
+  rel.subVectors(c, anchor);
+  const u = rel.dot(sx), v = rel.dot(sy);
+  sc.copy(c).addScaledVector(sx, Math.round(u / texel) * texel - u).addScaledVector(sy, Math.round(v / texel) * texel - v);
   cam.position.copy(sc).addScaledVector(L, 210);
   cam.up.copy(UP_Z);
   cam.lookAt(sc);
@@ -430,9 +445,11 @@ function aimAlongLight(cam, reach, size) {
 function drawLand(atOnce) {
   const S = R.shadow, cam = S.camera, r = R.renderer, scene = R.scene, fog = scene.fog;
   if (S.part < 0) {
-    aimAlongLight(cam, S.reach, S.size);
+    // (along the light as it was when last drawn, unless the sun has since moved enough to tell: the
+    // same dots fall on the same ground then, and a redrawn picture looks just like the old one)
+    if (!S.drawn || S.turned) S.toDir.copy(R.shared.uSunDir.value); else S.toDir.copy(S.dir);
+    aimAlongLight(cam, S.reach, S.size, S.toDir, S.anchor);
     S.toCentre.copy(sc);
-    S.toDir.copy(R.shared.uSunDir.value);
     S.toVP.copy(BIAS).multiply(cam.projectionMatrix).multiply(cam.matrixWorldInverse);
     S.dirty = false;
     S.part = 0;
@@ -467,7 +484,7 @@ function drawLand(atOnce) {
 // The things that move (layer 2, set where their models are built), near you
 function drawBodies() {
   const S = R.shadow, cam = S.ecam, r = R.renderer, scene = R.scene, fog = scene.fog;
-  aimAlongLight(cam, S.ereach, S.esize);
+  aimAlongLight(cam, S.ereach, S.esize, S.drawn ? S.dir : R.shared.uSunDir.value, S.eanchor);
   entsVP.copy(BIAS).multiply(cam.projectionMatrix).multiply(cam.matrixWorldInverse);
   R.shared.uEntsLin.value.setFromMatrix4(entsVP);
   scene.fog = null;
@@ -487,8 +504,10 @@ function sunShadows() {
   if (S.drawn) {
     const turned = 1 - S.dir.dot(L), dx = c.x - S.centre.x, dy = c.y - S.centre.y, dz = c.z - S.centre.z;
     const far = dx * dx + dy * dy + dz * dz;
-    // (a fourteenth of a degree of sun, or eight blocks of walking; at once if the time was changed or you were moved)
-    due = S.dirty || turned > 8e-7 || far > 64;
+    // (a twenty-second of a degree of sun, which moves the tip of a tall shadow half a dot, or six
+    // blocks of walking; at once if the time was changed or you were moved)
+    S.turned = turned > 3e-7;
+    due = S.dirty || S.turned || far > 36;
     now = turned > 2e-4 || far > 900;
   }
   if (S.part >= 0) drawLand(false);
@@ -526,7 +545,7 @@ function findLamp() {
   }
   const here = w.getLight(cx, cy, cz)[1], there = w.getLight(ax, ay, az)[1];
   if (here < 3 && there < 3) return null;
-  let best = null, bestScore = 0;
+  let best = null, bestScore = 0, top = 0, second = 0;
   const L = R.lamp, RX = 12, RY = 9;
   for (let chz = (cz - RX) >> 4; chz <= (cz + RX) >> 4; chz++) for (let chx = (cx - RX) >> 4; chx <= (cx + RX) >> 4; chx++) {
     const ch = w.getChunk(chx, chz);
@@ -540,11 +559,14 @@ function findLamp() {
       const g0 = level - (Math.abs(x - cx) + Math.abs(y - cy) + Math.abs(z - cz)), g1 = level - (Math.abs(x - ax) + Math.abs(y - ay) + Math.abs(z - az));
       let score = Math.max(g0 >= 2 && g0 <= here + 1 ? g0 : 0, g1 >= 2 && g1 <= there + 1 ? g1 + 1 : 0);
       if (!score) continue;
+      if (score > top) { second = top; top = score; } else if (score > second) second = score;
       // (the lamp already casting keeps the job unless another is clearly the one now)
-      if (L.at && L.at.x === x && L.at.y === y && L.at.z === z) score += 1.5;
+      if (L.at && L.at.x === x && L.at.y === y && L.at.z === z) score += 4;
       if (score > bestScore) { bestScore = score; best = { x, y, z, id }; }
     }
   }
+  // Where several lamps light a place about equally, none of them throws much of a shadow
+  if (best) best.power = Math.max(0.3, Math.min(1, (top - second) / 3));
   return best;
 }
 
@@ -610,28 +632,36 @@ function placeLamp(at) {
 function updateLamp(dt, wanted) {
   const L = R.lamp, u = R.shared.uLamp.value;
   L.scan -= dt;
-  if (!wanted) { L.at = null; L.on = 0; u.w = 0; return; }
+  if (!wanted) { L.at = null; L.want = null; L.on = 0; u.w = 0; return; }
   if (L.scan <= 0) {
     L.scan = 0.35;
-    const found = findLamp(), was = L.at;
-    if (!found) L.at = null;
-    else {
-      if (!was || was.x !== found.x || was.y !== found.y || was.z !== found.z) { L.on = 0; L.dirty = true; L.landAt = 0; }
-      L.at = found;
-      L.level = BLOCKS[found.id].light;
-      placeLamp(found);
-    }
+    L.want = findLamp();
+    if (L.want) L.power = L.want.power;
   }
-  if (!L.at) { L.on = 0; u.w = 0; return; }
+  const same = (a, b) => !!a && !!b && a.x === b.x && a.y === b.y && a.z === b.z;
+  // One lamp's shadows fade out before another's fade in, rather than swapping in an instant
+  if (L.at && !same(L.at, L.want)) {
+    L.on = Math.max(0, L.on - dt * 3);
+    if (L.on <= 0) L.at = null;
+  }
+  if (!L.at) {
+    if (!L.want) { L.on = 0; u.w = 0; return; }
+    L.at = L.want; L.on = 0; L.dirty = true; L.landAt = 0; L.strength = L.power;
+    L.level = BLOCKS[L.at.id].light;
+    placeLamp(L.at);
+  } else if (same(L.at, L.want)) {
+    L.on = Math.min(1, L.on + dt * 2);
+    if (L.scan === 0.35) placeLamp(L.at);   // (it may show on your other side now)
+  }
+  L.strength += Math.max(-dt * 1.5, Math.min(dt * 1.5, L.power - L.strength));
   // the land round the lamp only when it has changed; the things that move every few frames, if any are near
   if (L.dirty && performance.now() - L.landAt >= 120) { drawLamp(L.target, 1); L.dirty = false; L.landAt = performance.now(); }
   if (++L.age >= (isTouchDevice ? 3 : 2)) {
     L.age = 0;
     if (bodiesNear(L.pos, LAMP_FAR + 1)) { drawLamp(L.ents, 2); L.bare = false; } else if (!L.bare) { drawLamp(L.ents, 3); L.bare = true; }
   }
-  L.on = Math.min(1, L.on + dt * 2.5);
   const c = R.camera.position;
-  u.set(L.pos.x - c.x, L.pos.y - c.y, L.pos.z - c.z, L.on);
+  u.set(L.pos.x - c.x, L.pos.y - c.y, L.pos.z - c.z, L.on * L.strength);
   R.shared.uLampCell.value.set(L.cell.x - c.x, L.cell.y - c.y, L.cell.z - c.z);
   R.shared.uLampLevel.value = L.level;
 }

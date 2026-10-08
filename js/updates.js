@@ -67,6 +67,19 @@ const LAKESIDE = { seed: 2024, at: [2, -22], view: [0, 0, 12.5], pitch: -0.03, t
 export const UPDATES = [
   {
     // a small update: it keeps the A New Look picture
+    version: '1.9.4', name: 'Steady Shadows', date: '2026-10-08',
+    splashes: ['Steady now!', 'Leaves on the wind!', 'Mind your shadow!', 'Light a torch!', 'Looks like rain!', 'Same you, any device!', 'Cherry petals!', 'Surprise me!',
+      'Golden hour!', 'Who are you today?', 'A gust!', 'Faster!'],
+    scene: LAKESIDE,
+    notes: [
+      'Shadows hold still while you walk. They no longer shift or shimmer each time the game redraws them, which showed most far from where a world began.',
+      'Shadows in the distance fade out smoothly around you instead of appearing and vanishing in a line as you move.',
+      'Where several torches light the same room, their shadows are fainter and no longer swap from one torch to another as you look around; one lamp\'s shadows fade out before the next one\'s fade in.',
+      'Long shadows creep with the sun in smaller steps.',
+    ],
+  },
+  {
+    // a small update: it keeps the A New Look picture
     version: '1.9.3', name: 'Wind & Leaves', date: '2026-10-07',
     splashes: ['Faster!', 'Leaves on the wind!', 'Mind your shadow!', 'Light a torch!', 'Looks like rain!', 'Same you, any device!', 'Cherry petals!', 'Surprise me!',
       'Golden hour!', 'Who are you today?', 'A gust!', 'The Wither!'],
