@@ -27,6 +27,7 @@ export const G = {
     showCoords: false,
     gamma: 0.5,
     viewBob: true,
+    shadows: true,        // the sun and moon cast shadows (turned off by itself on a device too slow for it)
   },
 };
 

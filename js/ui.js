@@ -7,7 +7,7 @@ import { PROFESSIONS, LEVEL_NAMES, levelProgress } from './villagers.js';
 import { ADV, TABS } from './advancements.js';
 import { structuresNear, treasureAt } from './structures.js';
 import { SEA, BIOME } from './constants.js';
-import { SKINS, SKIN_BY, hasSkin, mySkin, chooseSkin } from './skins.js';
+import { SLOTS, CHARACTERS, PRIZES, item, owns, hasPrize, prizesIn, codeOf, myLook, mySkin, wear, wearLook, randomLook, armColour } from './skins.js';
 import { skinDoll } from './entities.js';
 import { paintHand } from './render.js';
 import { sameItem, stack, craftableTimes, takeIngredients } from './inventory.js';
@@ -168,7 +168,7 @@ export class UI {
     $('chat-form').addEventListener('submit', (e) => {
       e.preventDefault();
       const inp = $('chat-input');
-      if (G.net) G.net.say(inp.value);
+      if (G.net) G.net.say(inp.value); else if (inp.value.trim()[0] === '/') G.game.command(inp.value);
       inp.value = '';
       this.back();
     });
@@ -180,11 +180,11 @@ export class UI {
     });
     $('chat-input').addEventListener('input', () => this.chatHints());
     $('chat-input').addEventListener('focus', () => this.chatHints());
-    $('t-chat').addEventListener('click', (e) => { e.preventDefault(); if (G.net && !G.screen) this.openScreen('chat'); });
+    $('t-chat').addEventListener('click', (e) => { e.preventDefault(); if ((G.net || (G.account && G.account.admin)) && !G.screen) this.openScreen('chat'); });
     on('b-options', () => this.openScreen('options'));
-    on('b-skins', () => this.openScreen('skins'));
     on('b-avatar', () => this.openScreen('skins'));
     on('b-skins-back', () => this.back());
+    on('b-skin-random', () => { wearLook(randomLook()); sfx('click'); this.drawAvatar(); this.buildSkins(); });
     on('b-help', () => this.openScreen('help'));
     on('b-help-back', () => this.back());
     on('b-play-world', () => this.playSelected());
@@ -291,7 +291,8 @@ export class UI {
     box.hidden = true;
     if (text[0] !== '/') return;
     const admin = !!(G.account && G.account.admin);
-    const CMDS = admin ? [['where', 'where a player is', 1], ['tp', 'go to a player', 1], ['bring', 'fetch a player to you', 1], ['creative', 'creative mode'], ['survival', 'survival mode'],
+    const CMDS = admin ? [['time', 'set the time of day', ['day', 'noon', 'sunset', 'night', 'midnight', 'sunrise']], ['weather', 'change the weather', ['clear', 'cloudy', 'rain', 'thunder']],
+      ['where', 'where a player is', 1], ['tp', 'go to a player, or to x y z', 1], ['bring', 'fetch a player to you', 1], ['creative', 'creative mode'], ['survival', 'survival mode'],
       ['kill', 'kill a player', 1], ['kick', 'send a player out', 1], ['ban', 'ban a player', 1], ['unban', 'let a player back', 1], ['op', 'make a player an admin', 1], ['deop', 'take admin away', 1],
       ['reload', 'update the game for everyone'], ['players', 'everyone online'], ['accounts', 'every account'], ['list', 'who is here'], ['help', 'all the commands']]
       : [['list', 'who is here'], ['help', 'the commands']];
@@ -303,13 +304,19 @@ export class UI {
     } else {
       const cmd = CMDS.find(([c]) => c === m[1].toLowerCase());
       if (!cmd || !cmd[2]) return;
-      // the players here first, then (for an admin) every account on the server
-      const here = G.net ? [...G.net.players.values()].filter((a) => !a.hidden).map((a) => a.name).filter(Boolean) : [];
-      if (admin && !this.allNames && !this.namesAsked) { this.namesAsked = true; G.game.adminPlayers().then((l) => { this.allNames = l.map((x) => x.name); if (G.screen === 'chat') this.chatHints(); }, () => { this.namesAsked = false; }); }
-      const names = [...new Set([...here, ...(this.allNames || [])])].filter((n) => n !== (G.account && G.account.name));
-      const part = (m[3] || '').toLowerCase();
-      items = names.filter((n) => n.toLowerCase().startsWith(part)).slice(0, 12).map((n) => ({ label: n, about: here.includes(n) ? 'here' : '', value: `/${cmd[0]} ${n}` }));
-      if (items.length === 1 && items[0].label.toLowerCase() === part) return;
+      if (Array.isArray(cmd[2])) {
+        // (a command with a few set choices: picking one sends it)
+        const part = (m[3] || '').toLowerCase();
+        items = cmd[2].filter((o) => o.startsWith(part)).map((o) => ({ label: o, about: '', value: `/${cmd[0]} ${o}`, go: true }));
+      } else {
+        // the players here first, then (for an admin) every account on the server
+        const here = G.net ? [...G.net.players.values()].filter((a) => !a.hidden).map((a) => a.name).filter(Boolean) : [];
+        if (admin && !this.allNames && !this.namesAsked) { this.namesAsked = true; G.game.adminPlayers().then((l) => { this.allNames = l.map((x) => x.name); if (G.screen === 'chat') this.chatHints(); }, () => { this.namesAsked = false; }); }
+        const names = [...new Set([...here, ...(this.allNames || [])])].filter((n) => n !== (G.account && G.account.name));
+        const part = (m[3] || '').toLowerCase();
+        items = names.filter((n) => n.toLowerCase().startsWith(part)).slice(0, 12).map((n) => ({ label: n, about: here.includes(n) ? 'here' : '', value: `/${cmd[0]} ${n}` }));
+        if (items.length === 1 && items[0].label.toLowerCase() === part) return;
+      }
     }
     if (!items.length) return;
     for (const it of items) {
@@ -318,7 +325,11 @@ export class UI {
       if (it.about) b.appendChild(h('small', null, it.about));
       // (pointerdown, so the keyboard stays up on an iPad)
       b.addEventListener('pointerdown', (e) => e.preventDefault());
-      b.addEventListener('click', () => { inp.value = it.value; inp.focus(); this.chatHints(); });
+      b.addEventListener('click', () => {
+        inp.value = it.value;
+        if (it.go) { $('chat-form').requestSubmit(); return; }
+        inp.focus(); this.chatHints();
+      });
       box.appendChild(b);
     }
     box.hidden = false;
@@ -507,44 +518,80 @@ export class UI {
     this.drawAvatar();
   }
 
-  // ---------------------------------------------------------------- skins
-  // Your character, standing at the bottom of the title screen (tap it to change skin)
+  // ---------------------------------------------------------------- your character
+  // Your character, standing at the bottom of the title screen (tap it to change how you look)
   drawAvatar() {
-    const key = mySkin(), cv = $('title-avatar'), g = cv.getContext('2d');
+    const cv = $('title-avatar'), g = cv.getContext('2d');
     g.clearRect(0, 0, cv.width, cv.height);
-    g.drawImage(skinDoll(key), 0, 0);
-    $('title-avatar-name').textContent = SKIN_BY[key].name;
+    g.drawImage(skinDoll(mySkin()), 0, 0);
     // (pop up afresh each time the title comes back)
     const b = $('b-avatar');
     b.style.animation = 'none'; void b.offsetWidth; b.style.animation = '';
   }
 
-  // The Skins page: every skin there is, the one you are looking at drawn large, prizes shown in shadow
-  // until they are won
-  buildSkins(show = mySkin()) {
+  // The Character page: ready-made characters, then a tab for each part of you. Every choice is shown on
+  // your own character; prizes are in shadow until they are won.
+  buildSkins(note = '') {
+    const TABS = [['chars', 'Characters'], ['tone', 'Skin'], ['face', 'Face'], ['hair', 'Hair'], ['hat', 'Hats'], ['specs', 'Glasses'], ['top', 'Tops'], ['legs', 'Trousers'], ['back', 'Back']];
+    const tab = this.skinTab || 'chars', look = myLook(), behind = tab === 'back';
+    const tabs = $('skin-tabs');
+    tabs.innerHTML = '';
+    for (const [key, name] of TABS) {
+      const b = h('button', key === tab ? 'sel' : '', name);
+      b.type = 'button';
+      b.addEventListener('click', () => { this.skinTab = key; sfx('click', null, { vol: 0.5 }); this.buildSkins(); });
+      tabs.appendChild(b);
+    }
+    const picked = (slot, key) => { if (wear(slot, key)) { sfx('click'); this.drawAvatar(); this.buildSkins(); } };
+    // colours that go with the tab: eyes with the face, hair colour with the hair
+    const sw = $('skin-swatches'), extra = { face: 'eye', hair: 'hairc' }[tab];
+    sw.innerHTML = '';
+    sw.hidden = !extra;
+    if (extra) {
+      const slot = SLOTS.find((x) => x.key === extra);
+      sw.appendChild(h('span', null, slot.name + ':'));
+      for (const it of slot.items) {
+        const b = h('button', it.key === look[extra] ? 'sel' : '');
+        b.type = 'button';
+        b.title = it.name;
+        b.setAttribute('aria-label', it.name);
+        b.style.background = `rgb(${it.c.join(',')})`;
+        b.addEventListener('click', () => picked(extra, it.key));
+        sw.appendChild(b);
+      }
+    }
+    // just the head, for the tabs that change it
+    const head = (doll) => { const c = document.createElement('canvas'); c.width = 18; c.height = 21; c.getContext('2d').drawImage(doll, -5, -2); return c; };
+    const zoom = ['tone', 'face', 'hair', 'hat', 'specs'].includes(tab);
     const list = $('skin-list');
     list.innerHTML = '';
-    const worn = mySkin();
-    for (const S of SKINS) {
-      const have = hasSkin(S.key);
-      const card = h('button', 'skin-card' + (S.key === worn ? ' sel' : '') + (have ? '' : ' locked'));
-      card.type = 'button';
-      card.appendChild(skinDoll(S.key));
-      card.appendChild(h('span', null, have ? S.name : 'Locked'));
-      card.addEventListener('click', () => {
-        if (have && chooseSkin(S.key)) { sfx('click'); this.drawAvatar(); }
-        else sfx('click', null, { vol: 0.4 });
-        this.buildSkins(S.key);
+    const card = (name, code, sel, need, onPick) => {
+      const c = h('button', 'skin-card' + (zoom ? ' head' : '') + (sel ? ' sel' : '') + (need ? ' locked' : ''));
+      c.type = 'button';
+      const doll = skinDoll(code, behind);
+      c.appendChild(zoom ? head(doll) : doll);
+      c.appendChild(h('span', null, need ? 'Prize' : name));
+      c.addEventListener('click', () => {
+        if (need) { sfx('click', null, { vol: 0.4 }); this.buildSkins(`${name} is a prize. To win it: ${PRIZES[need]}.`); } else onPick();
       });
-      list.appendChild(card);
+      list.appendChild(c);
+    };
+    if (tab === 'chars') {
+      const mine = codeOf(look);
+      for (const ch of CHARACTERS) {
+        const need = prizesIn(ch.look).find((p) => !hasPrize(p));
+        card(ch.name, ch.key, codeOf(ch.look) === mine, need, () => { if (wearLook(ch.look)) { sfx('click'); this.drawAvatar(); this.buildSkins(); } });
+      }
+    } else {
+      for (const it of SLOTS.find((x) => x.key === tab).items) {
+        card(it.name, codeOf({ ...look, [tab]: it.key }), it.key === look[tab], owns(it) ? null : it.prize, () => picked(tab, it.key));
+      }
     }
-    const S = SKIN_BY[show] || SKIN_BY[worn], have = hasSkin(S.key);
     const cv = $('skin-preview'), g = cv.getContext('2d');
     g.clearRect(0, 0, cv.width, cv.height);
-    g.drawImage(skinDoll(S.key), 0, 0);
-    cv.classList.toggle('locked', !have);
-    $('skin-name').textContent = have ? S.name : '???';
-    $('skin-note').textContent = !have ? `A prize. To win it: ${S.need}.` : S.unlock ? `A prize you won: ${S.need.toLowerCase()}.` : S.key === worn ? 'You are wearing this.' : '';
+    g.drawImage(skinDoll(codeOf(look), behind), 0, 0);
+    $('skin-note').textContent = note || (tab === 'legs' && item('top', look.top).legs ? 'The top you are wearing covers your legs.'
+      : tab === 'hair' && item('hat', look.hat).all ? 'Your helmet hides your hair.' : behind ? 'Seen from behind.' : '');
   }
 
   // Every update, newest first
@@ -584,7 +631,7 @@ export class UI {
 
   startPlaying() {
     // the arm in front of you is your skin's
-    paintHand(SKIN_BY[mySkin()].arm || SKIN_BY[mySkin()].skin);
+    paintHand(armColour(myLook()));
     this.stack.length = 0;
     G.screen = null;
     this.section(null);
@@ -642,7 +689,7 @@ export class UI {
   updateTouchVisibility() {
     const show = G.touchMode && G.state === 'playing' && !G.screen;
     $('touch-ui').hidden = !show;
-    $('t-chat').hidden = !G.net;
+    $('t-chat').hidden = !(G.net || (G.account && G.account.admin));   // (an admin has commands in any world)
     document.body.classList.toggle('touch', G.touchMode);
   }
 
@@ -1084,6 +1131,7 @@ export class UI {
       { key: 'touchSens', label: 'Touch Look Speed', min: 0.2, max: 3, step: 0.05, fmt: (v) => Math.round(v * 100) + '%' },
       { key: 'autoJump', label: 'Auto-Jump', toggle: true },
       { key: 'viewBob', label: 'View Bobbing', toggle: true },
+      { key: 'shadows', label: 'Shadows', toggle: true },
       { key: 'touch', label: 'Touch Controls', cycle: ['auto', 'on', 'off'], names: { auto: 'Auto', on: 'On', off: 'Off' } },
       { key: 'touchAim', label: 'Touch Aiming', cycle: ['finger', 'crosshair'], names: { finger: 'Where You Tap', crosshair: 'Crosshair' } },
       { key: 'dayLength', label: 'Day Length', cycle: [1200, 600], names: { 1200: '20 min', 600: '10 min' } },
@@ -1103,6 +1151,7 @@ export class UI {
         b.addEventListener('click', () => {
           sfx('click');
           if (o.toggle) G.settings[o.key] = !G.settings[o.key];
+          if (o.key === 'shadows') G.settings.shadowsPicked = true;   // (chosen by hand: the game leaves it alone from now on)
           else G.settings[o.key] = o.cycle[(o.cycle.indexOf(G.settings[o.key]) + 1) % o.cycle.length];
           this.applySetting(o.key);
           sync();

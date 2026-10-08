@@ -35,7 +35,7 @@ async function openGame() {
   for (let i = 0; i < 200 && !G.game; i++) await sleep(50);
   const { B, ITEMS } = await imp('blocks.js');
   const { ckey } = await imp('world.js');
-  return { f, G, B, ITEMS, ckey };
+  return { f, G, B, ITEMS, ckey, WX: await imp('weather.js'), SK: await imp('skins.js') };
 }
 
 const waitPlaying = async (G) => {
@@ -44,7 +44,7 @@ const waitPlaying = async (G) => {
 };
 
 async function check(fx) {
-  const { f, G, B, ITEMS, ckey } = await openGame();
+  const { f, G, B, ITEMS, ckey, WX, SK } = await openGame();
   const e = fx.expect, bad = [];
   const slot = (s) => (s ? `${ITEMS[s.id].key} x${s.count}${s.dmg ? ' /' + s.dmg : ''}${s.e ? ' ' + JSON.stringify(s.e) : ''}` : 'nothing');
   try {
@@ -62,6 +62,10 @@ async function check(fx) {
     // experience and achievements (1.7 on)
     if (e.level !== undefined && p.xpLevel !== e.level) bad.push(`experience level ${p.xpLevel}, expected ${e.level}`);
     for (const k of e.adv || []) if (!p.adv.has(k)) bad.push(`the achievement "${k}" is gone`);
+    // the weather the world was left in, and the player's own character with the prizes they had won (1.9.1 on)
+    if (e.weather && WX.weatherKind() !== e.weather) bad.push(`the weather is ${WX.weatherKind()}, expected ${e.weather}`);
+    if (e.look && SK.mySkin() !== e.look) bad.push(`the character is ${SK.mySkin()}, expected ${e.look}`);
+    for (const k of e.prizes || []) if (!SK.hasPrize(k)) bad.push(`the prize for "${k}" is gone`);
     if (e.nether) { const [x, y, z] = e.nether; if (G.world.getBlock(x, y, z) !== B.gold_block) bad.push('the gold block in the Nether is gone'); }
     if (G.dim !== 'overworld') { G.game.travel('overworld', 'spawn'); await waitPlaying(G); }
     const [x, y, z] = e.pos;

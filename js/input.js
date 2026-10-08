@@ -81,7 +81,7 @@ export function initInput() {
         lastW = now;
       }
       if (code === 'KeyE') { G.ui.openScreen(G.player.creative ? 'creative' : 'inventory'); return; }
-      if ((code === 'KeyT' || code === 'Enter') && G.net) { e.preventDefault(); G.ui.openScreen('chat'); return; }
+      if ((code === 'KeyT' || code === 'Enter') && (G.net || (G.account && G.account.admin))) { e.preventDefault(); G.ui.openScreen('chat'); return; }
       if (code === 'KeyQ') { input.drop = true; input.dropAll = e.ctrlKey || e.metaKey; }
       if (code === 'KeyF') input.swapHands = true;
       if (code === 'KeyL') { G.ui.openScreen('adv'); return; }

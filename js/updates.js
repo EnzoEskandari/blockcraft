@@ -66,17 +66,33 @@ const LAKESIDE = { seed: 2024, at: [2, -22], view: [0, 0, 12.5], pitch: -0.03, t
 
 export const UPDATES = [
   {
+    // a small update: it keeps the A New Look picture
+    version: '1.9.1', name: 'Sun & Storms', date: '2026-10-07',
+    splashes: ['Looks like rain!', 'Mind your shadow!', 'Thunder!', 'Golden hour!', 'Nice hat!', 'Who are you today?', 'Sunglasses!', 'Surprise me!',
+      'Win the crown!', 'Bring a coat!', 'Sleep through the storm!', 'The Wither!'],
+    scene: LAKESIDE,
+    notes: [
+      'Real sunlight. The sun and the moon light the world from where they stand in the sky: the sides of things that face them are bright, and everything casts a shadow that moves through the day. Hills, trees, houses, animals and players all do. Evenings are golden and the shade is cool.',
+      'Lamps, torches and fire glow warm against the dark, and now show in daytime shade too.',
+      'The blocks are back to the textures they always had; the repainted ones from 1.9 are gone. Grass, flowers and leaves still stir in the wind.',
+      'Water has its old look back, with new light on it: clear when you look down into it, a mirror of the sky when you look across it, and glittering where the sun catches it.',
+      'Weather. Days can be clear, cloudy or wet, and the clouds come and go. Rain falls (snow in the cold lands, and nothing in the deserts), and thunderstorms bring a dark sky, lightning and thunder. You can sleep through a storm.',
+      'Make your own character. Choose a skin colour, a face and eye colour, hair and its colour, a hat, glasses, a top, trousers and something for your back, or tap Surprise Me. There are twenty ready-made characters to start from, and everyone you play with sees yours.',
+      'Prizes are now things to wear: crowns, horns, capes, armour and more for defeating the Void Dragon, destroying the Wither, visiting every land, lighting a beacon, killing one of every monster and eating every food. Any you had already won are still yours.',
+      'Tap your character on the title screen to change it. (The Skins button is gone.)',
+      'Options has a Shadows switch. On a device that cannot keep up, the game turns shadows off by itself.',
+    ],
+  },
+  {
     version: '1.9', name: 'A New Look', date: '2026-10-07',
     splashes: ['Fresh paint!', 'Look at that water!', 'Mind the lava!', 'Who are you today?', 'Nice cape!', 'Seventeen skins!', 'The Wither!', 'Leaves in the wind!',
       'Now in colour!', 'Dress up!', 'Win the crown!', 'Sharper pixels!'],
     scene: LAKESIDE,
     notes: [
-      'A new look for the whole game. Stone, dirt, grass, sand, planks, logs, leaves, cobblestone, bricks and ores have been repainted, and every block has cleaner pixels and richer colour.',
-      'Water ripples and flows, with two sets of waves crossing. Lava churns and glows by itself in the dark.',
-      'Grass, flowers and leaves stir in the wind, and daylight is warm in the sun and cool in the shade.',
-      'Skins: choose how you look from the new Skins page on the title screen. Eleven characters to start with, from Wanderer and Ranger to Knight, Wizard, Astronaut and Robot. Everyone you play with sees your skin.',
-      'Six prize skins, with capes, crowns and hats, for the hardest things in the game: defeating the Void Dragon, destroying the Wither, visiting every land, lighting a beacon, killing one of every monster and eating every food. Ones you have already done count.',
-      'Your character stands on the title screen. Tap it to change skin.',
+      'Grass, flowers and leaves stir in the wind.',
+      'Skins: choose how you look. Eleven characters to start with, from Wanderer and Ranger to Knight, Wizard, Astronaut and Robot. Everyone you play with sees your skin.',
+      'Prizes with capes, crowns and hats for the hardest things in the game: defeating the Void Dragon, destroying the Wither, visiting every land, lighting a beacon, killing one of every monster and eating every food. Ones you have already done count.',
+      'Your character stands on the title screen.',
       'The Blight is now called the Wither, and what it leaves is a Nether Star.',
     ],
   },

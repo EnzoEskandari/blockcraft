@@ -3,7 +3,7 @@
 // Messages travel through the Blockcraft server (server.js), which only relays them within a room code.
 import * as THREE from 'three';
 import { G, store, load } from './game.js';
-import { SKIN_BY, mySkin } from './skins.js';
+import { validSkin, mySkin } from './skins.js';
 import { R, itemModel, tintModel } from './render.js';
 import { buildModel, holdInHand, lightAt, explosionFx, explosionDamage, spawnBlockParticles } from './entities.js';
 import { BLOCKS, B, ITEMS } from './blocks.js';
@@ -11,6 +11,7 @@ import { packSlots, unpackSlots } from './inventory.js';
 import { cleanEnch } from './enchant.js';
 import { rayBox } from './physics.js';
 import { sfx, blockSound } from './audio.js';
+import { followWeather, weatherKind } from './weather.js';
 
 const r2 = (v) => Math.round(v * 100) / 100;
 const MOB_RANGE = 72;          // guests see the host's mobs this far away
@@ -272,7 +273,7 @@ export class Net {
       let timer = setTimeout(() => fail('The multiplayer server did not answer. Check your connection and try again.', true), 25000);
       ws.onopen = () => {
         onStatus('Joining…');
-        ws.send(JSON.stringify({ t: 'world', id: worldId, dim, token: account.token, haves, mine, spec: spec || undefined, caps: 2 }));   // (caps: 1 hides spectators, 2 reloads when an admin says so)
+        ws.send(JSON.stringify({ t: 'world', id: worldId, dim, token: account.token, haves, mine, spec: spec || undefined, caps: 3 }));   // (caps: 1 hides spectators, 2 reloads when an admin says so, 3 has weather and sets it and the time when told)
       };
       ws.onerror = () => {};
       ws.onclose = () => {
@@ -405,11 +406,10 @@ export class Net {
       setTimeout(() => { location.href = location.pathname + (code ? '?world=' + code : ''); }, this.role === 'host' ? 1800 : 700);
       return;
     }
-    if (m.a === 'goto') {
-      const p = G.player;
-      if (p && Number.isFinite(m.x + m.y + m.z)) { p.pos.x = m.x + 0.5; p.pos.y = m.y + 0.2; p.pos.z = m.z + 0.5; p.vel.x = p.vel.y = p.vel.z = 0; p.fallDist = 0; p.safeLanding = G.clock + 15; }
-      return;
-    }
+    if (m.a === 'goto') { G.game.teleport(m.x, m.top ? null : m.y, m.z); return; }
+    // (the time and the weather are set by whoever runs the world, and reach everyone else from there)
+    if (m.a === 'time') { if (this.role === 'host') G.game.setTime(m.v); return; }
+    if (m.a === 'weather') { if (this.role === 'host') G.game.setWeatherNow(m.v, m.secs); return; }
     if (m.a === 'kill') {
       const p = G.player;
       if (p && !p.dead) { p.lastAttacker = by; p.die('admin'); }
@@ -433,9 +433,10 @@ export class Net {
 
   addPlayer(id, name, slot, skin) {
     let a = this.players.get(id);
-    if (a && a.name === name && (a.skin || '') === (SKIN_BY[skin] ? skin : '')) return a;
+    skin = validSkin(skin);
+    if (a && a.name === name && (a.skin || '') === skin) return a;
     if (a) a.dispose();
-    a = new Avatar(id, name, slot, SKIN_BY[skin] ? skin : '');
+    a = new Avatar(id, name, slot, skin);
     this.players.set(id, a);
     return a;
   }
@@ -793,6 +794,7 @@ export class Net {
       }
       case 't':
         G.time = d.t; G.day = d.d; G.nightsNoSleep = d.n;
+        if (d.w) followWeather(d.w);
         break;
       case 'wake':
         if (G.sleeping) { G.game.wakeUp(); G.ui.toast('Good morning'); }
@@ -874,7 +876,7 @@ export class Net {
     this.timeT -= dt;
     if (this.timeT <= 0 && this.players.size) {
       this.timeT = 1;
-      this.send({ k: 't', t: G.time, d: G.day || 0, n: G.nightsNoSleep || 0 });
+      this.send({ k: 't', t: G.time, d: G.day || 0, n: G.nightsNoSleep || 0, w: weatherKind() });
     }
     this.contT -= dt;
     if (this.contT <= 0) {

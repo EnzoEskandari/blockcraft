@@ -67,94 +67,80 @@ function voronoi(r, n) {
 // ---------------------------------------------------------------- painters
 const GRASS = [[86, 150, 46], [102, 168, 56], [116, 182, 64], [94, 158, 52], [126, 192, 72]];
 
-// Pixel art has few colours, laid down in clusters: a value from 0 to 1 picks one of a handful of shades
-const shade = (pal, v) => pal[Math.max(0, Math.min(pal.length - 1, Math.floor(v * pal.length)))];
-
 function stone(p) {
-  // blotches stretched sideways in four greys, with a few short darker cracks
   const n = vnoise(p.r, 4), n2 = vnoise(p.r, 8);
-  const pal = [[102, 102, 102], [114, 114, 114], [126, 126, 126], [126, 126, 126], [142, 142, 142]];
-  p.each((x, y) => shade(pal, n(x, y * 2) * 0.6 + n2(x, y) * 0.3 + p.r() * 0.1));
-  for (let k = 0; k < 4; k++) {
-    const y = Math.floor(p.r() * 16), x0 = Math.floor(p.r() * 16), len = 2 + Math.floor(p.r() * 3);
-    for (let i = 0; i < len; i++) p.set((x0 + i) & 15, y, [90, 90, 90]);
-    p.set((x0 + 1) & 15, (y + 1) & 15, [150, 150, 150]);
-  }
+  p.each((x, y) => {
+    let v = 122 + (n(x, y) - 0.5) * 36 + (n2(x, y) - 0.5) * 18 + (p.r() - 0.5) * 10;
+    if (p.r() < 0.05) v -= 16;
+    return [v, v, v];
+  });
 }
-const DIRT = [[104, 73, 50], [121, 85, 58], [134, 96, 67], [134, 96, 67], [150, 108, 74]];
 function dirt(p) {
-  // browns in small clumps, with a pebble here and there
-  const n = vnoise(p.r, 8), n2 = vnoise(p.r, 4);
-  p.each((x, y) => shade(DIRT, n(x, y) * 0.55 + n2(x, y) * 0.25 + p.r() * 0.2));
-  for (let k = 0; k < 7; k++) p.set(Math.floor(p.r() * 16), Math.floor(p.r() * 16), k % 3 ? [118, 108, 98] : [164, 124, 88]);
+  const base = [134, 96, 67];
+  p.each(() => {
+    const r = p.r();
+    if (r < 0.1) return sh(base, 0.76);
+    if (r < 0.18) return sh(base, 1.14);
+    if (r < 0.22) return [118, 106, 96];
+    return jit(base, 7, p.r);
+  });
 }
 function grassTop(p) {
-  const n = vnoise(p.r, 4), n2 = vnoise(p.r, 8);
-  p.each((x, y) => GRASS[Math.max(0, Math.min(4, Math.floor(n(x, y) * 2.4 + n2(x, y) * 1.6 + p.r() * 1.2)))]);
+  const n = vnoise(p.r, 4);
+  p.each((x, y) => {
+    const k = Math.min(4, Math.floor(n(x, y) * 2.5 + p.r() * 2.5));
+    return GRASS[k];
+  });
 }
-// The side of a block with something growing on top: a ragged fringe hanging over the soil, and its shadow
-function fringed(p, pal, least, shadow) {
+function grassSide(p) {
   dirt(p);
-  let d = least + 1;
   for (let x = 0; x < 16; x++) {
-    d = Math.max(least, Math.min(least + 3, d + Math.floor(p.r() * 3) - 1));
-    for (let y = 0; y < d; y++) p.set(x, y, pal[Math.floor(p.r() * pal.length)]);
-    p.set(x, d, shadow);
-    if (p.r() < 0.25) p.set(x, d + 1, sh(pal[0], 0.82));
+    const depth = 3 + (p.r() < 0.5 ? 1 : 0) + (p.r() < 0.3 ? 1 : 0);
+    for (let y = 0; y < depth; y++) p.set(x, y, GRASS[Math.floor(p.r() * GRASS.length)]);
+    if (p.r() < 0.4) p.set(x, depth, sh(GRASS[0], 0.8));
   }
 }
-function grassSide(p) { fringed(p, GRASS, 2, [92, 64, 44]); }
-function snowySide(p) { fringed(p, [[240, 248, 250], [232, 242, 248], [248, 252, 255]], 2, [176, 190, 200]); }
+function snowySide(p) {
+  dirt(p);
+  for (let x = 0; x < 16; x++) {
+    const depth = 2 + (p.r() < 0.5 ? 1 : 0) + (p.r() < 0.3 ? 1 : 0);
+    for (let y = 0; y < depth; y++) p.set(x, y, jit([240, 248, 250], 5, p.r));
+    if (p.r() < 0.2) p.set(x, depth, [210, 222, 228]);
+  }
+}
 function cobble(p, mossy) {
-  // rounded stones in dark mortar, each lit from the top left
-  const vor = voronoi(p.r, 10);
+  const vor = voronoi(p.r, 11);
   const moss = vnoise(p.r, 4);
-  const at = (x, y) => vor((x + 16) & 15, (y + 16) & 15);
-  const gap = (c) => c.d2 - c.d1 < 0.9;
   p.each((x, y) => {
-    const c = at(x, y);
-    if (gap(c)) return [58, 58, 58];
-    let v = [108, 122, 138][Math.floor(c.v * 3)];
-    const a = at(x - 1, y - 1), b = at(x + 1, y + 1);
-    if (gap(a) || a.v !== c.v) v += 20; else if (gap(b) || b.v !== c.v) v -= 22;
+    const c = vor(x, y);
+    const edge = c.d2 - c.d1;
+    if (edge < 0.9) return jit([60, 60, 60], 6, p.r);
+    let v = (92 + c.v * 56) * (0.82 + 0.18 * Math.min(1, edge / 3)) + (p.r() - 0.5) * 14;
     let col = [v, v, v];
-    if (mossy && moss(x, y) > 0.5) col = mix(col, moss(y, x) > 0.5 ? [70, 110, 44] : [88, 130, 54], 0.8);
+    if (mossy && moss(x, y) > 0.55 && p.r() < 0.85) col = mix(col, [74, 112, 48], 0.75);
     return col;
   });
 }
 function planks(p, base) {
-  // four boards: a lit top edge, a dark gap beneath, end seams, streaks of grain and a knot or two
-  const seams = [0, 1, 2, 3].map((i) => (Math.floor(p.r() * 8) + i * 5) & 15);
-  const tone = [0, 1, 2, 3].map(() => 0.94 + p.r() * 0.1);
-  const n = vnoise(p.r, 8);
+  const seams = [0, 1, 2, 3].map(() => Math.floor(p.r() * 16));
+  const phase = [0, 1, 2, 3].map(() => p.r() * 6);
   p.each((x, y) => {
-    const board = y >> 2, row = y & 3, t = tone[board];
-    if (row === 3) return sh(base, 0.6);
-    if (x === seams[board]) return sh(base, 0.7);
-    if (x === ((seams[board] + 1) & 15)) return sh(base, 1.08 * t);
-    const grain = n(x, y * 4) > 0.62 ? 0.88 : 1;
-    return sh(base, t * grain * (row === 0 ? 1.1 : 1));
+    const board = y >> 2;
+    if ((y & 3) === 3) return sh(base, 0.7);
+    if (x === seams[board]) return sh(base, 0.78);
+    const grain = 0.93 + 0.07 * Math.sin(x * 0.8 + phase[board] + (y & 3) * 1.9);
+    return jit(sh(base, grain), 4, p.r);
   });
-  for (let k = 0; k < 2; k++) {
-    const x = 2 + Math.floor(p.r() * 12), y = (Math.floor(p.r() * 4) << 2) + 1;
-    p.set(x, y, sh(base, 0.66)); p.set(x + 1, y, sh(base, 0.78));
-  }
 }
 function bark(p, base, dark) {
-  // ridges running up the trunk that wander a little, with a highlight beside each groove
   const cols = [];
   for (let x = 0; x < 16; x++) cols.push(p.r());
-  const light = mix(base, [255, 255, 255], 0.14);
-  const drift = [];
-  let d = 0;
-  for (let y = 0; y < 16; y++) { if (p.r() < 0.3) d += p.r() < 0.5 ? -1 : 1; drift.push(d); }
+  const n = vnoise(p.r, 4);
   p.each((x, y) => {
-    const v = cols[(x + drift[y] + 32) & 15], next = cols[(x + drift[y] + 33) & 15];
-    if (v < 0.3) return dark;
-    if (next < 0.3) return light;
-    return v < 0.55 ? mix(base, dark, 0.45) : base;
+    const v = cols[x] + (n(x, y) - 0.5) * 0.5;
+    const c = v < 0.35 ? dark : v < 0.5 ? mix(base, dark, 0.5) : base;
+    return jit(c, 6, p.r);
   });
-  for (let k = 0; k < 3; k++) { const x = Math.floor(p.r() * 15), y = Math.floor(p.r() * 16); p.set(x, y, dark); p.set(x + 1, y, dark); }
 }
 function birchBark(p) {
   p.each(() => jit([216, 214, 206], 6, p.r));
@@ -164,43 +150,28 @@ function birchBark(p) {
   }
 }
 function logTop(p, inner, ring, barkC) {
-  // growth rings round a darker heart, inside a rim of bark
   p.each((x, y) => {
     const d = Math.max(Math.abs(x - 7.5), Math.abs(y - 7.5));
-    if (d > 6.5) return sh(barkC, x === 0 || y === 0 ? 1.15 : x === 15 || y === 15 ? 0.8 : 1);
-    if (d < 1) return sh(ring, 0.86);
-    return Math.floor(d + (p.r() < 0.12 ? 1 : 0)) % 2 ? ring : sh(inner, d > 5 ? 0.94 : 1);
+    if (d > 6.5) return jit(barkC, 6, p.r);
+    return jit(Math.floor(d) % 2 ? ring : inner, 5, p.r);
   });
 }
 function leavesTex(p, base) {
-  // clumps of leaf with gaps between them: lit above, in shade where a gap lies below
-  const holes = vnoise(p.r, 8), n = vnoise(p.r, 4);
-  const hole = (x, y) => holes(x & 15, y & 15) < 0.27;
-  p.each((x, y) => {
-    if (hole(x, y)) return [0, 0, 0, 0];
-    let f = [0.7, 0.84, 0.84, 1][Math.min(3, Math.floor(n(x, y) * 2.6 + p.r() * 1.4))];
-    if (hole(x + 1, y + 1)) f = 0.58; else if (hole(x - 1, y - 1) && p.r() < 0.7) f = 1.14;
+  p.each(() => {
+    if (p.r() < 0.2) return [0, 0, 0, 0];
+    const f = 0.62 + p.r() * 0.5;
     return [base[0] * f, base[1] * f, base[2] * f, 255];
   });
 }
 function ore(p, c, hi, n) {
-  // nuggets of ore set in the rock: each a tight cluster with a glint at its top left, a darker lower
-  // right, and the rock just under it in shadow
   stone(p);
-  const SHAPES = [[[0, 0], [1, 0], [0, 1], [1, 1]], [[0, 0], [1, 0], [2, 0], [1, 1], [2, 1]], [[1, 0], [0, 1], [1, 1], [2, 1]], [[0, 0], [1, 0], [1, 1]], [[0, 0], [0, 1], [1, 1], [1, 2]]];
-  const taken = new Set();
-  for (let k = 0, tries = 0; k < n && tries < 40; tries++) {
+  for (let k = 0; k < n; k++) {
     const cx = 1 + Math.floor(p.r() * 12), cy = 1 + Math.floor(p.r() * 12);
-    const shape = SHAPES[Math.floor(p.r() * SHAPES.length)];
-    // (nuggets keep a pixel of rock between them)
-    if (shape.some(([dx, dy]) => [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b2]) => taken.has((cx + dx + a) + ',' + (cy + dy + b2))))) continue;
-    k++;
-    const last = shape[shape.length - 1];
-    for (const [dx, dy] of shape) {
-      taken.add((cx + dx) + ',' + (cy + dy));
-      p.set(cx + dx, cy + dy, dx === shape[0][0] && dy === shape[0][1] ? hi : dx === last[0] && dy === last[1] ? sh(c, 0.72) : c);
+    for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1], [2, 1], [1, 2]]) {
+      if (p.r() < 0.72) p.set(cx + dx, cy + dy, jit(c, 12, p.r));
     }
-    for (const [dx, dy] of shape) if (!shape.some(([a, b2]) => a === dx && b2 === dy + 1)) p.set(cx + dx, cy + dy + 1, [92, 92, 92]);
+    p.set(cx, cy, hi);
+    p.set(cx + 1, cy + 1, sh(c, 0.7));
   }
 }
 // Deepslate: dark grey stone in wavy layers
@@ -279,20 +250,10 @@ const PAINTERS = {
     p.each((x, y) => jit(pal[Math.min(3, Math.floor((n(x, y) * 0.7 + p.r() * 0.3) * 4))], 6, p.r));
   },
   water: (p) => {
-    // deep blue with paler ripples running across it (the shader sets them moving)
-    const TAU2 = Math.PI * 2;
-    p.each((x, y) => {
-      const w = Math.sin(TAU2 * (y * 2 / 16) + Math.sin(TAU2 * x / 16) * 1.3 + Math.sin(TAU2 * (x * 2 + y) / 16) * 0.5);
-      const c = w > 0.72 ? [96, 150, 244] : w > 0.2 ? [58, 110, 228] : w > -0.5 ? [46, 92, 212] : [38, 78, 196];
-      return [c[0], c[1], c[2], 168];
-    });
-  },
-  sand: (p) => {
-    // fine grains in soft bands, as the wind leaves them
     const n = vnoise(p.r, 4);
-    const pal = [[204, 190, 144], [214, 201, 156], [219, 207, 163], [219, 207, 163], [228, 217, 176]];
-    p.each((x, y) => shade(pal, n(x, y * 2) * 0.45 + (((x + y * 2) & 7) < 2 ? 0.2 : 0.08) + p.r() * 0.35));
+    p.each((x, y) => { const c = jit(mix([40, 78, 196], [76, 120, 232], n(x, y)), 4, p.r); return [c[0], c[1], c[2], 180]; });
   },
+  sand: (p) => p.each(() => { const r = p.r(); return r < 0.14 ? [204, 190, 144] : r < 0.2 ? [232, 222, 184] : jit([219, 207, 163], 6, p.r); }),
   gravel: (p) => {
     const vor = voronoi(p.r, 22);
     const pal = [[132, 126, 122], [104, 99, 97], [152, 142, 136], [88, 84, 82], [122, 114, 104]];
@@ -321,7 +282,7 @@ const PAINTERS = {
   diamond_ore: (p) => ore(p, [80, 226, 222], [210, 255, 252], 4),
   redstone_ore: (p) => ore(p, [196, 16, 10], [255, 90, 70], 6),
   lapis_ore: (p) => ore(p, [34, 70, 190], [100, 140, 240], 5),
-  snow: (p) => { const n = vnoise(p.r, 4); p.each((x, y) => shade([[226, 238, 244], [238, 246, 250], [246, 251, 253], [246, 251, 253], [255, 255, 255]], n(x, y) * 0.6 + p.r() * 0.4)); },
+  snow: (p) => p.each(() => p.r() < 0.12 ? [222, 236, 242] : jit([242, 250, 252], 4, p.r)),
   snowy_grass_side: snowySide,
   ice: (p) => {
     const n = vnoise(p.r, 4);
@@ -360,12 +321,10 @@ const PAINTERS = {
     for (let i = 0; i < 8; i++) cols.push(jit([150, 74, 56], 16, p.r));
     p.each((x, y) => {
       const row = y >> 2;
-      if ((y & 3) === 3) return [176, 168, 158];
+      if ((y & 3) === 3) return jit([180, 172, 162], 6, p.r);
       const xx = (x + (row & 1) * 4) & 15;
-      if ((xx & 7) === 7) return [176, 168, 158];
-      // (each brick is lit along its top and left, and darker at the bottom)
-      const c = cols[row * 2 + (xx >> 3)];
-      return sh(c, (y & 3) === 0 || (xx & 7) === 0 ? 1.12 : (y & 3) === 2 ? 0.86 : 1);
+      if ((xx & 7) === 7) return jit([180, 172, 162], 6, p.r);
+      return jit(cols[row * 2 + (xx >> 3)], 7, p.r);
     });
   },
   stone_bricks: (p) => p.each((x, y) => {
@@ -742,10 +701,11 @@ function plantCross(p, stemC, headC, head) {
 }
 Object.assign(PAINTERS, {
   lava: (p) => {
-    // molten rock: bright where it wells up, with a darker skin cooling between
     const n = vnoise(p.r, 4), n2 = vnoise(p.r, 8);
-    const pal = [[150, 40, 8], [196, 66, 10], [226, 104, 16], [244, 146, 30], [252, 186, 56], [255, 228, 120]];
-    p.each((x, y) => shade(pal, n(x, y) * 0.68 + n2(x, y) * 0.32));
+    p.each((x, y) => {
+      const v = n(x, y) * 0.7 + n2(x, y) * 0.3;
+      return v > 0.66 ? [255, 214, 90] : v > 0.5 ? [248, 146, 30] : v > 0.32 ? [214, 92, 16] : [170, 52, 10];
+    });
   },
   nether_portal: (p) => {
     const n = vnoise(p.r, 4);
@@ -1120,38 +1080,6 @@ for (let s = 0; s < 10; s++) {
   };
 }
 
-// Every tile is finished the same way, so they sit together: a little more colour and contrast, then the
-// colours are gathered into a small palette (median cut), which takes the speckle out and leaves clean pixels
-function polish(d, colours = 10) {
-  const px = [];
-  for (let i = 0; i < d.length; i += 4) {
-    if (d[i + 3] === 0) continue;
-    const l = d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11;
-    for (let k = 0; k < 3; k++) d[i + k] = Math.max(0, Math.min(255, ((l + (d[i + k] - l) * 1.12) - 128) * 1.06 + 128));
-    px.push(i);
-  }
-  if (px.length < 2) return;
-  let boxes = [px];
-  const span = (box) => {
-    let best = 0, ch = 0;
-    for (let k = 0; k < 3; k++) { let lo = 255, hi = 0; for (const i of box) { lo = Math.min(lo, d[i + k]); hi = Math.max(hi, d[i + k]); } if (hi - lo > best) { best = hi - lo; ch = k; } }
-    return [best, ch];
-  };
-  while (boxes.length < colours) {
-    let pick = -1, wide = 3, ch = 0;
-    boxes.forEach((box, bi) => { if (box.length < 2) return; const [w, c] = span(box); if (w > wide) { wide = w; pick = bi; ch = c; } });
-    if (pick < 0) break;
-    const box = boxes[pick].sort((a, b) => d[a + ch] - d[b + ch]);
-    const mid = box.length >> 1;
-    boxes.splice(pick, 1, box.slice(0, mid), box.slice(mid));
-  }
-  for (const box of boxes) {
-    const c = [0, 0, 0];
-    for (const i of box) for (let k = 0; k < 3; k++) c[k] += d[i + k];
-    for (const i of box) for (let k = 0; k < 3; k++) d[i + k] = c[k] / box.length;
-  }
-}
-
 // Transparent pixels take the tile's average colour so mipmaps don't darken edges
 function bleed(d) {
   let r = 0, g = 0, b = 0, n = 0;
@@ -1166,7 +1094,7 @@ export function buildTextures() {
   for (const [name, fn] of Object.entries(PAINTERS)) {
     const t = new Tile(hashString(name));
     fn(t);
-    if (!name.startsWith('destroy_')) { polish(t.d); bleed(t.d); }
+    if (!name.startsWith('destroy_')) bleed(t.d);
     const c = document.createElement('canvas');
     c.width = c.height = 16;
     c.getContext('2d').putImageData(new ImageData(t.d, 16, 16), 0, 0);

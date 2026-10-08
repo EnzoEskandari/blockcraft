@@ -18,6 +18,26 @@ export function initAudio() {
 
 export function setVolume(v) { if (master) master.gain.value = v; }
 
+// Rain: a steady hiss that is turned up and down (0 = none) rather than started and stopped
+let rain = null;
+export function rainSound(level) {
+  if (!ctx) return;
+  if (!rain) {
+    if (level <= 0) return;
+    const src = ctx.createBufferSource();
+    src.buffer = noiseBuf; src.loop = true;
+    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 900;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 6500;
+    const g = ctx.createGain(); g.gain.value = 0;
+    src.connect(hp); hp.connect(lp); lp.connect(g); g.connect(master);
+    src.start();
+    rain = { g, lp };
+  }
+  rain.g.gain.setTargetAtTime(Math.max(0, level) * 0.16, ctx.currentTime, 0.4);
+  // (muffled when it is quiet: that is rain heard from indoors)
+  rain.lp.frequency.setTargetAtTime(level > 0.6 ? 6500 : 1800 + level * 4000, ctx.currentTime, 0.4);
+}
+
 // Output node for a sound at world position `pos` (null = non-positional)
 function out(vol, pos) {
   if (!ctx) return null;
@@ -163,6 +183,13 @@ export function sfx(name, pos, opts = {}) {
     case 'bow': tone(d, t, 0.15, 'triangle', 420, 180, 0.3); noise(d, t, 0.1, 'highpass', 2000, 1, 0.2); break;
     case 'arrowhit': noise(d, t, 0.06, 'bandpass', 1400, 2, 0.4); break;
     case 'click': tone(d, t, 0.04, 'sine', 900, 800, 0.15); break;
+    case 'thunder':
+      // a crack, then a long rumble rolling away
+      noise(d, t, 0.25, 'bandpass', 1800, 0.7, 0.7, 300);
+      noise(d, t + 0.05, 3.2, 'lowpass', 420, 0.6, 1.0, 50);
+      noise(d, t + 0.9, 2.6, 'lowpass', 180, 0.8, 0.7, 40);
+      tone(d, t, 1.8, 'sine', 62, 30, 0.6);
+      break;
     case 'splash': noise(d, t, 0.45, 'lowpass', 1300, 0.8, 0.5, 400); break;
     case 'swim': noise(d, t, 0.2, 'lowpass', 900, 0.8, 0.2); break;
     case 'attack': noise(d, t, 0.06, 'bandpass', 800, 1, 0.3); break;

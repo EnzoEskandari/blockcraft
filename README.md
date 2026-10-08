@@ -54,11 +54,13 @@ How it works:
 - Animals, villagers and dropped items are kept when you walk away.
 - Press **T** (or the **T** button on iPad) to chat.
 
-## A New Look (1.9)
+## Sun & Storms (1.9.1) and A New Look (1.9)
 
-- **Textures.** Every tile is painted by code in `js/textures.js`. The shared painters (stone, dirt, grass, planks, bark, leaves, cobblestone, ores) were rewritten, and `polish()` finishes every tile the same way: a little more colour and contrast, then a small palette (median cut), which is what gives clean pixels. There is room for 256 tiles and 252 are used.
-- **Water, lava and wind** are in the chunk shader (`js/render.js`): two crossing layers of ripples for water, lava that glows without light, and a sway for plants and leaves (the mesher marks which corners move in the fourth byte of `aTex`).
-- **Skins** (`js/skins.js`): eleven free ones and six prizes, each unlocked by one of the hardest achievements. A skin's key is saved in the browser, sent to other players when you join, and drawn two ways from the same parts: as a model in the world and as a flat picture (`skinDoll`) on the title screen and the Skins page.
+- **Sunlight and shadows** (`js/render.js`). The mesher no longer bakes a shade into each side of a block; it marks which way the side faces (the fourth byte of `aColor`), and the chunk shader lights it from where the sun or moon is. Part of the sky's light comes straight from the sun and is cut off by a shadow map: the land around you drawn from the sun's side into a depth picture (`drawShadows`), centred on you and moved a whole texel at a time so it does not shimmer. What is drawn is the faces turned *away* from the sun, so nothing lit can shade itself and no bias is needed. Beyond the map, and with **Shadows** off in Options, the sun is counted wherever the sky is open. Lamp light is added to daylight instead of replacing it.
+- **Water** mirrors the sky more the flatter you look across it and glitters under the sun, one glint to a texture pixel. **Plants and leaves** sway (the mesher marks which corners move in the fourth byte of `aTex`).
+- **Weather** (`js/weather.js`): clear, cloudy, rain and thunder, each lasting a few minutes and following one another by chance. Whoever runs a world decides it; it is saved with the world and sent to guests with the time. What the sky does with it (cloud cover, grey light, no sun) is in `updateSky`; rain and snow are sheets of streaks over each column of blocks around you, as in the original.
+- **Characters** (`js/skins.js`): a look is ten parts (skin, face, eyes, hair, hair colour, hat, glasses, top, trousers, back), each a key, saved in the browser and sent to other players as `L1:` and the keys. It is drawn two ways from the same parts: as a model in the world and as a flat picture (`skinDoll`) on the title screen and the Character page. Some parts are prizes, unlocked by the hardest achievements. The skins of 1.9 are the ready-made characters, and their names still work as looks.
+- The blocks' textures are the ones from before 1.9 (`js/textures.js`; the 1.9 repaint was taken back out).
 - The boss of 1.8 is called **the Wither** (its internal name is still `blight`, so saves are untouched).
 
 ## Lands & Legends (1.8)
@@ -114,6 +116,10 @@ In any online world's chat (press **T**):
 - `/tp name`: go to them (or to where they were last seen), when you are in the same world and dimension. `/bring name`: fetch them to you.
 - Commands and their answers show only to whoever typed them, never in the chat.
 - `/creative`, `/survival` (or `/gamemode creative`): switch your own mode, in any world. The game menu has a button for the same thing.
+- `/time day`, `noon`, `sunset`, `night`, `midnight`, `sunrise`, or an hour such as `/time 15` or `/time 7:30`: set the time of day.
+- `/weather clear`, `cloudy`, `rain` or `thunder`, with a number of minutes if you like (`/weather rain 5`): change the weather.
+- `/tp x y z` goes to a spot, and `/tp x z` to the ground there.
+- `/time`, `/weather`, `/tp x y z`, `/creative` and `/survival` also work for an admin in a world that is not online (press **T**).
 - `/players`: who is online, and where. `/accounts`: every account. `/list`: who is in this world (anyone can use this).
 
 Admins see every online world on the server in their Multiplayer list (marked *Admin · made by …*) and can open any of them.

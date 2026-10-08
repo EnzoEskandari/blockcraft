@@ -399,7 +399,7 @@ async function enterWorld(ws, m) {
   ws.account = acc.id;
   // an admin may come in unseen: nobody is told, and they are left out of every list of who is playing
   ws.spec = !!m.spec && isAdmin(acc);
-  ws.caps = m.caps | 0;   // what this player's page knows how to do (1: keeps a spectator out of sight, 2: reloads when told)
+  ws.caps = m.caps | 0;   // what this player's page knows how to do (1: keeps a spectator out of sight, 2: reloads when told, 3: has weather, and sets it and the time when told)
   // A page older than that is not let into a world: it is told to reload. (Every update restarts this
   // server, which puts everyone out for a moment; whoever is on an old page meets this on the way back in.)
   if (ws.caps < MIN_PAGE) { send(ws, { t: 'error', msg: 'Blockcraft has been updated. Reload this page to get the new version, then join again.' }); return; }
@@ -546,6 +546,20 @@ function reloadEveryone() {
 }
 
 // Chat commands (anything starting with /)
+const isNum = (v) => typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v);
+const WEATHERS = { clear: 'clear', sun: 'clear', sunny: 'clear', fair: 'clear', cloudy: 'cloudy', clouds: 'cloudy', cloud: 'cloudy', overcast: 'cloudy',
+  rain: 'rain', rainy: 'rain', raining: 'rain', snow: 'rain', thunder: 'thunder', storm: 'thunder', thunderstorm: 'thunder', lightning: 'thunder' };
+// The time of day as the game counts it (0 sunrise, 0.25 noon, 0.5 sunset, 0.75 midnight), from a word or an hour
+const TIMES = { sunrise: 0, dawn: 0, morning: 0.04, day: 0.08, noon: 0.25, midday: 0.25, afternoon: 0.36, evening: 0.45, sunset: 0.49, dusk: 0.5, night: 0.56, midnight: 0.75 };
+function parseTime(word) {
+  const w = String(word || '').toLowerCase();
+  if (w in TIMES) return TIMES[w];
+  const m = w.match(/^(\d{1,2})(?::(\d{2}))?$/);
+  if (m && +m[1] <= 24 && +(m[2] || 0) < 60) return ((+m[1] + (m[2] || 0) / 60 - 6) / 24 + 1) % 1;
+  return null;
+}
+const clockText = (t) => { const m = Math.round(((t + 0.25) % 1) * 1440) % 1440; return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`; };
+
 async function command(ws, text) {
   const acc = accounts.get(ws.account);
   const [cmd, name, ...rest] = text.trim().replace(/^\//, '').split(/\s+/);
@@ -562,6 +576,34 @@ async function command(ws, text) {
     if (!want) return 'Say /gamemode creative or /gamemode survival (or just /creative, /survival).';
     send(ws, { t: 'admin', a: 'mode', mode: want });
     return `You are in ${want} mode.`;
+  }
+  // to a spot: /tp x y z, or /tp x z for the ground there
+  if (c === 'tp' && isNum(name) && rest.length && rest.every(isNum) && rest.length <= 2) {
+    if (!ws.room) return 'Join a world first.';
+    const n = [name, ...rest].map(Number);
+    if (n.some((v) => Math.abs(v) > 3e6)) return 'That is too far away.';
+    if (n.length === 3) { send(ws, { t: 'admin', a: 'goto', x: Math.floor(n[0]), y: Math.max(1, Math.min(250, n[1])), z: Math.floor(n[2]) }); return `Teleported to ${n.map(Math.floor).join(', ')}.`; }
+    send(ws, { t: 'admin', a: 'goto', x: Math.floor(n[0]), z: Math.floor(n[1]), top: 1 });
+    return `Teleported to ${Math.floor(n[0])}, ${Math.floor(n[1])}.`;
+  }
+  // the time of day and the weather belong to whoever is running the world, so they are told to change it
+  if (c === 'time' || c === 'weather') {
+    const room = ws.room && rooms.get(ws.room);
+    if (!room) return 'Join a world first.';
+    if (String(ws.room).includes('~')) return 'There is no day or weather here. Go back to the Overworld first.';
+    const words = [name, ...rest].filter((w) => w && w.toLowerCase() !== 'set');
+    if (!(room.host.caps >= 3)) return `${room.host.name || 'Whoever is running this world'} has an old page open and needs to reload before this works.`;
+    if (c === 'time') {
+      const t = parseTime(words[0]);
+      if (t == null) return 'Say /time day, noon, sunset, night, midnight or sunrise, or an hour like /time 15.';
+      send(room.host, { t: 'admin', a: 'time', v: t });
+      return `The time is now ${clockText(t)}.`;
+    }
+    const k = WEATHERS[(words[0] || '').toLowerCase()];
+    if (!k) return 'Say /weather clear, cloudy, rain or thunder (and, if you like, for how many minutes).';
+    const mins = isNum(words[1]) ? Math.max(0.2, Math.min(600, +words[1])) : 0;
+    send(room.host, { t: 'admin', a: 'weather', v: k, secs: Math.round(mins * 60) });
+    return `The weather is now ${k === 'thunder' ? 'a thunderstorm' : k}${mins ? ` for ${mins} minute${mins === 1 ? '' : 's'}` : ''}.`;
   }
   if (c === 'where' || c === 'tp' || c === 'bring') {
     const a = name ? await accountNamed(name.trim()) : null;
@@ -584,7 +626,7 @@ async function command(ws, text) {
   }
   // everyone in every online world saves, loads the newest version of the game and comes straight back in
   if (c === 'reload') return reloadEveryone();
-  if (c === 'help') return 'Admin commands: /reload (everyone gets the newest version), /where name, /tp name, /bring name, /creative, /survival, /kill name, /kick name, /ban name [reason], /unban name, /op name, /deop name, /players (everyone online), /accounts (every account), /list';
+  if (c === 'help') return 'Admin commands: /time day|noon|night|15, /weather clear|cloudy|rain|thunder, /tp x y z, /reload (everyone gets the newest version), /where name, /tp name, /bring name, /creative, /survival, /kill name, /kick name, /ban name [reason], /unban name, /op name, /deop name, /players (everyone online), /accounts (every account), /list';
   if (c === 'players') {
     const on = playerList().filter((x) => x.online.length);
     return on.length ? 'Online: ' + on.map((x) => `${x.name} in ${x.online.join(', ')}`).join('; ') : 'Nobody is in an online world.';

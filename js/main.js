@@ -1,5 +1,5 @@
 // Boot, main loop, chunk streaming, block updates, saving.
-import { G, loadSettings, store, load, remove, isTouchDevice } from './game.js';
+import { G, loadSettings, saveSettings, store, load, remove, isTouchDevice } from './game.js';
 import { cleanSign, signMesh, disposeSignMesh } from './signs.js';
 import { buildTextures, buildIcons } from './textures.js';
 import { BLOCKS, ITEMS, B, ID, RENDER, SMELTING, fuelValue, maxStack, canHarvest } from './blocks.js';
@@ -20,10 +20,23 @@ import { hash3 } from './noise.js';
 import { Net, serverURL } from './net.js';
 import './dimmobs.js';
 import { startPanorama, stopPanorama, panoramaFrame } from './panorama.js';
+import { tickWeather, resetWeather, weatherState, weatherKind, setWeather } from './weather.js';
 import { findPortalFrame, portalCells, findNearbyPortal, buildPortal, END_SPAWN, endColumn, DIMS } from './dims.js';
 
 const dayLength = () => G.settings.dayLength || 1200; // seconds; the original's day is 20 minutes
 const isNight = () => G.time > 0.52 && G.time < 0.98;
+// The words an admin may use for the weather and the time of day (the server knows the same ones)
+const WEATHERS = { clear: 'clear', sun: 'clear', sunny: 'clear', fair: 'clear', cloudy: 'cloudy', clouds: 'cloudy', cloud: 'cloudy', overcast: 'cloudy',
+  rain: 'rain', rainy: 'rain', raining: 'rain', snow: 'rain', thunder: 'thunder', storm: 'thunder', thunderstorm: 'thunder', lightning: 'thunder' };
+const TIMES = { sunrise: 0, dawn: 0, morning: 0.04, day: 0.08, noon: 0.25, midday: 0.25, afternoon: 0.36, evening: 0.45, sunset: 0.49, dusk: 0.5, night: 0.56, midnight: 0.75 };
+function parseTime(word) {
+  const w = String(word || '').toLowerCase();
+  if (w in TIMES) return TIMES[w];
+  const m = w.match(/^(\d{1,2})(?::(\d{2}))?$/);
+  if (m && +m[1] <= 24 && +(m[2] || 0) < 60) return ((+m[1] + (m[2] || 0) / 60 - 6) / 24 + 1) % 1;
+  return null;
+}
+const clockText = (t) => { const m = Math.round(((t + 0.25) % 1) * 1440) % 1440; return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`; };
 // In multiplayer only the host runs the world; guests just show it
 const isGuest = () => !!(G.net && G.net.role === 'client');
 const SIM_R = 4;   // the host keeps chunks this far around each guest loaded and running
@@ -780,6 +793,57 @@ export const Game = {
     G.ui.invChanged();
     G.ui.toast(mode === 'creative' ? 'Creative mode' : 'Survival mode');
   },
+  // An admin goes to a spot (no height given: the ground there)
+  teleport(x, y, z) {
+    const p = G.player, w = G.world;
+    if (!p || !Number.isFinite(x + z)) return;
+    if (!Number.isFinite(y)) {
+      y = G.dim === 'overworld' ? w.column(Math.floor(x), Math.floor(z)).h + 1 : p.pos.y;
+      // (above anything that has been built there, where that is known)
+      for (let k = 0; k < 40 && w.getBlock(Math.floor(x), Math.floor(y), Math.floor(z)); k++) y++;
+    }
+    p.pos.x = Math.floor(x) + 0.5; p.pos.y = y + 0.2; p.pos.z = Math.floor(z) + 0.5;
+    p.vel.x = p.vel.y = p.vel.z = 0; p.fallDist = 0; p.fallStart = p.pos.y; p.safeLanding = G.clock + 15;
+  },
+  // An admin sets the time of day or the weather (whoever runs the world does it, and the rest are told)
+  setTime(t) {
+    if (!Number.isFinite(t) || isGuest()) return;
+    G.time = ((t % 1) + 1) % 1;
+    if (G.net) G.net.send({ k: 't', t: G.time, d: G.day || 0, n: G.nightsNoSleep || 0, w: weatherKind() });
+  },
+  setWeatherNow(kind, secs) {
+    if (isGuest() || !setWeather(kind, secs)) return;
+    if (G.net) G.net.send({ k: 't', t: G.time, d: G.day || 0, n: G.nightsNoSleep || 0, w: weatherKind() });
+  },
+  // Commands typed in a world that is not online (an admin's own): the online ones go to the server
+  command(text) {
+    if (!(G.account && G.account.admin)) return;
+    const [cmd, ...args] = String(text).trim().replace(/^\//, '').split(/\s+/).filter((w) => w.toLowerCase() !== 'set');
+    const c = (cmd || '').toLowerCase(), num = (v) => /^-?\d+(\.\d+)?$/.test(v || '');
+    const say = (msg) => G.ui.toast(msg, 7);
+    if (c === 'time') {
+      const t = parseTime(args[0]);
+      if (t == null) return say('Say /time day, noon, sunset, night, midnight or sunrise, or an hour like /time 15.');
+      if (G.dim !== 'overworld') return say('There is no day or weather here.');
+      Game.setTime(t);
+      return say(`The time is now ${clockText(t)}.`);
+    }
+    if (c === 'weather') {
+      const k = WEATHERS[(args[0] || '').toLowerCase()];
+      if (!k) return say('Say /weather clear, cloudy, rain or thunder (and, if you like, for how many minutes).');
+      if (G.dim !== 'overworld') return say('There is no day or weather here.');
+      Game.setWeatherNow(k, num(args[1]) ? Math.max(0.2, Math.min(600, +args[1])) * 60 : 0);
+      return say(`The weather is now ${k === 'thunder' ? 'a thunderstorm' : k}.`);
+    }
+    if (c === 'tp' && num(args[0]) && num(args[1]) && args.length <= 3 && (args.length < 3 || num(args[2]))) {
+      const n = args.map(Number);
+      if (n.length === 3) Game.teleport(n[0], Math.max(1, Math.min(250, n[1])), n[2]); else Game.teleport(n[0], null, n[1]);
+      return say(`Teleported to ${n.map(Math.floor).join(', ')}.`);
+    }
+    if (['creative', 'survival'].includes(c)) return Game.setMode(c);
+    if (c === 'gamemode' || c === 'gm') return Game.setMode(/^(c|1|creative)$/i.test(args[0] || '') ? 'creative' : 'survival');
+    return say('In a world that is not online: /time, /weather, /tp x y z, /creative, /survival.');
+  },
   // The pause menu's button: through the server in an online world (it checks who is asking)
   toggleMode() {
     const want = G.player.creative ? 'survival' : 'creative';
@@ -831,7 +895,7 @@ export const Game = {
     p.bedSpawn = { x, y, z };
     // (a villager asleep in it gets up and finds another)
     if (isGuest()) G.net.send({ k: 'vw', x, y, z }); else G.entities.wakeVillagerAt(x, y, z);
-    if (!isNight()) { G.ui.toast('Respawn point set. You can only sleep at night'); return; }
+    if (!isNight() && weatherKind() !== 'thunder') { G.ui.toast('Respawn point set. You can only sleep at night or through a thunderstorm'); return; }
     if (G.entities.hostilesNear(x + 0.5, y, z + 0.5, 8)) { G.ui.toast('You may not rest now, there are monsters nearby'); return; }
     G.ui.toast('Respawn point set');
     G.adv.did('sleep');
@@ -1218,7 +1282,7 @@ export const Game = {
     const w = G.world, p = G.player;
     return {
       k: 'world', host: G.net.spec ? '' : G.net.name, name: G.worldMeta.name, seed: w.seed, mode: G.worldMeta.mode,
-      time: G.time, day: G.day || 0, nns: G.nightsNoSleep || 0,
+      time: G.time, day: G.day || 0, nns: G.nightsNoSleep || 0, weather: weatherState(),
       spawn: w.worldSpawn || p.spawn, edits: packEdits(w), guest: playerRecord(w.guests, account, name),
       legacy: w.legacy ? [...w.legacy] : null, gens: packGens(w), signs: Object.fromEntries(w.signs),
     };
@@ -1425,6 +1489,7 @@ function startRemoteWorld(snap, onlineId, dim = 'overworld', me = null) {
   G.clock = 0;
   G.time = snap.time ?? 0.03;
   G.day = snap.day || 0;
+  resetWeather(snap.weather);
   G.nightsNoSleep = snap.nns || 0;
   w.worldSpawn = snap.spawn || null;
   const pd = me || snap.guest;
@@ -1510,10 +1575,12 @@ function startWorld(meta, data, opts = {}) {
     G.day = g.day || 0;
     G.nightsNoSleep = g.nightsNoSleep || 0;
     G.time = g.time ?? 0.03;
+    resetWeather(g.weather);
   } else {
     G.time = 0.03;
     G.day = 0;
     G.nightsNoSleep = 0;
+    resetWeather(null);
   }
   // where new players appear (always somewhere in the overworld)
   let sp = g && (g.worldSpawn || (g.player && g.player.spawn));
@@ -1564,7 +1631,7 @@ function saveWorld(playerOverride) {
   };
   // the time of day, the world spawn, and the player
   const globals = {
-    time: G.time, day: G.day || 0, nightsNoSleep: G.nightsNoSleep || 0,
+    time: G.time, day: G.day || 0, nightsNoSleep: G.nightsNoSleep || 0, weather: weatherState(),
     worldSpawn: w.worldSpawn, player: playerOverride || playerData(p), saved: Date.now(),
   };
   const meta = G.worldMeta;
@@ -1642,12 +1709,14 @@ function frame(dt) {
       if (G.net && !everyone && s.t > 1.5 && !s.told) { s.told = true; G.ui.toast('Waiting for everyone to sleep · jump to get up'); }
       if (G.net && input.jumpPressed && s.t > 0.5) Game.wakeUp();
       else if (everyone && host && s.t >= 2.6) {
-        if (before > 0.5) G.day = (G.day || 0) + 1;
-        G.time = 0.0;
+        // (a storm slept through in the daytime is simply over; a night's sleep brings a fair morning)
+        const night = isNight();
+        if (night) { if (before > 0.5) G.day = (G.day || 0) + 1; G.time = 0.0; }
+        if (weatherKind() !== 'clear') setWeather('clear');
         G.nightsNoSleep = 0;
         Game.wakeUp();
-        G.ui.toast('Good morning');
-        if (G.net) { G.net.send({ k: 't', t: G.time, d: G.day, n: 0 }); G.net.send({ k: 'wake' }); }
+        G.ui.toast(night ? 'Good morning' : 'The storm has passed');
+        if (G.net) { G.net.send({ k: 't', t: G.time, d: G.day, n: 0, w: weatherKind() }); G.net.send({ k: 'wake' }); }
       }
       input.moveX = input.moveZ = 0; input.jump = false;
     }
@@ -1673,6 +1742,24 @@ function frame(dt) {
   }
   updateChunks(paused ? 14 : 7);
   G.player.updateCamera(dt);
+  tickWeather(paused ? 0 : dt, host);
+  // Shadows cost a second drawing of the land. Where the game cannot keep up with them (an old tablet),
+  // they are turned off once, unless the player has set them by hand.
+  if (!paused && G.clock > 15 && G.settings.shadows && !G.settings.shadowsPicked && R.shared.uShadowOn.value && document.visibilityState === 'visible') {
+    // (by the clock on the wall: the game's own steps never count for less than a twentieth of a second)
+    const now = performance.now();
+    if (!S.perfAt || now - S.perfLast > 1000) { S.perfAt = now; S.perfN = 0; }
+    S.perfLast = now; S.perfN++;
+    if (now - S.perfAt >= 8000) {
+      S.slow = S.perfN / ((now - S.perfAt) / 1000) < 18 ? (S.slow || 0) + 1 : 0;
+      S.perfAt = 0;
+      if (S.slow >= 2) {
+        G.settings.shadows = false; G.settings.shadowsPicked = true;
+        saveSettings();
+        G.ui.toast('Shadows were turned off to keep the game smooth. You can turn them back on in Options.', 8);
+      }
+    }
+  }
   updateSky(G.time, paused ? 0 : dt, G.player.headInWater, G.player.headInLava);
   G.ui.update(dt);
   render();

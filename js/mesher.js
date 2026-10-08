@@ -105,7 +105,8 @@ function emitBox(buf, X, Y, Z, x0, y0, z0, x1, y1, z1, layers, sky, blk, skip = 
   for (let f = 0; f < 6; f++) {
     if (skip & (1 << f)) continue;
     buf.ensure(4);
-    const cs = CORNERS[f], m = FACES[f].shade * 255;
+    buf.face = f;
+    const cs = CORNERS[f], m = 255;
     const layer = layers[f];
     for (let k = 0; k < 4; k++) {
       const c = cs[k];
@@ -148,14 +149,16 @@ class MeshBuf {
     }
     this.pos = pos; this.tex = tex; this.col = col; this.lig = lig; this.idx = idx;
   }
-  reset() { this.v = 0; this.i = 0; this.sway = 0; }
+  reset() { this.v = 0; this.i = 0; this.sway = 0; this.face = 6; }
   ensure(n) { if (this.v + n > this.cap) this.alloc(this.cap * 2); }
   // (sway: how much this corner moves in the wind, 0 to 255; leaves take it from `this.sway`)
+  // `this.face` says which way the surface looks (0-5, as in FACES; 6 for plants, which have no one side):
+  // the shader lights each side by where the sun is, so no shade is baked into the colour here
   vert(x, y, z, u, v, layer, r, g, b, sky, blk, sway) {
     const o = this.v;
     this.pos[o * 3] = x; this.pos[o * 3 + 1] = y; this.pos[o * 3 + 2] = z;
     this.tex[o * 4] = u; this.tex[o * 4 + 1] = v; this.tex[o * 4 + 2] = layer; this.tex[o * 4 + 3] = sway === undefined ? this.sway : sway;
-    this.col[o * 4] = r; this.col[o * 4 + 1] = g; this.col[o * 4 + 2] = b; this.col[o * 4 + 3] = 255;
+    this.col[o * 4] = r; this.col[o * 4 + 1] = g; this.col[o * 4 + 2] = b; this.col[o * 4 + 3] = this.face;
     this.lig[o * 2] = sky; this.lig[o * 2 + 1] = blk;
     this.v++;
   }
@@ -303,8 +306,8 @@ export function computeLight(world, chunk) {
 
 function cubeFace(buf, x, y, z, f, layer, ri, tr, tg, tb) {
   buf.ensure(4);
+  buf.face = f;
   const bi = ri + N_OFF[f];
-  const shade = FACES[f].shade;
   const cs = CORNERS[f];
   let a0 = 0, a1 = 0, a2 = 0, a3 = 0;
   for (let k = 0; k < 4; k++) {
@@ -315,7 +318,7 @@ function cubeFace(buf, x, y, z, f, layer, ri, tr, tg, tb) {
     if (!o1) { sky += rS[s1]; blk += rL[s1]; cnt++; }
     if (!o2) { sky += rS[s2]; blk += rL[s2]; cnt++; }
     if (!o3 && !(o1 && o2)) { sky += rS[c]; blk += rL[c]; cnt++; }
-    const m = shade * AO[ao] * 255;
+    const m = AO[ao] * 255;
     const cr = cs[k];
     buf.vert((x + cr[0]) * 16, (y + cr[1]) * 16, (z + cr[2]) * 16, UV[k][0], UV[k][1], layer,
       tr * m, tg * m, tb * m, (sky * 17 / cnt) | 0, (blk * 17 / cnt) | 0);
@@ -388,6 +391,7 @@ export function buildChunkMesh(world, chunk) {
           const r = t[0] * 240, g = t[1] * 240, b = t[2] * 240;
           const X = x * 16, Y = y * 16, Z = z * 16;
           OB.ensure(8);
+          OB.face = 6;
           OB.vert(X, Y, Z, 0, 0, layer, r, g, b, sky, blk);
           OB.vert(X + 16, Y, Z + 16, 16, 0, layer, r, g, b, sky, blk);
           OB.vert(X + 16, Y + 16, Z + 16, 16, 16, layer, r, g, b, sky, blk, sw);
@@ -407,7 +411,8 @@ export function buildChunkMesh(world, chunk) {
           const wd = wm >= 1 && wm <= 4 ? [[1, 0], [-1, 0], [0, 1], [0, -1]][wm - 1] : null;
           for (const f of [0, 1, 2, 4, 5]) {
             OB.ensure(4);
-            const cs = CORNERS[f], m = FACES[f].shade * 255;
+            OB.face = f;
+            const cs = CORNERS[f], m = 255;
             for (let k = 0; k < 4; k++) {
               const c = cs[k];
               let px = c[0] ? 9 : 7, py = c[1] ? 10 : 0, pz = c[2] ? 9 : 7;
@@ -473,9 +478,10 @@ export function buildChunkMesh(world, chunk) {
             if (f === 2 && OPAQUE[nb] && h00 + h10 + h01 + h11 >= 64) continue;
             const bi = ri + N_OFF[f];
             const sky = Math.max(rS[bi], rS[ri]) * 17, blk = Math.max(rL[bi], rL[ri]) * 17;
-            const m = FACES[f].shade * 255;
+            const m = 255;
             const cs = CORNERS[f];
             buf.ensure(4);
+            buf.face = f;
             for (let k = 0; k < 4; k++) {
               const c = cs[k];
               const py = c[1] ? (c[0] ? (c[2] ? h11 : h10) : (c[2] ? h01 : h00)) : 0;

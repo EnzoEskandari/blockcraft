@@ -181,7 +181,7 @@ export class Advancements {
     this.skinT = (this.skinT || 0) - dt;
     if (this.skinT <= 0) {
       this.skinT = 3;
-      for (const S of unlockSkins((key) => p.adv.has(key))) { G.ui.toast(`New skin: ${S.name}. Wear it from Skins on the title screen.`, 7); sfx('levelup', null, { vol: 0.7 }); }
+      for (const won of unlockSkins((key) => p.adv.has(key))) { G.ui.toast(`You won: ${won.items.join(', ')}. Wear them from your character on the title screen.`, 9); sfx('levelup', null, { vol: 0.7 }); }
     }
     // a long fall survived: from the highest point since the feet last touched something
     if (p.flying || p.creative) this.peak = null;

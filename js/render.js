@@ -16,11 +16,19 @@ attribute vec2 aLight;
 uniform float uTime;
 uniform float uWaterLayer;
 uniform float uLavaLayer;
+uniform vec3 uSunDir;
+uniform float uDirK;
+uniform mat4 uShadowFromView;
 varying vec3 vUv;
 varying vec3 vCol;
 varying vec2 vLight;
 varying float vDist;
 varying float vKind;
+varying float vSun;
+varying vec2 vShade;
+varying vec3 vShadow;
+varying vec3 vView;
+varying vec3 vWater;
 void main() {
   vec3 pos = position;
   // grass, flowers and leaves stir in the wind (aTex.w says how much this corner moves)
@@ -37,10 +45,25 @@ void main() {
   vUv = vec3(aTex.x / 16.0, aTex.y / 16.0, aTex.z);
   vCol = aColor.rgb;
   vLight = aLight;
+  // which way this side looks (0-5; 6: a plant, lit from above whichever way it is seen)
+  float face = floor(aColor.a * 255.0 + 0.5);
+  vec3 n = face < 0.5 ? vec3(1.0, 0.0, 0.0) : face < 1.5 ? vec3(-1.0, 0.0, 0.0) : face < 2.5 ? vec3(0.0, 1.0, 0.0)
+    : face < 3.5 ? vec3(0.0, -1.0, 0.0) : face < 4.5 ? vec3(0.0, 0.0, 1.0) : face < 5.5 ? vec3(0.0, 0.0, -1.0) : vec3(0.0, 1.0, 0.0);
+  // the shading every side has always had, and a gentler one for when the sun is doing the work
+  float shade = face < 1.5 ? 0.6 : face < 2.5 ? 1.0 : face < 3.5 ? 0.5 : face < 5.5 ? 0.8 : 1.0;
+  vShade = vec2(mix(shade, sqrt(shade), uDirK), shade);
+  vSun = face > 5.5 ? 0.7 : max(dot(n, uSunDir), 0.0) * 1.12;
+  vShadow = (uShadowFromView * mv).xyz;
+  vView = mv.xyz * mat3(viewMatrix);
+  // (water keeps its place in the world for the glints on it, wrapped so the numbers stay small)
+  vWater = vec3(mod(modelMatrix[3].xz, 256.0) + position.xz / 16.0, face > 1.5 && face < 2.5 ? 1.0 : 0.0);
 }`;
 
 const CHUNK_FS = `
 uniform sampler2DArray uAtlas;
+uniform sampler2D uShadowMap;
+uniform float uShadowOn;
+uniform float uShadowTexel;
 uniform float uDaylight;
 uniform vec3 uFogColor;
 uniform float uFogNear;
@@ -48,45 +71,96 @@ uniform float uFogFar;
 uniform float uAlphaTest;
 uniform float uGamma;
 uniform float uAmbient;
-uniform float uMoon;
+uniform vec3 uSkyLight;
+uniform vec3 uSunLight;
+uniform vec3 uSunDir;
+uniform vec3 uSkyGlow;
+uniform float uTime;
 varying vec3 vUv;
 varying vec3 vCol;
 varying vec2 vLight;
 varying float vDist;
 varying float vKind;
-uniform float uTime;
+varying float vSun;
+varying vec2 vShade;
+varying vec3 vShadow;
+varying vec3 vView;
+varying vec3 vWater;
+float curve(float l) { return mix(l / (4.0 - 3.0 * l), l, uGamma); }
+// how much of the sun reaches this point: four readings of the shadow map, blended, for a soft edge
+float sunAt(vec3 sc) {
+  vec2 t = sc.xy / uShadowTexel - 0.5;
+  vec2 f = fract(t);
+  vec2 base = (floor(t) + 0.5) * uShadowTexel;
+  float z = sc.z - 0.00006;
+  float a = step(z, texture2D(uShadowMap, base).r);
+  float b = step(z, texture2D(uShadowMap, base + vec2(uShadowTexel, 0.0)).r);
+  float c = step(z, texture2D(uShadowMap, base + vec2(0.0, uShadowTexel)).r);
+  float d = step(z, texture2D(uShadowMap, base + vec2(uShadowTexel)).r);
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
 void main() {
   vec4 c;
-  if (vKind > 1.5) {
-    // lava: two slow currents folded together, brightening and dimming as it churns
-    vec4 a = texture(uAtlas, vec3(vUv.x, vUv.y - uTime * 0.05, vUv.z));
-    vec4 b = texture(uAtlas, vec3(vUv.y + uTime * 0.03, vUv.x + uTime * 0.02 + 0.5, vUv.z));
-    c = max(a, b * 0.92);
-    c.rgb *= 0.94 + 0.1 * sin(uTime * 1.1 + (vUv.x + vUv.y) * 6.2832);
-  } else if (vKind > 0.5) {
-    // water: two sets of ripples crossing, so the surface never moves in step with itself
-    vec4 a = texture(uAtlas, vec3(vUv.x + uTime * 0.02, vUv.y - uTime * 0.14, vUv.z));
-    vec4 b = texture(uAtlas, vec3(vUv.x - uTime * 0.05 + 0.5, vUv.y - uTime * 0.08 + 0.37, vUv.z));
-    c = mix(a, b, 0.5);
-    c.rgb += vec3(0.1, 0.12, 0.1) * smoothstep(0.62, 0.9, max(a.b, b.b)) * (0.6 + 0.4 * sin(uTime * 2.0 + vUv.x * 12.0));
-    c.a = 0.7;
-  } else c = texture(uAtlas, vUv);
+  bool water = vKind > 0.5 && vKind < 1.5;
+  bool surface = water && vWater.z > 0.5;
+  if (vKind > 1.5) c = texture(uAtlas, vec3(vUv.x, vUv.y - uTime * 0.08, vUv.z));   // lava creeps
+  else if (surface) c = texture(uAtlas, vec3(vUv.x + uTime * 0.012, vUv.y - uTime * 0.03, vUv.z));   // still water drifts
+  else if (water) c = texture(uAtlas, vec3(vUv.x, vUv.y - uTime * 0.35, vUv.z));   // and falls
+  else c = texture(uAtlas, vUv);
   if (c.a < uAlphaTest) discard;
-  float sky = vLight.x * uDaylight;
-  float blk = vLight.y;
-  float l = max(sky, blk);
-  float b = mix(l / (4.0 - 3.0 * l), l, uGamma);
-  b = uAmbient + (1.0 - uAmbient) * b;
-  vec3 lc = vec3(b) * mix(vec3(1.0), vec3(1.1, 0.96, 0.8), clamp((blk - sky) * 1.5, 0.0, 1.0));
-  // moonlight is a little blue
-  lc *= mix(vec3(1.0), vec3(0.8, 0.88, 1.15), uMoon * clamp((sky - blk) * 2.0, 0.0, 1.0));
-  // daylight is a little warm where the sun reaches and cool in the shade
-  lc *= mix(vec3(1.0), mix(vec3(0.84, 0.92, 1.08), vec3(1.05, 1.0, 0.94), smoothstep(0.35, 0.95, vLight.x)), clamp((sky - blk) * 2.0, 0.0, 1.0) * (1.0 - uMoon) * 0.8);
-  if (vKind > 1.5) lc = vec3(1.0);   // lava glows by itself
+  float sky = vLight.x, blk = vLight.y;
+  // the sun (or the moon): read from the shadow map around you, and guessed from the open sky further off
+  float open = smoothstep(0.7, 0.97, sky);
+  float lit = open;
+  if (uShadowOn > 0.5) {
+    vec2 e = abs(vShadow.xy - 0.5) * 2.0;
+    float edge = smoothstep(0.8, 0.98, max(max(e.x, e.y), abs(vShadow.z - 0.5) * 2.0));
+    if (edge < 1.0) lit = mix(sunAt(vShadow) * smoothstep(0.12, 0.45, sky), open, edge);
+  }
+  // light from the whole sky, plus the sun where it shines; lamps and fire are warm, and add to it
+  vec3 skyPart = curve(sky * uDaylight) * (uSkyLight * vShade.x + uSunLight * vSun * lit);
+  vec3 blkPart = curve(blk) * vShade.y * vec3(1.1, 0.96, 0.8);
+  vec3 lc = 1.0 - (1.0 - min(skyPart, 1.0)) * (1.0 - min(blkPart, 1.0));
+  lc = uAmbient + (1.0 - uAmbient) * lc;
+  if (vKind > 1.5) lc = vec3(0.96 + 0.06 * sin(uTime * 1.1 + (vUv.x + vUv.y) * 6.2832));   // lava glows by itself
   vec3 col = c.rgb * vCol * lc;
-  col = mix(vec3(dot(col, vec3(0.3, 0.59, 0.11))), col, 1.1);   // (a touch more colour)
+  if (surface) {
+    // water mirrors the sky more the flatter you look across it, and the sun glitters on its ripples
+    // (one glint to a pixel of the texture, so it stays blocky)
+    vec3 eye = normalize(-vView);
+    vec2 cell = floor(vWater.xy * 16.0) / 16.0;
+    float t = uTime;
+    vec3 n = normalize(vec3(
+      0.07 * sin(cell.x * 3.1 + cell.y * 1.7 + t * 1.6) + 0.045 * sin(cell.y * 7.3 - t * 2.3),
+      1.0,
+      0.07 * sin(cell.y * 2.9 - cell.x * 1.3 + t * 1.4) + 0.045 * sin(cell.x * 6.1 + t * 2.1)));
+    float facing = abs(dot(eye, n));
+    float fres = pow(1.0 - facing, 3.0);
+    float glint = pow(max(dot(n, normalize(uSunDir + eye)), 0.0), 320.0);
+    col = mix(col, uSkyGlow * (0.35 + 0.65 * curve(sky)), fres * 0.6);
+    col += uSunLight * 2.0 * glint * lit * curve(sky);
+    c.a = mix(0.68, 0.95, fres) + glint * lit * 0.3;
+  }
   float f = smoothstep(uFogNear, uFogFar, vDist);
   gl_FragColor = vec4(mix(col, uFogColor, f), c.a);
+}`;
+
+// What the sun sees: the shapes of the blocks (leaves and glass with their holes), nothing more
+const SHADOW_VS = `
+attribute vec4 aTex;
+attribute vec4 aColor;
+varying vec3 vUv;
+void main() {
+  vUv = vec3(aTex.x / 16.0, aTex.y / 16.0, aTex.z);
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  if (aColor.a * 255.0 > 5.5) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);   // grass and flowers cast nothing
+}`;
+const SHADOW_FS = `
+uniform sampler2DArray uAtlas;
+varying vec3 vUv;
+void main() {
+  if (texture(uAtlas, vUv).a < 0.5) discard;
+  gl_FragColor = vec4(1.0);
 }`;
 
 export function pixelRatio() {
@@ -97,13 +171,17 @@ export function pixelRatio() {
 // e.g. where monsters may spawn, uses the real sky light in G.daylight)
 export const skyLook = (d) => (G.dim === 'nether' ? d : Math.max(d, 0.36 + (d - 0.2) * 0.8));
 
+// How bright something standing in that light looks (animals, players, the thing in your hand): the same
+// sum the blocks' shader does, with the sun counted wherever the sky is open
 export function brightness(sky, blk) {
-  const l = Math.max(sky / 15 * skyLook(G.daylight), blk / 15);
-  const g = G.settings.gamma;
-  const b = (l / (4 - 3 * l)) * (1 - g) + l * g;
+  const g = G.settings.gamma, curve = (l) => (l / (4 - 3 * l)) * (1 - g) + l * g;
+  const L = R.look, s = sky / 15;
+  const a = Math.min(1, curve(s * L.daylight) * (L.sky + L.sun * 0.7 * smoothstep(0.7, 0.97, s)));
+  const l = 1 - (1 - a) * (1 - curve(blk / 15));
   const amb = DIM_LOOK[G.dim || 'overworld'].ambient;
-  return amb + (1 - amb) * b;
+  return amb + (1 - amb) * l;
 }
+R.look = { daylight: 1, sky: 1, sun: 0 };
 
 export function initRenderer(container) {
   const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
@@ -140,7 +218,15 @@ export function initRenderer(container) {
     uWaterLayer: { value: TEX.water },
     uLavaLayer: { value: TEX.lava },
     uAmbient: { value: 0.22 },
-    uMoon: { value: 0 },
+    uSunDir: { value: new THREE.Vector3(0, 1, 0) },
+    uDirK: { value: 0 },
+    uSkyLight: { value: new THREE.Color(1, 1, 1) },
+    uSunLight: { value: new THREE.Color(0, 0, 0) },
+    uSkyGlow: { value: new THREE.Color(0.7, 0.8, 1) },
+    uShadowMap: { value: null },
+    uShadowOn: { value: 0 },
+    uShadowTexel: { value: 1 / 1024 },
+    uShadowFromView: { value: new THREE.Matrix4() },
   };
   R.shared = shared;
   R.opaqueMat = new THREE.ShaderMaterial({
@@ -153,6 +239,7 @@ export function initRenderer(container) {
     transparent: true, depthWrite: false, side: THREE.DoubleSide,
   });
 
+  buildShadows();
   buildSky();
   buildClouds();
   buildHighlight();
@@ -169,6 +256,65 @@ function onResize() {
   R.camera.updateProjectionMatrix();
   R.handCamera.aspect = w / h;
   R.handCamera.updateProjectionMatrix();
+}
+
+// ---------------------------------------------------------------- shadows
+// The sun's view of the land around you is drawn into a depth picture; the blocks' shader looks each point
+// up in it to see whether the sun reaches there. What is drawn is the far side of everything (the faces
+// turned away from the sun), so nothing lit can ever shade itself.
+const lightVP = new THREE.Matrix4(), tmpM = new THREE.Matrix4();
+const BIAS = new THREE.Matrix4().set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1);
+const sx = new THREE.Vector3(), sy = new THREE.Vector3(), sc = new THREE.Vector3();
+const UP_Z = new THREE.Vector3(0, 0, 1);
+
+function buildShadows() {
+  const size = isTouchDevice ? 1024 : 2048, reach = isTouchDevice ? 48 : 64;
+  const target = new THREE.WebGLRenderTarget(size, size, { depthBuffer: true, stencilBuffer: false });
+  target.texture.minFilter = target.texture.magFilter = THREE.NearestFilter;
+  target.texture.generateMipmaps = false;
+  target.depthTexture = new THREE.DepthTexture(size, size);
+  target.depthTexture.minFilter = target.depthTexture.magFilter = THREE.NearestFilter;
+  const camera = new THREE.OrthographicCamera(-reach, reach, reach, -reach, 1, 420);
+  camera.layers.set(1);
+  R.shadow = {
+    size, reach, target, camera, age: 99, drawn: false,
+    blocks: new THREE.ShaderMaterial({
+      uniforms: { uAtlas: R.shared.uAtlas }, vertexShader: SHADOW_VS, fragmentShader: SHADOW_FS, side: THREE.BackSide, colorWrite: false,
+    }),
+    bodies: new THREE.MeshBasicMaterial({ side: THREE.BackSide, colorWrite: false }),
+  };
+  R.shared.uShadowMap.value = target.depthTexture;
+  R.shared.uShadowTexel.value = 1 / size;
+}
+
+function drawShadows() {
+  const S = R.shadow, cam = S.camera, L = R.shared.uSunDir.value;
+  // the picture is centred on you, moved a whole pixel of it at a time so that shadows do not shimmer
+  sx.crossVectors(UP_Z, L).normalize();
+  sy.crossVectors(L, sx);
+  const texel = 2 * S.reach / S.size, c = R.camera.position;
+  const ax = Math.round(c.dot(sx) / texel) * texel - c.dot(sx), ay = Math.round(c.dot(sy) / texel) * texel - c.dot(sy);
+  sc.copy(c).addScaledVector(sx, ax).addScaledVector(sy, ay);
+  cam.position.copy(sc).addScaledVector(L, 210);
+  cam.up.copy(UP_Z);
+  cam.lookAt(sc);
+  cam.updateMatrixWorld();
+  lightVP.copy(BIAS).multiply(cam.projectionMatrix).multiply(cam.matrixWorldInverse);
+  const r = R.renderer, scene = R.scene, fog = scene.fog;
+  scene.fog = null;
+  r.setRenderTarget(S.target);
+  r.clear();
+  scene.overrideMaterial = S.blocks;
+  cam.layers.set(1);
+  r.render(scene, cam);
+  // (and the bodies of animals, monsters and players: layer 2, set where their models are built)
+  scene.overrideMaterial = S.bodies;
+  cam.layers.set(2);
+  r.render(scene, cam);
+  scene.overrideMaterial = null;
+  scene.fog = fog;
+  r.setRenderTarget(null);
+  S.drawn = true;
 }
 
 // ---------------------------------------------------------------- sky
@@ -189,12 +335,13 @@ function buildSky() {
     uHorizon: { value: new THREE.Color() },
     uSunDir: { value: new THREE.Vector3(1, 0, 0) },
     uSunset: { value: 0 },
+    uHalo: { value: 0 },
   };
   const sky = new THREE.Mesh(new THREE.SphereGeometry(500, 24, 12), new THREE.ShaderMaterial({
     uniforms: R.skyUniforms,
     vertexShader: `varying vec3 vDir; void main(){ vDir = position; vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position = p.xyww; }`,
     fragmentShader: `
-      uniform vec3 uTop; uniform vec3 uHorizon; uniform vec3 uSunDir; uniform float uSunset;
+      uniform vec3 uTop; uniform vec3 uHorizon; uniform vec3 uSunDir; uniform float uSunset; uniform float uHalo;
       varying vec3 vDir;
       void main(){
         vec3 d = normalize(vDir);
@@ -202,6 +349,9 @@ function buildSky() {
         col = mix(col, uHorizon * 0.55, smoothstep(0.0, -0.3, d.y));
         float g = pow(max(dot(d, uSunDir), 0.0), 3.0) * uSunset * (1.0 - smoothstep(-0.1, 0.6, d.y));
         col = mix(col, vec3(1.0, 0.52, 0.22), g * 0.85);
+        // (the sky is brighter round the sun)
+        float near = max(dot(d, uSunDir), 0.0);
+        col += vec3(1.0, 0.9, 0.7) * (pow(near, 48.0) * 0.3 + pow(near, 6.0) * 0.08) * uHalo;
         gl_FragColor = vec4(col, 1.0);
       }`,
     side: THREE.BackSide, depthWrite: false,
@@ -260,30 +410,46 @@ function buildSky() {
 }
 
 function buildClouds() {
-  const N = 64;
-  const c = document.createElement('canvas');
-  c.width = c.height = N;
-  const g = c.getContext('2d');
-  const r = mulberry32(1234);
-  g.fillStyle = '#fff';
-  for (let i = 0; i < 70; i++) {
-    const x = r() * N | 0, y = r() * N | 0, w = 2 + (r() * 7 | 0), h = 2 + (r() * 5 | 0);
-    for (const ox of [0, -N]) for (const oy of [0, -N]) g.fillRect(x + ox, y + oy, w, h);
-  }
-  const tex = new THREE.CanvasTexture(c);
+  // a map of how thick the cloud is over each patch of sky, the same in every direction it is tiled; how
+  // much of it shows is up to the weather (`uCover`: 0 a clear sky, 1 a full blanket)
+  const N = 64, r = mulberry32(1234);
+  const lattice = (n) => { const a = new Float32Array(n * n); for (let i = 0; i < a.length; i++) a[i] = r(); return a; };
+  const coarse = lattice(16), mid = lattice(32);
+  const at = (a, n, x, y) => {
+    const fx = x * n / N, fy = y * n / N, x0 = Math.floor(fx), y0 = Math.floor(fy);
+    const tx = smoothstep(0, 1, fx - x0), ty = smoothstep(0, 1, fy - y0);
+    const g = (i, j) => a[((j + n) % n) * n + ((i + n) % n)];
+    return (g(x0, y0) * (1 - tx) + g(x0 + 1, y0) * tx) * (1 - ty) + (g(x0, y0 + 1) * (1 - tx) + g(x0 + 1, y0 + 1) * tx) * ty;
+  };
+  const v = new Float32Array(N * N);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) v[y * N + x] = at(coarse, 16, x, y) * 0.6 + at(mid, 32, x, y) * 0.34 + r() * 0.06;
+  // (ranked, so that a cover of 0.3 hides exactly 70% of the sky)
+  const order = [...v.keys()].sort((i, j) => v[i] - v[j]);
+  const data = new Uint8Array(N * N * 4);
+  order.forEach((i, rank) => { data[i * 4] = Math.round(rank / (N * N - 1) * 255); data[i * 4 + 3] = 255; });
+  const tex = new THREE.DataTexture(data, N, N, THREE.RGBAFormat);
   tex.magFilter = THREE.NearestFilter;
   tex.minFilter = THREE.NearestFilter;
   tex.generateMipmaps = false;
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  R.cloudUniforms = { uMap: { value: tex }, uOffset: { value: new THREE.Vector2() }, uColor: { value: new THREE.Color(1, 1, 1) } };
+  tex.needsUpdate = true;
+  R.cloudUniforms = {
+    uMap: { value: tex }, uOffset: { value: new THREE.Vector2() }, uColor: { value: new THREE.Color(1, 1, 1) },
+    uShade: { value: new THREE.Color(0.8, 0.84, 0.9) }, uCover: { value: 0.3 }, uAlpha: { value: 0.8 },
+  };
   const m = new THREE.Mesh(new THREE.PlaneGeometry(1600, 1600), new THREE.ShaderMaterial({
     uniforms: R.cloudUniforms,
-    vertexShader: `uniform vec2 uOffset; varying vec2 vUv; varying float vDist;
+    // (how far off each bit of cloud is has to be worked out for each dot drawn: the sheet has only four
+    // corners, all of them far away, and the distance between them is not a straight-line blend)
+    vertexShader: `uniform vec2 uOffset; varying vec2 vUv; varying vec2 vFrom;
       void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vUv = (w.xz + uOffset) / 768.0;
-      vec4 mv = viewMatrix * w; vDist = length(mv.xz); gl_Position = projectionMatrix * mv; }`,
-    fragmentShader: `uniform sampler2D uMap; uniform vec3 uColor; varying vec2 vUv; varying float vDist;
-      void main(){ vec4 c = texture2D(uMap, vUv); if (c.a < 0.5) discard;
-      gl_FragColor = vec4(uColor, 0.78 * (1.0 - smoothstep(260.0, 700.0, vDist))); }`,
+      vFrom = w.xz - cameraPosition.xz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+    fragmentShader: `uniform sampler2D uMap; uniform vec3 uColor; uniform vec3 uShade; uniform float uCover; uniform float uAlpha;
+      varying vec2 vUv; varying vec2 vFrom;
+      void main(){ float v = texture2D(uMap, vUv).r - (1.0 - uCover); if (v < 0.0) discard;
+      // (thin at the edges, heavy and grey in the middle of a big cloud)
+      vec3 col = mix(uColor, uShade, smoothstep(0.05, 0.45, v));
+      gl_FragColor = vec4(col, uAlpha * (1.0 - smoothstep(260.0, 700.0, length(vFrom)))); }`,
     transparent: true, depthWrite: false, side: THREE.DoubleSide,
   }));
   m.rotation.x = -Math.PI / 2;
@@ -523,6 +689,7 @@ function geometry(d) {
 
 function placeMesh(geo, mat, chunk) {
   const m = new THREE.Mesh(geo, mat);
+  if (mat === R.opaqueMat) m.layers.enable(1);   // (solid blocks cast shadows)
   m.position.set(chunk.cx * 16, 0, chunk.cz * 16);
   m.scale.setScalar(1 / 16);
   m.matrixAutoUpdate = false;
@@ -549,7 +716,13 @@ const tmpV = new THREE.Vector3();
 const DAY_TOP = new THREE.Color(0.38, 0.6, 1.0), NIGHT_TOP = new THREE.Color(0.01, 0.015, 0.05);
 const DAY_HOR = new THREE.Color(0.72, 0.84, 1.0), NIGHT_HOR = new THREE.Color(0.03, 0.04, 0.09);
 const SUNSET = new THREE.Color(1.0, 0.55, 0.28);
-const fogCol = new THREE.Color();
+const GREY_TOP = new THREE.Color(0.46, 0.5, 0.57), GREY_HOR = new THREE.Color(0.62, 0.65, 0.69), FLASH = new THREE.Color(0.9, 0.92, 1);
+const LOW_SUN = new THREE.Color(1.34, 0.74, 0.38), HIGH_SUN = new THREE.Color(1.1, 1.02, 0.9);
+const SHADE_SKY = new THREE.Color(0.84, 0.93, 1.12), NIGHT_SKY = new THREE.Color(0.8, 0.88, 1.15);
+const fogCol = new THREE.Color(), tmpC = new THREE.Color();
+// The weather as the sky sees it: how overcast (0-1), how hard it is raining, how much cloud, how dark a
+// storm, and a flash of lightning dying away. weather.js keeps it; with none, a fair day.
+const CALM = { over: 0, rain: 0, cover: 0.3, dark: 0, flash: 0 };
 
 // How each dimension looks: the Nether is a red haze lit by lava, the End a dark violet void
 const DIM_LOOK = {
@@ -566,7 +739,7 @@ export function updateSky(time, dt, underwater, inLava) {
     G.daylight = G.dim === 'end' ? 0.55 : 0;
     const su = R.skyUniforms;
     const skyCol = look.sky || look.fog;
-    su.uTop.value.copy(skyCol); su.uHorizon.value.copy(look.fog); su.uSunset.value = 0;
+    su.uTop.value.copy(skyCol); su.uHorizon.value.copy(look.fog); su.uSunset.value = 0; su.uHalo.value = 0;
     const cam = R.camera.position;
     R.sky.position.copy(cam);
     R.sun.visible = R.moon.visible = R.clouds.visible = false;
@@ -581,23 +754,29 @@ export function updateSky(time, dt, underwater, inLava) {
     R.scene.fog.color.copy(fogCol); R.scene.fog.near = near; R.scene.fog.far = far;
     const sh = R.shared;
     sh.uFogColor.value.copy(fogCol); sh.uFogNear.value = near; sh.uFogFar.value = far;
-    sh.uDaylight.value = skyLook(G.daylight); sh.uGamma.value = G.settings.gamma; sh.uMoon.value = 0;
+    sh.uDaylight.value = skyLook(G.daylight); sh.uGamma.value = G.settings.gamma;
+    sh.uDirK.value = 0; sh.uSunLight.value.setRGB(0, 0, 0); sh.uSkyLight.value.setRGB(1, 1, 1);
+    R.look.daylight = sh.uDaylight.value; R.look.sky = 1; R.look.sun = 0;
     sh.uTime.value = (sh.uTime.value + dt) % 1000;
     R.sky.visible = true;
     return;
   }
   R.sun.visible = R.moon.visible = R.clouds.visible = R.stars.visible = true;
+  const wx = G.wx || CALM;
   const a = time * Math.PI * 2;
   const sunDir = tmpV.set(Math.cos(a), Math.sin(a), 0.22).normalize();
   const s = sunDir.y;
   G.daylight = 0.2 + 0.8 * smoothstep(-0.18, 0.22, s);
   const day = smoothstep(-0.25, 0.25, s);
-  const sunset = Math.max(0, 1 - Math.abs(s) / 0.32) * (Math.cos(a) > -2 ? 1 : 0);
+  const sunset = Math.max(0, 1 - Math.abs(s) / 0.32) * (1 - wx.over);
   const su = R.skyUniforms;
-  su.uTop.value.copy(NIGHT_TOP).lerp(DAY_TOP, day);
-  su.uHorizon.value.copy(NIGHT_HOR).lerp(DAY_HOR, day);
+  // a grey sky under heavy cloud, darker still in a storm; lightning whitens it for an instant
+  su.uTop.value.copy(NIGHT_TOP).lerp(DAY_TOP, day).lerp(tmpC.copy(GREY_TOP).multiplyScalar((0.12 + 0.88 * day) * (1 - 0.45 * wx.dark)), wx.over);
+  su.uHorizon.value.copy(NIGHT_HOR).lerp(DAY_HOR, day).lerp(tmpC.copy(GREY_HOR).multiplyScalar((0.12 + 0.88 * day) * (1 - 0.45 * wx.dark)), wx.over);
+  if (wx.flash > 0) { su.uTop.value.lerp(FLASH, wx.flash * 0.55); su.uHorizon.value.lerp(FLASH, wx.flash * 0.55); }
   su.uSunDir.value.copy(sunDir);
   su.uSunset.value = sunset;
+  su.uHalo.value = smoothstep(-0.08, 0.12, s) * (1 - wx.over);
 
   const cam = R.camera.position;
   R.sky.position.copy(cam);
@@ -607,19 +786,24 @@ export function updateSky(time, dt, underwater, inLava) {
   const phase = R.moonPhases[(G.day || 0) % 8];
   if (R.moon.material.map !== phase) { R.moon.material.map = phase; R.moon.material.needsUpdate = true; }
   R.moon.lookAt(cam);
+  R.sun.material.opacity = R.moon.material.opacity = 1 - wx.over;
   R.stars.position.copy(cam);
   R.stars.rotation.z = a;
-  R.stars.material.opacity = Math.max(0, 1 - day * 1.6);
+  R.stars.material.opacity = Math.max(0, 1 - day * 1.6) * (1 - wx.over);
 
-  R.clouds.position.set(cam.x, 108.5, cam.z);
-  R.cloudUniforms.uOffset.value.set(G.cloudDrift || 0, 0);
-  G.cloudDrift = ((G.cloudDrift || 0) + dt * 1.2) % 768;
-  const cb = 0.25 + 0.75 * day;
-  R.cloudUniforms.uColor.value.setRGB(cb, cb, cb * 1.02);
+  const cu = R.cloudUniforms;
+  R.clouds.position.set(cam.x, 132.5, cam.z);   // (above the highest peaks)
+  cu.uOffset.value.set(G.cloudDrift || 0, 0);
+  G.cloudDrift = ((G.cloudDrift || 0) + dt * (1.2 + wx.rain * 1.6)) % 768;
+  const cb = (0.25 + 0.75 * day) * (1 - 0.3 * wx.over - 0.3 * wx.dark) + wx.flash * 0.5;
+  cu.uColor.value.setRGB(cb, cb, cb * 1.02);
+  cu.uShade.value.setRGB(cb * (0.84 - 0.2 * wx.over), cb * (0.87 - 0.2 * wx.over), cb * (0.93 - 0.2 * wx.over));
+  cu.uCover.value = wx.cover;
+  cu.uAlpha.value = 0.8 + 0.14 * wx.over;
 
   fogCol.copy(su.uHorizon.value).lerp(SUNSET, sunset * 0.35);
   const rd = G.settings.renderDist;
-  let near = rd * 16 * 0.55, far = rd * 16 - 6;
+  let near = rd * 16 * (0.55 - 0.2 * wx.rain), far = (rd * 16 - 6) * (1 - 0.18 * wx.rain);
   if (inLava) { fogCol.setRGB(0.6, 0.15, 0.02); near = 0.2; far = 2.5; }
   else if (underwater) { fogCol.setRGB(0.05, 0.12, 0.35).multiplyScalar(0.3 + 0.7 * G.daylight); near = 1; far = 18; }
   R.scene.fog.color.copy(fogCol);
@@ -629,15 +813,36 @@ export function updateSky(time, dt, underwater, inLava) {
   sh.uFogColor.value.copy(fogCol);
   sh.uFogNear.value = near;
   sh.uFogFar.value = far;
-  sh.uDaylight.value = skyLook(G.daylight);
-  sh.uMoon.value = 1 - smoothstep(0.45, 0.85, G.daylight);
+  // Light. By day part of it comes straight from the sun: warm, strongest on the sides turned to it, and
+  // cut off by whatever stands in the way. The rest comes from the whole sky and is a little blue. The moon
+  // does the same more faintly, and under heavy cloud there is no sun to speak of, only the grey sky.
+  const moon = s < 0, night = 1 - smoothstep(0.45, 0.85, G.daylight);
+  const dirK = smoothstep(0.04, 0.3, Math.abs(s)) * (1 - 0.94 * wx.over);
+  const frac = (moon ? 0.34 : 0.46) * dirK;
+  const dl = Math.min(1, skyLook(G.daylight) * (1 - 0.16 * wx.over - 0.2 * wx.dark) + wx.flash * 0.8);
+  sh.uSunDir.value.copy(sunDir).multiplyScalar(moon ? -1 : 1);
+  sh.uDirK.value = dirK;
+  if (moon) sh.uSunLight.value.setRGB(0.72, 0.84, 1.25);
+  else sh.uSunLight.value.copy(LOW_SUN).lerp(HIGH_SUN, smoothstep(0.08, 0.5, s));
+  sh.uSunLight.value.multiplyScalar(frac);
+  sh.uSkyLight.value.setRGB(1, 1, 1).lerp(SHADE_SKY, dirK * (1 - night)).lerp(NIGHT_SKY, night).multiplyScalar(1 - frac);
+  sh.uSkyGlow.value.copy(su.uHorizon.value).lerp(su.uTop.value, 0.35).lerp(SUNSET, sunset * 0.3);
+  sh.uDaylight.value = dl;
   sh.uGamma.value = G.settings.gamma;
   sh.uTime.value = (sh.uTime.value + dt) % 1000;
+  R.look.daylight = dl; R.look.sky = 1 - frac; R.look.sun = frac;
   R.sky.visible = !underwater;
 }
 
 export function render() {
-  const r = R.renderer;
+  const r = R.renderer, S = R.shadow, sh = R.shared;
+  // the shadows are redrawn as you and the sun move (every frame on a computer, every other on a tablet)
+  const want = G.settings.shadows !== false && sh.uDirK.value > 0.02 && G.dim !== 'nether' && G.dim !== 'end';
+  if (want && (++S.age >= (isTouchDevice ? 2 : 1) || !S.drawn)) { S.age = 0; drawShadows(); }
+  if (!want) S.drawn = false;
+  sh.uShadowOn.value = want && S.drawn ? 1 : 0;
+  R.camera.updateMatrixWorld();
+  sh.uShadowFromView.value.copy(lightVP).multiply(R.camera.matrixWorld);
   r.clear();
   r.render(R.scene, R.camera);
   if (R.handHolder.visible) {
