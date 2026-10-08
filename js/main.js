@@ -21,6 +21,7 @@ import { Net, serverURL } from './net.js';
 import './dimmobs.js';
 import { startPanorama, stopPanorama, panoramaFrame } from './panorama.js';
 import { tickWeather, resetWeather, weatherState, weatherKind, setWeather } from './weather.js';
+import { adoptAccountLook, accountLook, lookSaved, skinSync } from './skins.js';
 import { findPortalFrame, portalCells, findNearbyPortal, buildPortal, END_SPAWN, endColumn, DIMS } from './dims.js';
 
 const dayLength = () => G.settings.dayLength || 1200; // seconds; the original's day is 20 minutes
@@ -809,11 +810,11 @@ export const Game = {
   setTime(t) {
     if (!Number.isFinite(t) || isGuest()) return;
     G.time = ((t % 1) + 1) % 1;
-    if (G.net) G.net.send({ k: 't', t: G.time, d: G.day || 0, n: G.nightsNoSleep || 0, w: weatherKind() });
+    if (G.net) G.net.send({ k: 't', t: G.time, d: G.day || 0, n: G.nightsNoSleep || 0, w: weatherKind(), q: 1 });
   },
   setWeatherNow(kind, secs) {
     if (isGuest() || !setWeather(kind, secs)) return;
-    if (G.net) G.net.send({ k: 't', t: G.time, d: G.day || 0, n: G.nightsNoSleep || 0, w: weatherKind() });
+    if (G.net) G.net.send({ k: 't', t: G.time, d: G.day || 0, n: G.nightsNoSleep || 0, w: weatherKind(), q: 1 });
   },
   // Commands typed in a world that is not online (an admin's own): the online ones go to the server
   command(text) {
@@ -1135,7 +1136,9 @@ export const Game = {
     const b = await r.json().catch(() => ({}));
     if (!r.ok || !b.token) throw new Error(b.error || 'Accounts only work on the Blockcraft website.');
     G.account = { ...b.account, token: b.token };
+    delete G.account.look;
     store('account', G.account);
+    syncLook(b.account);
     return G.account;
   },
 
@@ -1154,7 +1157,7 @@ export const Game = {
       const r = await fetch('/api/me', { headers: authHeader(a), cache: 'no-store' });
       if (r.status === 401) { G.account = null; remove('account'); return null; }
       const b = await r.json().catch(() => null);
-      if (b && b.account && G.account) { G.account.admin = !!b.account.admin; store('account', G.account); }
+      if (b && b.account && G.account) { G.account.admin = !!b.account.admin; store('account', G.account); syncLook(b.account); }
     } catch { /* offline: keep it */ }
     return G.account;
   },
@@ -1395,6 +1398,29 @@ function arrive(a) {
 }
 
 const authHeader = (a) => (a && a.token ? { authorization: 'Bearer ' + a.token } : {});
+
+// The player's character is kept with their account. A change made here is sent a moment later (so that
+// trying on ten hats is one message); if it cannot be, it stays marked and goes the next time.
+let lookTimer = 0;
+function pushLook() {
+  clearTimeout(lookTimer);
+  if (!G.account || !serverURL()) return;
+  lookTimer = setTimeout(async () => {
+    const a = G.account, sent = accountLook();
+    if (!a) return;
+    try {
+      const r = await fetch('/api/look', { method: 'POST', headers: { 'content-type': 'application/json', ...authHeader(a) }, body: JSON.stringify(sent) });
+      if (r.ok && accountLook().code === sent.code) lookSaved();
+    } catch { /* offline */ }
+  }, 900);
+}
+skinSync.changed = pushLook;
+// (the account as the server has just described it: its look is taken on, or ours sent up)
+function syncLook(acc) {
+  if (!G.account || !acc || !acc.id) return;
+  if (adoptAccountLook(acc.id, acc.look)) pushLook();
+  if (G.ui && G.state === 'title') { G.ui.drawAvatar(); if (G.screen === 'skins') G.ui.buildSkins(); }
+}
 
 // A player's saved inventory in an online world, by account. Worlds from before accounts saved it by
 // name: the account with that username (usernames are unique) takes it over the first time.
@@ -1799,6 +1825,8 @@ function boot(hotData) {
   } catch { /* hot reload unavailable */ }
   if (hotData && hotData.worldId) Game.loadWorld(hotData.worldId);
   G.account = load('account');
+  // (the character kept with the account, in case it was changed on another device)
+  if (G.account && serverURL()) Game.checkAccount();
   // which version of the game this page is (to notice later if the server gets updated)
   if (serverURL()) fetch('/api/build', { cache: 'no-store' }).then((r) => r.json()).then((b) => noteBuild(b.build)).catch(() => {});
   // a world link (…?world=ID) goes straight into that online world

@@ -31,6 +31,7 @@ const BIOME_TINT = [
 Object.assign(BIOME_TINT, { 25: [0.9, 1, 0.9], 26: [0.9, 1, 0.9], 27: [0.8, 0.9, 0.94], 28: [0.9, 1, 0.8], 29: [1, 1, 0.9], 31: [0.8, 0.93, 0.86], 32: [0.8, 1, 0.62] });
 const FENCE_LINK = new Uint8Array(256); // blocks a fence connects to
 const LEAFY = new Uint8Array(256), STILL = new Uint8Array(256);   // leaves stir in the wind; these plants do not
+const GLOW = new Uint8Array(256);   // blocks that shine: 1 all over (glowstone, a torch, fire), 2 on their front only (a lit furnace)
 const AO = [0.5, 0.68, 0.84, 1];
 
 // faces: +x, -x, +y, -y, +z, -z; corners listed BL, BR, TR, TL as seen from outside
@@ -77,6 +78,7 @@ export function initMesher() {
     FRONT[i] = b.front;
     FENCE_LINK[i] = (b.opaque && b.solid) || b.render === RENDER.FENCE ? 1 : 0;
     LEAFY[i] = b.key.endsWith('_leaves') ? 1 : 0;
+    GLOW[i] = b.light >= 12 && b.render !== RENDER.LIQUID && !b.boxes ? (b.facing ? 2 : 1) : 0;
     STILL[i] = ['sugar_cane', 'bamboo', 'fire', 'cobweb', 'red_mushroom', 'dead_bush', 'nether_wart', 'crimson_fungus', 'warped_fungus'].includes(b.key) ? 1 : 0;
     if (b.boxes) {
       const own = [b.faces[0], b.faces[1], b.faces[2], b.faces[3], b.facing ? b.front : b.faces[4], b.faces[5]];
@@ -149,16 +151,17 @@ class MeshBuf {
     }
     this.pos = pos; this.tex = tex; this.col = col; this.lig = lig; this.idx = idx;
   }
-  reset() { this.v = 0; this.i = 0; this.sway = 0; this.face = 6; }
+  reset() { this.v = 0; this.i = 0; this.sway = 0; this.face = 6; this.glow = 0; }
   ensure(n) { if (this.v + n > this.cap) this.alloc(this.cap * 2); }
   // (sway: how much this corner moves in the wind, 0 to 255; leaves take it from `this.sway`)
   // `this.face` says which way the surface looks (0-5, as in FACES; 6 for plants, which have no one side):
-  // the shader lights each side by where the sun is, so no shade is baked into the colour here
+  // the shader lights each side by where the sun is, so no shade is baked into the colour here.
+  // `this.glow` (8) marks a side that shines by itself and is drawn at full brightness.
   vert(x, y, z, u, v, layer, r, g, b, sky, blk, sway) {
     const o = this.v;
     this.pos[o * 3] = x; this.pos[o * 3 + 1] = y; this.pos[o * 3 + 2] = z;
     this.tex[o * 4] = u; this.tex[o * 4 + 1] = v; this.tex[o * 4 + 2] = layer; this.tex[o * 4 + 3] = sway === undefined ? this.sway : sway;
-    this.col[o * 4] = r; this.col[o * 4 + 1] = g; this.col[o * 4 + 2] = b; this.col[o * 4 + 3] = this.face;
+    this.col[o * 4] = r; this.col[o * 4 + 1] = g; this.col[o * 4 + 2] = b; this.col[o * 4 + 3] = this.face | this.glow;
     this.lig[o * 2] = sky; this.lig[o * 2 + 1] = blk;
     this.v++;
   }
@@ -379,10 +382,11 @@ export function buildChunkMesh(world, chunk) {
             if (OPAQUE[nb] || (cull && nb === id)) continue;
             if (f === 3 && y === 0) continue;
             const layer = f === front ? FRONT[id] : FACE[id * 6 + f];
+            buf.glow = GLOW[id] === 1 || (GLOW[id] === 2 && f === front) ? 8 : 0;
             if (tint && (TINT[id] === 2 || f === 2)) cubeFace(buf, x, y, z, f, layer, ri, tint[0], tint[1], tint[2]);
             else cubeFace(buf, x, y, z, f, layer, ri, 1, 1, 1);
           }
-          buf.sway = 0;
+          buf.sway = 0; buf.glow = 0;
         } else if (rt === RENDER.CROSS) {
           const sw = STILL[id] ? 0 : 255;
           const layer = FACE[id * 6];
@@ -391,7 +395,7 @@ export function buildChunkMesh(world, chunk) {
           const r = t[0] * 240, g = t[1] * 240, b = t[2] * 240;
           const X = x * 16, Y = y * 16, Z = z * 16;
           OB.ensure(8);
-          OB.face = 6;
+          OB.face = 6; OB.glow = GLOW[id] ? 8 : 0;
           OB.vert(X, Y, Z, 0, 0, layer, r, g, b, sky, blk);
           OB.vert(X + 16, Y, Z + 16, 16, 0, layer, r, g, b, sky, blk);
           OB.vert(X + 16, Y + 16, Z + 16, 16, 16, layer, r, g, b, sky, blk, sw);
@@ -402,6 +406,7 @@ export function buildChunkMesh(world, chunk) {
           OB.vert(X + 16, Y + 16, Z, 16, 16, layer, r, g, b, sky, blk, sw);
           OB.vert(X, Y + 16, Z + 16, 0, 16, layer, r, g, b, sky, blk, sw);
           OB.quad(false, true);
+          OB.glow = 0;
         } else if (rt === RENDER.TORCH) {
           const layer = FACE[id * 6];
           const sky = rS[ri] * 17, blk = rL[ri] * 17;
@@ -409,6 +414,7 @@ export function buildChunkMesh(world, chunk) {
           // meta 1-4: on a wall (to the east, west, south, north): it leans out from the wall, foot against it
           const wm = meta ? meta[(y << 8) | (z << 4) | x] : 0;
           const wd = wm >= 1 && wm <= 4 ? [[1, 0], [-1, 0], [0, 1], [0, -1]][wm - 1] : null;
+          OB.glow = GLOW[id] ? 8 : 0;
           for (const f of [0, 1, 2, 4, 5]) {
             OB.ensure(4);
             OB.face = f;
@@ -426,6 +432,7 @@ export function buildChunkMesh(world, chunk) {
             }
             OB.quad(false, false);
           }
+          OB.glow = 0;
         } else if (rt === RENDER.BED || rt === RENDER.DOOR || rt === RENDER.FENCE) {
           const sky = rS[ri] * 17, blk = rL[ri] * 17;
           const X = x * 16, Y = y * 16, Z = z * 16;

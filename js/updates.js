@@ -67,6 +67,22 @@ const LAKESIDE = { seed: 2024, at: [2, -22], view: [0, 0, 12.5], pitch: -0.03, t
 export const UPDATES = [
   {
     // a small update: it keeps the A New Look picture
+    version: '1.9.2', name: 'Lamps & Shadows', date: '2026-10-07',
+    splashes: ['Mind your shadow!', 'Light a torch!', 'Looks like rain!', 'Same you, any device!', 'Glowstone glows!', 'Thunder!', 'Nice hat!', 'Surprise me!',
+      'Golden hour!', 'Who are you today?', 'Bring a coat!', 'The Wither!'],
+    scene: LAKESIDE,
+    notes: [
+      'Your character is saved with your account. Sign in on another device and you look the same there, prizes and all.',
+      'Shadows are steady and straight now: they keep to the pixels of the blocks they fall on, and no longer wobble when leaves move.',
+      'More things cast shadows: grass, flowers, sugar cane and other plants, and items lying on the ground.',
+      'Lamps cast shadows too. Indoors or at night, the torch or glowstone lighting the place you are in throws real shadows from blocks, furniture, animals and players.',
+      'Glowstone, torches and fire shine at full brightness, and a lit furnace glows at the front. Glowstone has a brighter, warmer texture.',
+      'Lava has a finer, smoother texture.',
+      'Rain is much easier to see, and it falls as snow in the cold lands.',
+    ],
+  },
+  {
+    // a small update: it keeps the A New Look picture
     version: '1.9.1', name: 'Sun & Storms', date: '2026-10-07',
     splashes: ['Looks like rain!', 'Mind your shadow!', 'Thunder!', 'Golden hour!', 'Nice hat!', 'Who are you today?', 'Sunglasses!', 'Surprise me!',
       'Win the crown!', 'Bring a coat!', 'Sleep through the storm!', 'The Wither!'],

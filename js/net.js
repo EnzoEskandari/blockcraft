@@ -11,7 +11,7 @@ import { packSlots, unpackSlots } from './inventory.js';
 import { cleanEnch } from './enchant.js';
 import { rayBox } from './physics.js';
 import { sfx, blockSound } from './audio.js';
-import { followWeather, weatherKind } from './weather.js';
+import { followWeather, weatherKind, weatherQuick } from './weather.js';
 
 const r2 = (v) => Math.round(v * 100) / 100;
 const MOB_RANGE = 72;          // guests see the host's mobs this far away
@@ -794,7 +794,7 @@ export class Net {
       }
       case 't':
         G.time = d.t; G.day = d.d; G.nightsNoSleep = d.n;
-        if (d.w) followWeather(d.w);
+        if (d.w) followWeather(d.w, d.q);
         break;
       case 'wake':
         if (G.sleeping) { G.game.wakeUp(); G.ui.toast('Good morning'); }
@@ -876,7 +876,7 @@ export class Net {
     this.timeT -= dt;
     if (this.timeT <= 0 && this.players.size) {
       this.timeT = 1;
-      this.send({ k: 't', t: G.time, d: G.day || 0, n: G.nightsNoSleep || 0, w: weatherKind() });
+      this.send({ k: 't', t: G.time, d: G.day || 0, n: G.nightsNoSleep || 0, w: weatherKind(), q: weatherQuick() ? 1 : undefined });
     }
     this.contT -= dt;
     if (this.contT <= 0) {

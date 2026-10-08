@@ -291,7 +291,8 @@ export function lookParts(look, H, bare = false) {
 }
 
 // ---------------------------------------------------------------- what this browser remembers
-// { look: the parts worn, got: the prizes won (by achievement) }; a skin chosen in 1.9 becomes its look
+// { look: the parts worn, got: the prizes won (by achievement) }; a skin chosen in 1.9 becomes its look.
+// Signed in, the same is kept with the account, so the character is the same on every device.
 const OLD_PRIZE = { dragonslayer: 'dragon', witherbane: 'blight', worldwalker: 'lands', lightkeeper: 'beacon', hunter: 'bestiary', chef: 'diet' };
 function state() {
   const s = load('skins') || {};
@@ -299,7 +300,38 @@ function state() {
   const look = (s.look && typeof s.look === 'object' ? lookOf(codeOf(s.look)) : lookOf(s.sel)) || { ...DEFAULT_LOOK };
   // (a prize that is somehow no longer held is taken off)
   for (const sl of SLOTS) { const it = item(sl.key, look[sl.key]); if (it.prize && !got.includes(it.prize)) look[sl.key] = DEFAULT_LOOK[sl.key]; }
-  return { look, got };
+  // `who`: the account this look belongs to; `dirty`: changed here and not yet saved to that account
+  return { look, got, who: typeof s.who === 'string' ? s.who : '', dirty: !!s.dirty };
+}
+// Called when the look or the prizes change in this browser (the game sends them to the account)
+export const skinSync = { changed: null };
+function keep(s) {
+  s.dirty = true;
+  store('skins', s);
+  if (skinSync.changed) skinSync.changed();
+}
+// What goes to the account, and the note that it got there
+export const accountLook = () => { const s = state(); return { code: codeOf(s.look), got: s.got }; };
+export function lookSaved() { const s = state(); s.dirty = false; store('skins', s); }
+// Signed in as account `id`, which holds `server` ({ code, got }, or nothing yet). The account's look is
+// taken on, unless this browser has changes of that same account's still waiting to be sent. Returns
+// true when what is here has to be sent up.
+export function adoptAccountLook(id, server) {
+  const s = state(), mine = s.who === id;
+  const theirs = server ? lookOf(server.code) : null;
+  const prizes = (server && Array.isArray(server.got) ? server.got : []).filter((k) => PRIZES[k]);
+  if (!theirs) {
+    // nothing kept there yet: what this browser has becomes the account's (prizes won as someone else stay behind)
+    if (s.who && !mine) s.got = [];
+    s.who = id; s.dirty = true;
+    store('skins', s);
+    return true;
+  }
+  const got = mine ? [...new Set([...s.got, ...prizes])] : prizes;
+  if (mine && s.dirty) { s.got = got; store('skins', s); return true; }
+  s.look = theirs; s.got = got; s.who = id; s.dirty = got.length > prizes.length;
+  store('skins', s);
+  return s.dirty;
 }
 export const myLook = () => state().look;
 export const mySkin = () => codeOf(state().look);
@@ -310,14 +342,14 @@ export function wear(slot, key) {
   const s = state(), it = BY[slot] && BY[slot][key];
   if (!it || !owns(it)) return false;
   s.look[slot] = key;
-  store('skins', s);
+  keep(s);
   return true;
 }
 export function wearLook(look) {
   const s = state();
   if (prizesIn(look).some((p) => !s.got.includes(p))) return false;
   s.look = lookOf(codeOf(look));
-  store('skins', s);
+  keep(s);
   return true;
 }
 // A character put together at random from what is owned
@@ -339,6 +371,6 @@ export function unlockSkins(has) {
     s.got.push(key);
     fresh.push({ key, items: SLOTS.flatMap((sl) => sl.items.filter((it) => it.prize === key).map((it) => it.name)) });
   }
-  if (fresh.length) store('skins', s);
+  if (fresh.length) keep(s);
   return fresh;
 }

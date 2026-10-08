@@ -65,7 +65,7 @@ const BUILD = crypto.createHash('sha256').update(
 const NAME_RE = /^[A-Za-z0-9_]{3,16}$/;
 const sha = (t) => crypto.createHash('sha256').update(t).digest('hex');
 const scrypt = (pw, salt) => new Promise((res, rej) => crypto.scrypt(pw, salt, 64, (e, k) => (e ? rej(e) : res(k))));
-const pub = (a) => ({ id: a.id, name: a.name, admin: isAdmin(a) || undefined });
+const pub = (a) => ({ id: a.id, name: a.name, admin: isAdmin(a) || undefined, look: a.look || undefined });
 
 // Admins run the online worlds: the accounts named in ADMINS (by default "Enzo"), and anyone an admin
 // makes one with /op. An admin name can only be signed up with the ADMIN_PASSWORD set on the server
@@ -205,6 +205,21 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/me' && req.method === 'GET') {
       const a = await accountFrom(bearer(req));
       json(res, a ? 200 : 401, a ? { account: pub(a) } : { error: 'Not signed in' });
+      return;
+    }
+    // How the player looks (the parts of their character, and the prizes they have won), kept with the
+    // account so that it is the same on every device they sign in on
+    if (p === '/api/look' && req.method === 'POST') {
+      const a = await accountFrom(bearer(req));
+      if (!a) { json(res, 401, { error: 'Not signed in' }); return; }
+      const b = await readBody(req);
+      const code = String(b.code || '');
+      if (!/^L1:[a-z0-9_]{1,24}(\.[a-z0-9_]{1,24}){0,15}$/.test(code)) { json(res, 400, { error: 'That is not a character.' }); return; }
+      // (a prize once won is never taken away)
+      const got = new Set([...(a.look && a.look.got || []), ...(Array.isArray(b.got) ? b.got : [])].filter((k) => typeof k === 'string' && /^[a-z]{2,16}$/.test(k)));
+      a.look = { code, got: [...got].slice(0, 24) };
+      await store.putAccount(a);
+      json(res, 200, { look: a.look });
       return;
     }
     if (p === '/api/logout' && req.method === 'POST') {

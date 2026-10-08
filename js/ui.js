@@ -262,7 +262,7 @@ export class UI {
     if (name === 'adv') this.buildAdv();
     if (name === 'sign') this.openSign(data);
     if (name === 'map') this.openMap(data);
-    if (name === 'skins') this.buildSkins();
+    if (name === 'skins') { this.buildSkins(); if (G.account) G.game.checkAccount(); }
     if (name === 'pause') this.syncPause();
     if (name === 'mp') {
       this.mpStatus('');

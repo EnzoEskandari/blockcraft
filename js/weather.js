@@ -15,7 +15,7 @@ const NAMES = { clear: 'clear', cloudy: 'cloudy', rain: 'raining', thunder: 'a t
 const LOOK = { clear: [0, 0, 0.25, 0], cloudy: [0.55, 0, 0.8, 0], rain: [0.88, 1, 0.94, 0], thunder: [1, 1, 0.98, 1] };
 const DRY = new Set([BIOME.DESERT, BIOME.SAVANNA, BIOME.BADLANDS]);
 
-const S = { kind: 'clear', left: 600, bolt: null, boltT: 0, nextBolt: 8, flashes: [], mesh: null, at: null, builtT: 0, fall: 0 };
+const S = { kind: 'clear', quick: 0, left: 600, bolt: null, boltT: 0, nextBolt: 8, flashes: [], mesh: null, at: null, builtT: 0, fall: 0 };
 const wx = { over: 0, rain: 0, cover: 0.3, dark: 0, flash: 0 };
 const rnd = (a, b) => a + Math.random() * (b - a);
 const MIN = 60;
@@ -58,10 +58,12 @@ export function setWeather(kind, secs) {
   if (!KINDS.includes(kind)) return false;
   S.kind = kind;
   S.left = secs > 0 ? secs : kind === 'clear' ? rnd(7, 18) * MIN : kind === 'thunder' ? rnd(2, 5) * MIN : rnd(3, 7) * MIN;
+  S.quick = 6;   // (weather that is asked for comes in within a few seconds, not drifting over as it does by itself)
   return true;
 }
 // (a guest is told what the weather is)
-export function followWeather(kind) { if (KINDS.includes(kind)) S.kind = kind; }
+export function followWeather(kind, quick) { if (KINDS.includes(kind) && kind !== S.kind) { S.kind = kind; if (quick) S.quick = 6; } }
+export const weatherQuick = () => S.quick > 0;
 
 // What falls where the player is: 'rain', 'snow' or nothing
 function fallHere() {
@@ -83,7 +85,9 @@ export function tickWeather(dt, host) {
   }
   // the sky drifts towards what the weather calls for; on a fair day the cloud comes and goes
   const L = here ? LOOK[S.kind] : LOOK.clear;
-  const ease = (v, to, rate) => v + Math.max(-rate * dt, Math.min(rate * dt, to - v));
+  S.quick = Math.max(0, S.quick - dt);
+  const hurry = S.quick > 0 ? 5 : 1;
+  const ease = (v, to, rate) => v + Math.max(-rate * hurry * dt, Math.min(rate * hurry * dt, to - v));
   const cover = S.kind === 'clear' ? 0.22 + 0.14 * Math.sin(((G.day || 0) + G.time) * 9.1) + 0.05 * Math.sin(((G.day || 0) + G.time) * 31) : L[2];
   wx.over = ease(wx.over, L[0], 0.07);
   wx.rain = ease(wx.rain, L[1], 0.09);
@@ -173,7 +177,7 @@ function strike() {
 // ---------------------------------------------------------------- rain and snow
 // As in the original: a sheet of falling streaks over each column of blocks around you, from the sky down
 // to the first thing in the way, each turned to face you.
-const REACH = isTouchDevice ? 5 : 7, SIDE = REACH * 2 + 1, COLS = SIDE * SIDE;
+const REACH = isTouchDevice ? 6 : 8, SIDE = REACH * 2 + 1, COLS = SIDE * SIDE;
 const tops = new Int16Array(COLS), phase = new Float32Array(COLS);
 
 function buildRain() {
@@ -181,9 +185,9 @@ function buildRain() {
   const c = document.createElement('canvas');
   c.width = 64; c.height = 128;
   const g = c.getContext('2d'), r = mulberry32(9);
-  for (let i = 0; i < 15; i++) {
-    const x = Math.floor(r() * 32), y = Math.floor(r() * 128), len = 5 + Math.floor(r() * 8);
-    g.fillStyle = `rgba(${120 + r() * 30 | 0},${150 + r() * 30 | 0},${225 + r() * 30 | 0},${0.3 + r() * 0.3})`;
+  for (let i = 0; i < 22; i++) {
+    const x = Math.floor(r() * 32), y = Math.floor(r() * 128), len = 6 + Math.floor(r() * 10);
+    g.fillStyle = `rgba(${140 + r() * 40 | 0},${175 + r() * 30 | 0},250,${0.42 + r() * 0.3})`;
     for (const oy of [0, -128]) g.fillRect(x, y + oy, 1, len);
   }
   for (let i = 0; i < 44; i++) {
@@ -244,8 +248,8 @@ function drawRain(dt, fall) {
   S.fall = (S.fall + dt * (snow ? 0.22 : 2.6)) % 64;
   u.uFall.value = S.fall;
   u.uSnow.value = snow ? 1 : 0;
-  u.uAmount.value = G.wx.rain * (snow ? 0.9 : 0.85);
-  u.uLight.value = 0.35 + 0.65 * R.look.daylight;
+  u.uAmount.value = G.wx.rain * (snow ? 0.9 : 1);
+  u.uLight.value = 0.5 + 0.5 * R.look.daylight;
   // how high the ground stands in each column: looked up again when you step to another block, and
   // every so often in case something was built or dug
   S.builtT -= dt;
@@ -273,7 +277,7 @@ function drawRain(dt, fall) {
     const q = i * 8;
     uv[q] = u0; uv[q + 1] = v0; uv[q + 2] = u0 + 0.5; uv[q + 3] = v0; uv[q + 4] = u0 + 0.5; uv[q + 5] = v1; uv[q + 6] = u0; uv[q + 7] = v1;
     // (thinning out with distance, and nothing right in your face)
-    const f = Math.min(1 - Math.max(0, (d - REACH * 0.55) / (REACH * 0.45)), Math.max(0, (d - 0.8) / 1.4));
+    const f = Math.min(1 - Math.max(0, (d - REACH * 0.6) / (REACH * 0.4)), Math.max(0, (d - 0.9) / 1.3));
     fade[i * 4] = fade[i * 4 + 1] = fade[i * 4 + 2] = fade[i * 4 + 3] = Math.max(0, f);
   }
   m.geometry.attributes.position.needsUpdate = true;

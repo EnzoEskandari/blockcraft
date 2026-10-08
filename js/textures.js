@@ -397,9 +397,15 @@ const PAINTERS = {
   }),
   tnt_bottom: (p) => p.each(() => jit([170, 44, 26], 8, p.r)),
   glowstone: (p) => {
-    const vor = voronoi(p.r, 14);
-    const pal = [[255, 240, 170], [248, 212, 120], [222, 168, 86], [180, 120, 60]];
-    p.each((x, y) => { const c = vor(x, y); return c.d2 - c.d1 < 0.7 ? [150, 100, 50] : jit(pal[Math.floor(c.v * 4)], 8, p.r); });
+    // warm crystals packed together, the brightest ones almost white at the heart; nothing dark between
+    // them, since the whole block shines
+    const vor = voronoi(p.r, 18);
+    const pal = [[255, 246, 200], [255, 236, 160], [252, 222, 132], [246, 206, 112], [238, 188, 94]];
+    p.each((x, y) => {
+      const c = vor(x, y), tone = pal[Math.floor(c.v * pal.length)];
+      if (c.d2 - c.d1 < 0.7) return [222, 166, 84];
+      return c.d1 < 0.9 && c.v < 0.5 ? [255, 252, 224] : jit(tone, 4, p.r);
+    });
   },
   torch: (p) => {
     p.clear();
@@ -701,10 +707,14 @@ function plantCross(p, stemC, headC, head) {
 }
 Object.assign(PAINTERS, {
   lava: (p) => {
-    const n = vnoise(p.r, 4), n2 = vnoise(p.r, 8);
+    // molten rock: fine swirls shading smoothly from deep orange to nearly white where it is hottest
+    const n = vnoise(p.r, 4), n2 = vnoise(p.r, 8), n3 = vnoise(p.r, 16);
+    const ramp = [[212, 84, 12], [226, 104, 16], [238, 126, 22], [246, 148, 32], [250, 170, 44], [253, 192, 60], [255, 212, 86], [255, 232, 128]];
     p.each((x, y) => {
-      const v = n(x, y) * 0.7 + n2(x, y) * 0.3;
-      return v > 0.66 ? [255, 214, 90] : v > 0.5 ? [248, 146, 30] : v > 0.32 ? [214, 92, 16] : [170, 52, 10];
+      // (the swirls lean, as if it were slowly turning over)
+      const v = n(x, y + x * 0.5) * 0.42 + n2(x + y * 0.5, y) * 0.4 + n3(x, y) * 0.18;
+      const t = Math.max(0, Math.min(0.999, (v - 0.25) * 2));
+      return ramp[Math.floor(t * ramp.length)];
     });
   },
   nether_portal: (p) => {
