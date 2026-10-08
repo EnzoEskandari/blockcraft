@@ -54,13 +54,20 @@ How it works:
 - Animals, villagers and dropped items are kept when you walk away.
 - Press **T** (or the **T** button on iPad) to chat.
 
+## A New Look (1.9)
+
+- **Textures.** Every tile is painted by code in `js/textures.js`. The shared painters (stone, dirt, grass, planks, bark, leaves, cobblestone, ores) were rewritten, and `polish()` finishes every tile the same way: a little more colour and contrast, then a small palette (median cut), which is what gives clean pixels. There is room for 256 tiles and 252 are used.
+- **Water, lava and wind** are in the chunk shader (`js/render.js`): two crossing layers of ripples for water, lava that glows without light, and a sway for plants and leaves (the mesher marks which corners move in the fourth byte of `aTex`).
+- **Skins** (`js/skins.js`): eleven free ones and six prizes, each unlocked by one of the hardest achievements. A skin's key is saved in the browser, sent to other players when you join, and drawn two ways from the same parts: as a model in the world and as a flat picture (`skinDoll`) on the title screen and the Skins page.
+- The boss of 1.8 is called **the Wither** (its internal name is still `blight`, so saves are untouched).
+
 ## Lands & Legends (1.8)
 
 - **27 lands.** Each climate now has several kinds of land: savanna, badlands, birch and flower forests, cherry groves, meadows, sunflower plains, snowy taiga, ice spikes, old growth taiga, bamboo jungle, mushroom islands, snowy peaks, beaches and four kinds of ocean (`World.columnNew` in `js/world.js`; what grows where is in the `TREES` and `COVER` tables above it).
 - **Ten kinds of village** (`STYLE` and `VILLAGE_LANDS` in `js/structures.js`), with market stalls, flower gardens and lookout towers.
 - **Dungeons, mineshafts and buried treasure.** Mineshaft galleries have about five times as much ore in their walls as ordinary rock. Every sunken ship's treasure chest holds a map; the map screen draws the land round the treasure with a red cross on it.
 - **Outposts** are watchtowers with one winding staircase of half blocks; **desert temples** have a pressure plate over their TNT. Pressure plates set off TNT and open doors for players and mobs alike.
-- **The Blight** (`js/dimmobs.js`): three Charred Skulls in a row on a T of soul sand wake it. It swells for eleven seconds, bursts, and then fights as the old three-headed terror does: the middle head hunts the nearest player while the others pick victims of their own, it mends a point of health a second, tears through blocks, and at half health grows a shell that arrows cannot pierce. It leaves a Blight Star, for a **beacon**.
+- **The Wither** (`js/dimmobs.js`): three Charred Skulls in a row on a T of soul sand wake it. It swells for eleven seconds, bursts, and then fights as the old three-headed terror does: the middle head hunts the nearest player while the others pick victims of their own, it mends a point of health a second, tears through blocks, and at half health grows a shell that arrows cannot pierce. It leaves a Nether Star, for a **beacon**.
 - All of it appears only in land nobody has seen (generator version 4). In a world from an earlier version the new land eases into the old over two chunks, and a structure is either one of the old rules that reaches into explored land (kept, and built as it always was) or one of the new rules that keeps wholly to unseen land (`regionPlan` in `js/structures.js`).
 
 ## Trades & Enchantments (1.7)

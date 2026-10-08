@@ -838,7 +838,7 @@ export class Player {
       return true;
     }
     if (held.id === ID.charred_skull) {
-      // set down on a block, looking back at you; three in a row on a T of soul sand wake the Blight
+      // set down on a block, looking back at you; three in a row on a T of soul sand wake the Wither
       if (!t) return false;
       let x = t.x, y = t.y, z = t.z;
       if (!BLOCKS[t.id].replaceable) { x += t.nx; y += t.ny; z += t.nz; }
@@ -1295,13 +1295,13 @@ export class Player {
       this.xpLevel = 0; this.xp = 0;
       if (lost) G.entities.spawnXp(this.pos.x, this.pos.y + 0.5, this.pos.z, lost, 4);
     }
-    const msgs = { skull: 'The Blight struck you down', lava: 'You tried to swim in lava', fireball: 'You were fireballed', wither: 'You withered away', fall: 'You hit the ground too hard', drown: 'You drowned', starve: 'You starved to death', void: 'You fell out of the world', explosion: 'You blew up', fire: 'You burned to death', magic: 'You were killed by magic', arrow: 'You were shot', pearl: 'You hit the ground too hard' };
+    const msgs = { skull: 'The Wither struck you down', lava: 'You tried to swim in lava', fireball: 'You were fireballed', wither: 'You withered away', fall: 'You hit the ground too hard', drown: 'You drowned', starve: 'You starved to death', void: 'You fell out of the world', explosion: 'You blew up', fire: 'You burned to death', magic: 'You were killed by magic', arrow: 'You were shot', pearl: 'You hit the ground too hard' };
     if (kind === 'player' && this.lastAttacker) msgs.player = `You were slain by ${this.lastAttacker}`;
     if (kind === 'admin') msgs.admin = `You were killed by ${this.lastAttacker || 'an admin'}`;
     msgs.cactus = 'You were pricked to death';
     G.ui.showDeath(msgs[kind] || 'You were slain');
     if (G.net) {
-      const told = { skull: 'was struck down by the Blight', lava: 'tried to swim in lava', fireball: 'was fireballed', wither: 'withered away', fall: 'hit the ground too hard', drown: 'drowned', starve: 'starved to death', void: 'fell out of the world', explosion: 'blew up', fire: 'burned to death', magic: 'was killed by magic', arrow: 'was shot', pearl: 'hit the ground too hard' };
+      const told = { skull: 'was struck down by the Wither', lava: 'tried to swim in lava', fireball: 'was fireballed', wither: 'withered away', fall: 'hit the ground too hard', drown: 'drowned', starve: 'starved to death', void: 'fell out of the world', explosion: 'blew up', fire: 'burned to death', magic: 'was killed by magic', arrow: 'was shot', pearl: 'hit the ground too hard' };
       if (kind === 'player' && this.lastAttacker) told.player = `was slain by ${this.lastAttacker}`;
       if (kind === 'admin') told.admin = `was killed by ${this.lastAttacker || 'an admin'}`;
       told.cactus = 'was pricked to death';

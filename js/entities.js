@@ -8,6 +8,7 @@ import { sfx } from './audio.js';
 import { mulberry32, hashString } from './noise.js';
 import { tileColors } from './textures.js';
 import { CH, SEA, BIOME, FROZEN } from './constants.js';
+import { SKIN_BY, skinParts } from './skins.js';
 import { makeTrades, levelOf, LEVEL_NAMES, PROFESSIONS } from './villagers.js';
 import { villagerPlan, villagerSleep, wake } from './villagerai.js';
 import { cleanEnch, ench, randomBook, randomlyEnchanted } from './enchant.js';
@@ -354,6 +355,32 @@ function modelTemplate(type, variant) {
   return t;
 }
 
+// A skin seen from the front, one dot to the pixel: for the title screen and the Skins page (drawn large
+// with the pixels kept sharp). Things further back are drawn first, so a cape hangs behind and a hat sits on top.
+export function skinDoll(key) {
+  const c = document.createElement('canvas');
+  c.width = 26; c.height = 42;
+  const g = c.getContext('2d');
+  const at = {};
+  const list = MODELS.player(key).map((p) => {
+    const base = (p.parent && at[p.parent]) || [0, 0, 0], o = p.off || [0, 0, 0];
+    const pos = [base[0] + p.pos[0], base[1] + p.pos[1], base[2] + p.pos[2]];
+    at[p.name] = pos;
+    return { p, x: pos[0] + o[0], y: pos[1] + o[1], z: pos[2] + o[2] + p.size[2] / 2 };
+  });
+  list.sort((a, b) => a.z - b.z);
+  for (const { p, x, y } of list) {
+    const w = Math.round(p.size[0]), h = Math.round(p.size[1]);
+    const X = Math.round(13 + x - w / 2), Y = Math.round(40 - (y + h / 2));
+    rect(g, X, Y, w, h, p.color);
+    if (p.paint && p.paint.all) p.paint.all(g, X, Y, w, h);
+    if (p.paint && p.paint.front) p.paint.front(g, X, Y, w, h);
+    // (a little shade down the right of each part gives it some roundness)
+    g.fillStyle = 'rgba(0,0,0,0.14)'; g.fillRect(X + w - 1, Y, 1, h);
+  }
+  return c;
+}
+
 export function buildModel(type, variant) {
   const t = modelTemplate(type, variant);
   const mat = new THREE.MeshBasicMaterial({ map: t.tex });
@@ -468,6 +495,8 @@ Object.assign(MODELS, {
     const shirts = [[38, 138, 150], [178, 60, 52], [70, 150, 60], [206, 160, 40], [120, 70, 160], [220, 110, 40], [60, 90, 180], [200, 90, 150]];
     const hair = [70, 46, 30];
     const [shirt, worn] = String(v ?? 0).split('|');
+    // (a skin by name: see skins.js. A number is a player from before skins, told apart by shirt colour.)
+    if (SKIN_BY[shirt]) return skinParts(SKIN_BY[shirt], { humanoid, rect, px }).concat(armorParts(worn ? worn.split(',').map(Number) : []));
     return humanoid([4, 12, 4], [198, 146, 112], shirts[(+shirt || 0) % shirts.length], [52, 58, 132], {
       front: (g, x, y) => {
         rect(g, x, y, 8, 2, hair); px(g, x, y + 2, hair); px(g, x + 7, y + 2, hair);

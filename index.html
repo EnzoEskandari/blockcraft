@@ -459,6 +459,28 @@
   .recipe-book .slot.recipe.missing img { opacity: 0.45; }
   .recipe-book .slot.recipe.locked { background: #767676; }
   .recipe-book .slot.recipe.locked img { opacity: 0.3; filter: grayscale(1); }
+  /* your character on the title screen, and the Skins page */
+  .title-avatar { position: absolute; left: max(14px, 5vw); bottom: calc(46px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; align-items: center; gap: 4px;
+    padding: 0; background: none; border: 0; cursor: pointer; color: #fff; font: inherit; font-size: 20px; text-shadow: 2px 2px 0 #000; animation: avatar-pop 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) both; }
+  .title-avatar canvas, #skin-preview { image-rendering: pixelated; filter: drop-shadow(0 6px 0 rgba(0, 0, 0, 0.35)); animation: avatar-idle 3.4s ease-in-out infinite; transform-origin: 50% 100%; }
+  .title-avatar canvas { height: min(40vh, 300px); width: auto; }
+  .title-avatar:hover canvas { filter: drop-shadow(0 6px 0 rgba(0, 0, 0, 0.35)) brightness(1.12); }
+  @keyframes avatar-pop { from { transform: translateY(60%); opacity: 0; } to { transform: none; opacity: 1; } }
+  @keyframes avatar-idle { 0%, 100% { transform: rotate(-1.2deg) translateY(0); } 50% { transform: rotate(1.2deg) translateY(-1.5%); } }
+  @media (max-width: 900px), (max-height: 520px) { .title-avatar canvas { height: min(24vh, 150px); } .title-avatar span { display: none; } .title-avatar { left: 6px; } }
+  @media (prefers-reduced-motion: reduce) { .title-avatar, .title-avatar canvas, #skin-preview { animation: none; } }
+  .skins-wrap { display: flex; flex-wrap: wrap; gap: 18px; justify-content: center; align-items: flex-start; width: min(880px, 100%); }
+  .skin-show { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 200px; color: #fff; text-shadow: 2px 2px 0 #000; font-size: 24px; text-align: center; }
+  #skin-preview { height: min(42vh, 320px); width: auto; }
+  #skin-preview.locked { filter: brightness(0.25) drop-shadow(0 6px 0 rgba(0, 0, 0, 0.35)); }
+  .skin-show .note { min-height: 2.4em; margin: 0; font-size: 19px; }
+  .skin-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; flex: 1; min-width: min(420px, 100%); max-height: 58vh; overflow-y: auto; padding: 4px; touch-action: pan-y; }
+  .skin-card { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 4px; font: inherit; font-size: 18px; color: #fff; cursor: pointer; text-shadow: 1px 1px 0 #000;
+    background: rgba(0, 0, 0, 0.5); border: 2px solid #5a5a5a; }
+  .skin-card canvas { height: 84px; width: auto; image-rendering: pixelated; }
+  .skin-card.sel { border-color: #fff; background: rgba(40, 70, 30, 0.75); }
+  .skin-card.locked canvas { filter: brightness(0.2); }
+  .skin-card.locked { color: #e0c060; }
   .recipe-book .empty { margin: 2px 0; font-size: 19px; color: #555; }
   .recipe-book .book-tabs { display: flex; gap: 6px; }
   .recipe-book .book-search { box-sizing: border-box; width: 100%; height: 34px; margin: 6px 0; padding: 0 8px; font: inherit; font-size: 20px; color: #fff; background: #555; border: 2px solid var(--slot-lo); box-shadow: inset 2px 2px 0 #3a3a3a; }
@@ -552,13 +574,28 @@
   <div class="col">
     <button class="btn" id="b-single" type="button">Singleplayer</button>
     <button class="btn" id="b-multi" type="button">Multiplayer</button>
+    <button class="btn" id="b-skins" type="button">Skins</button>
     <div class="row2">
       <button class="btn" id="b-options" type="button">Options…</button>
       <button class="btn" id="b-help" type="button">Controls</button>
     </div>
     <button class="linkbtn update-banner" id="b-update" type="button"></button>
   </div>
+  <button class="title-avatar" id="b-avatar" type="button" aria-label="Change your skin"><canvas id="title-avatar" width="26" height="42"></canvas><span id="title-avatar-name"></span></button>
   <div class="footer"><button class="linkbtn" id="b-version" type="button"><span id="version">Blockcraft</span> · What's New</button><span>An original block game. Not affiliated with Mojang or Microsoft.</span></div>
+</section>
+
+<section class="screen menu-bg" id="s-skins" hidden>
+  <h2>Skins</h2>
+  <div class="skins-wrap">
+    <div class="skin-show">
+      <canvas id="skin-preview" width="26" height="42"></canvas>
+      <strong id="skin-name"></strong>
+      <p class="note" id="skin-note"></p>
+    </div>
+    <div class="skin-list" id="skin-list"></div>
+  </div>
+  <div class="col"><button class="btn" id="b-skins-back" type="button">Done</button></div>
 </section>
 
 <section class="screen menu-bg" id="s-news" hidden>

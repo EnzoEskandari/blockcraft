@@ -42,7 +42,7 @@ const MARKET = {
 
 // Where three of the new lands meet: the striped tablelands of the badlands underfoot, a cherry grove on
 // one side and a badlands village under the mountain on the other, in the late afternoon. Close by, on a
-// little stone floor: two Charred Skulls on a T of soul sand, one short of waking the Blight.
+// little stone floor: two Charred Skulls on a T of soul sand, one short of waking the Wither.
 // (rad: how many chunks round the spot are made; the usual three would hide all this in the mist)
 const TABLELANDS = {
   seed: 2024, at: [102, 102], view: [0, 0, 9], pitch: -0.14, time: 0.4, rad: 4,
@@ -60,7 +60,26 @@ const TABLELANDS = {
   },
 };
 
+// Out on a lake in the late afternoon: the new water all round, a cherry tree and a birch grove on the
+// shore, and sugar cane on the beach. (The view stands above the water: the lake bed is 8 blocks down.)
+const LAKESIDE = { seed: 2024, at: [2, -22], view: [0, 0, 12.5], pitch: -0.03, time: 0.42, rad: 4, build() {} };
+
 export const UPDATES = [
+  {
+    version: '1.9', name: 'A New Look', date: '2026-10-07',
+    splashes: ['Fresh paint!', 'Look at that water!', 'Mind the lava!', 'Who are you today?', 'Nice cape!', 'Seventeen skins!', 'The Wither!', 'Leaves in the wind!',
+      'Now in colour!', 'Dress up!', 'Win the crown!', 'Sharper pixels!'],
+    scene: LAKESIDE,
+    notes: [
+      'A new look for the whole game. Stone, dirt, grass, sand, planks, logs, leaves, cobblestone, bricks and ores have been repainted, and every block has cleaner pixels and richer colour.',
+      'Water ripples and flows, with two sets of waves crossing. Lava churns and glows by itself in the dark.',
+      'Grass, flowers and leaves stir in the wind, and daylight is warm in the sun and cool in the shade.',
+      'Skins: choose how you look from the new Skins page on the title screen. Eleven characters to start with, from Wanderer and Ranger to Knight, Wizard, Astronaut and Robot. Everyone you play with sees your skin.',
+      'Six prize skins, with capes, crowns and hats, for the hardest things in the game: defeating the Void Dragon, destroying the Wither, visiting every land, lighting a beacon, killing one of every monster and eating every food. Ones you have already done count.',
+      'Your character stands on the title screen. Tap it to change skin.',
+      'The Blight is now called the Wither, and what it leaves is a Nether Star.',
+    ],
+  },
   {
     // a small update: it keeps the Lands & Legends picture
     version: '1.8.1', name: 'Creative & Recipes', date: '2026-10-06',
@@ -86,7 +105,7 @@ export const UPDATES = [
       'Dungeons underground: mossy rooms with a monster spawner and chests.',
       'Mineshafts: timbered galleries deep down, with far more ore in their walls than anywhere else, chests left behind, and cave spiders.',
       'Buried treasure: every sunken ship carries a treasure map. Hold it and use it to read it; the red cross is where to dig. The chest has the best loot in the game.',
-      'The Blight, a three-headed boss. Set three blocks of soul sand in a row on top of a fourth, put three Charred Skulls on top, and stand back. It leaves a Blight Star, for making a beacon.',
+      'The Wither, a three-headed boss. Set three blocks of soul sand in a row on top of a fourth, put three Charred Skulls on top, and stand back. It leaves a Nether Star, for making a beacon.',
       'A beacon on nine blocks of iron, gold, diamond or emerald mends everyone near it and quickens their digging.',
       'Outposts are proper watchtowers now, with one staircase winding to the top, tents, and a captured iron golem. Desert temples have their trap set: a pressure plate over the TNT.',
       'Pressure plates (two stone, or two planks) set off TNT and open doors. Golden apples (an apple ringed with gold) mend you.',

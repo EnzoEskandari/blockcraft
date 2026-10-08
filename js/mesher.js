@@ -30,6 +30,7 @@ const BIOME_TINT = [
 // (oceans, the beach, snowy peaks, the bamboo jungle)
 Object.assign(BIOME_TINT, { 25: [0.9, 1, 0.9], 26: [0.9, 1, 0.9], 27: [0.8, 0.9, 0.94], 28: [0.9, 1, 0.8], 29: [1, 1, 0.9], 31: [0.8, 0.93, 0.86], 32: [0.8, 1, 0.62] });
 const FENCE_LINK = new Uint8Array(256); // blocks a fence connects to
+const LEAFY = new Uint8Array(256), STILL = new Uint8Array(256);   // leaves stir in the wind; these plants do not
 const AO = [0.5, 0.68, 0.84, 1];
 
 // faces: +x, -x, +y, -y, +z, -z; corners listed BL, BR, TR, TL as seen from outside
@@ -75,6 +76,8 @@ export function initMesher() {
     for (let f = 0; f < 6; f++) FACE[i * 6 + f] = b.faces[f];
     FRONT[i] = b.front;
     FENCE_LINK[i] = (b.opaque && b.solid) || b.render === RENDER.FENCE ? 1 : 0;
+    LEAFY[i] = b.key.endsWith('_leaves') ? 1 : 0;
+    STILL[i] = ['sugar_cane', 'bamboo', 'fire', 'cobweb', 'red_mushroom', 'dead_bush', 'nether_wart', 'crimson_fungus', 'warped_fungus'].includes(b.key) ? 1 : 0;
     if (b.boxes) {
       const own = [b.faces[0], b.faces[1], b.faces[2], b.faces[3], b.facing ? b.front : b.faces[4], b.faces[5]];
       const boxes = b.boxes.map((q) => [q[0], q[1], q[2], q[3], q[4], q[5], q[6] ? ALL6(TEX[q[6]]) : own]);
@@ -145,12 +148,13 @@ class MeshBuf {
     }
     this.pos = pos; this.tex = tex; this.col = col; this.lig = lig; this.idx = idx;
   }
-  reset() { this.v = 0; this.i = 0; }
+  reset() { this.v = 0; this.i = 0; this.sway = 0; }
   ensure(n) { if (this.v + n > this.cap) this.alloc(this.cap * 2); }
-  vert(x, y, z, u, v, layer, r, g, b, sky, blk) {
+  // (sway: how much this corner moves in the wind, 0 to 255; leaves take it from `this.sway`)
+  vert(x, y, z, u, v, layer, r, g, b, sky, blk, sway) {
     const o = this.v;
     this.pos[o * 3] = x; this.pos[o * 3 + 1] = y; this.pos[o * 3 + 2] = z;
-    this.tex[o * 4] = u; this.tex[o * 4 + 1] = v; this.tex[o * 4 + 2] = layer;
+    this.tex[o * 4] = u; this.tex[o * 4 + 1] = v; this.tex[o * 4 + 2] = layer; this.tex[o * 4 + 3] = sway === undefined ? this.sway : sway;
     this.col[o * 4] = r; this.col[o * 4 + 1] = g; this.col[o * 4 + 2] = b; this.col[o * 4 + 3] = 255;
     this.lig[o * 2] = sky; this.lig[o * 2 + 1] = blk;
     this.v++;
@@ -363,6 +367,7 @@ export function buildChunkMesh(world, chunk) {
         const tint = TINT[id] ? BIOME_TINT[biomes[z * 16 + x]] : null;
         if (rt === RENDER.CUBE) {
           const buf = TRANS[id] ? TB : OB;
+          buf.sway = LEAFY[id] ? 70 : 0;
           const cull = CULLSAME[id] || TRANS[id];
           let front = -1;
           if (FACING[id]) front = [4, 1, 5, 0][meta ? meta[(y << 8) | (z << 4) | x] & 3 : 0];
@@ -374,7 +379,9 @@ export function buildChunkMesh(world, chunk) {
             if (tint && (TINT[id] === 2 || f === 2)) cubeFace(buf, x, y, z, f, layer, ri, tint[0], tint[1], tint[2]);
             else cubeFace(buf, x, y, z, f, layer, ri, 1, 1, 1);
           }
+          buf.sway = 0;
         } else if (rt === RENDER.CROSS) {
+          const sw = STILL[id] ? 0 : 255;
           const layer = FACE[id * 6];
           const sky = rS[ri] * 17, blk = rL[ri] * 17;
           const t = tint || [1, 1, 1];
@@ -383,13 +390,13 @@ export function buildChunkMesh(world, chunk) {
           OB.ensure(8);
           OB.vert(X, Y, Z, 0, 0, layer, r, g, b, sky, blk);
           OB.vert(X + 16, Y, Z + 16, 16, 0, layer, r, g, b, sky, blk);
-          OB.vert(X + 16, Y + 16, Z + 16, 16, 16, layer, r, g, b, sky, blk);
-          OB.vert(X, Y + 16, Z, 0, 16, layer, r, g, b, sky, blk);
+          OB.vert(X + 16, Y + 16, Z + 16, 16, 16, layer, r, g, b, sky, blk, sw);
+          OB.vert(X, Y + 16, Z, 0, 16, layer, r, g, b, sky, blk, sw);
           OB.quad(false, true);
           OB.vert(X, Y, Z + 16, 0, 0, layer, r, g, b, sky, blk);
           OB.vert(X + 16, Y, Z, 16, 0, layer, r, g, b, sky, blk);
-          OB.vert(X + 16, Y + 16, Z, 16, 16, layer, r, g, b, sky, blk);
-          OB.vert(X, Y + 16, Z + 16, 0, 16, layer, r, g, b, sky, blk);
+          OB.vert(X + 16, Y + 16, Z, 16, 16, layer, r, g, b, sky, blk, sw);
+          OB.vert(X, Y + 16, Z + 16, 0, 16, layer, r, g, b, sky, blk, sw);
           OB.quad(false, true);
         } else if (rt === RENDER.TORCH) {
           const layer = FACE[id * 6];

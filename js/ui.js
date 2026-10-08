@@ -7,6 +7,9 @@ import { PROFESSIONS, LEVEL_NAMES, levelProgress } from './villagers.js';
 import { ADV, TABS } from './advancements.js';
 import { structuresNear, treasureAt } from './structures.js';
 import { SEA, BIOME } from './constants.js';
+import { SKINS, SKIN_BY, hasSkin, mySkin, chooseSkin } from './skins.js';
+import { skinDoll } from './entities.js';
+import { paintHand } from './render.js';
 import { sameItem, stack, craftableTimes, takeIngredients } from './inventory.js';
 import { isEnchanted, enchList, enchLine, ENCH, xpForLevel, enchantability, tableLevels, tableOffer, enchanted, anvil, grind, repairItem, countShelves } from './enchant.js';
 import { requestLock, exitLock, setTouchMode, resetTouch } from './input.js';
@@ -179,6 +182,9 @@ export class UI {
     $('chat-input').addEventListener('focus', () => this.chatHints());
     $('t-chat').addEventListener('click', (e) => { e.preventDefault(); if (G.net && !G.screen) this.openScreen('chat'); });
     on('b-options', () => this.openScreen('options'));
+    on('b-skins', () => this.openScreen('skins'));
+    on('b-avatar', () => this.openScreen('skins'));
+    on('b-skins-back', () => this.back());
     on('b-help', () => this.openScreen('help'));
     on('b-help-back', () => this.back());
     on('b-play-world', () => this.playSelected());
@@ -256,6 +262,7 @@ export class UI {
     if (name === 'adv') this.buildAdv();
     if (name === 'sign') this.openSign(data);
     if (name === 'map') this.openMap(data);
+    if (name === 'skins') this.buildSkins();
     if (name === 'pause') this.syncPause();
     if (name === 'mp') {
       this.mpStatus('');
@@ -497,6 +504,47 @@ export class UI {
     $('hud').hidden = true;
     this.updateTouchVisibility();
     if (G.startPanorama) G.startPanorama();
+    this.drawAvatar();
+  }
+
+  // ---------------------------------------------------------------- skins
+  // Your character, standing at the bottom of the title screen (tap it to change skin)
+  drawAvatar() {
+    const key = mySkin(), cv = $('title-avatar'), g = cv.getContext('2d');
+    g.clearRect(0, 0, cv.width, cv.height);
+    g.drawImage(skinDoll(key), 0, 0);
+    $('title-avatar-name').textContent = SKIN_BY[key].name;
+    // (pop up afresh each time the title comes back)
+    const b = $('b-avatar');
+    b.style.animation = 'none'; void b.offsetWidth; b.style.animation = '';
+  }
+
+  // The Skins page: every skin there is, the one you are looking at drawn large, prizes shown in shadow
+  // until they are won
+  buildSkins(show = mySkin()) {
+    const list = $('skin-list');
+    list.innerHTML = '';
+    const worn = mySkin();
+    for (const S of SKINS) {
+      const have = hasSkin(S.key);
+      const card = h('button', 'skin-card' + (S.key === worn ? ' sel' : '') + (have ? '' : ' locked'));
+      card.type = 'button';
+      card.appendChild(skinDoll(S.key));
+      card.appendChild(h('span', null, have ? S.name : 'Locked'));
+      card.addEventListener('click', () => {
+        if (have && chooseSkin(S.key)) { sfx('click'); this.drawAvatar(); }
+        else sfx('click', null, { vol: 0.4 });
+        this.buildSkins(S.key);
+      });
+      list.appendChild(card);
+    }
+    const S = SKIN_BY[show] || SKIN_BY[worn], have = hasSkin(S.key);
+    const cv = $('skin-preview'), g = cv.getContext('2d');
+    g.clearRect(0, 0, cv.width, cv.height);
+    g.drawImage(skinDoll(S.key), 0, 0);
+    cv.classList.toggle('locked', !have);
+    $('skin-name').textContent = have ? S.name : '???';
+    $('skin-note').textContent = !have ? `A prize. To win it: ${S.need}.` : S.unlock ? `A prize you won: ${S.need.toLowerCase()}.` : S.key === worn ? 'You are wearing this.' : '';
   }
 
   // Every update, newest first
@@ -535,6 +583,8 @@ export class UI {
   }
 
   startPlaying() {
+    // the arm in front of you is your skin's
+    paintHand(SKIN_BY[mySkin()].arm || SKIN_BY[mySkin()].skin);
     this.stack.length = 0;
     G.screen = null;
     this.section(null);
@@ -2146,7 +2196,7 @@ export class UI {
     if (it && it.durability) t.appendChild(h('div', 'tip-line', `Durability: ${it.durability - (s.dmg || 0)} / ${it.durability}`));
     if (it && it.food) t.appendChild(h('div', 'tip-line', `Restores ${it.food / 2} food`));
     if (s.id === ID.treasure_map) t.appendChild(h('div', 'tip-line', 'Hold it and use it to read it'));
-    if (s.id === ID.charred_skull) t.appendChild(h('div', 'tip-line', 'Three on a T of soul sand wake the Blight'));
+    if (s.id === ID.charred_skull) t.appendChild(h('div', 'tip-line', 'Three on a T of soul sand wake the Wither'));
     if (s.id === ID.golden_apple) t.appendChild(h('div', 'tip-line', 'Mends you for a while'));
   }
 

@@ -289,7 +289,7 @@ block(193, 'stonecutter', 'Stonecutter', { ...stoneJob, render: RENDER.MODEL, te
 // Ice made by Frost Walker boots: it melts again after a few seconds
 block(194, 'frosted_ice', 'Frosted Ice', { tex: 'ice', hardness: 0.5, tool: 'pickaxe', sound: 'glass', drops: none, noItem: true });
 
-// ---- Lands & Legends (1.8): the blocks of the new lands, and of the Blight
+// ---- Lands & Legends (1.8): the blocks of the new lands, and of the Wither
 const SOIL = () => [B.grass, B.dirt, B.snowy_grass, B.podzol, B.mycelium];
 const capDrops = (r) => { const n = Math.floor(r() * 3) - 1; return n > 0 ? [[ID.red_mushroom, n]] : []; };
 block(195, 'acacia_log', 'Acacia Log', { tex: { top: 'acacia_planks', bottom: 'acacia_planks', side: 'acacia_log' }, hardness: 2, tool: 'axe', sound: 'wood', fuel: 15 });
@@ -319,7 +319,7 @@ block(218, 'bamboo', 'Bamboo', { ...plant, fuel: 3, support: () => [B.grass, B.d
 block(219, 'tube_coral_block', 'Tube Coral Block', { hardness: 1.5, tool: 'pickaxe', level: 0 });
 block(220, 'fire_coral_block', 'Fire Coral Block', { hardness: 1.5, tool: 'pickaxe', level: 0 });
 block(221, 'brain_coral_block', 'Brain Coral Block', { hardness: 1.5, tool: 'pickaxe', level: 0 });
-// A Charred Skull set down: three of them on a T of soul sand wake the Blight
+// A Charred Skull set down: three of them on a T of soul sand wake the Wither
 block(222, 'charred_skull_block', 'Charred Skull', { render: RENDER.MODEL, tex: { top: 'skull_side', bottom: 'skull_side', side: 'skull_side', front: 'skull_front' }, opaque: false, facing: true, hardness: 1, sound: 'stone',
   noItem: true, drops: one('charred_skull'), height: 0.5, boxes: [[4, 0, 4, 12, 8, 12]] });
 // A beacon on a three-by-three of iron, gold, diamond or emerald blocks lends strength to everyone near it
@@ -431,9 +431,9 @@ item(330, 'cooked_cod', 'Cooked Cod', { food: 5, sat: 6 });
 item(331, 'salmon', 'Raw Salmon', { food: 2, sat: 0.4 });
 item(332, 'cooked_salmon', 'Cooked Salmon', { food: 6, sat: 9.6 });
 item(333, 'experience_bottle', 'Experience Bottle');
-// (1.8) a map to buried treasure (which one is kept in the stack's wear number), what the Blight leaves, and a golden apple
+// (1.8) a map to buried treasure (which one is kept in the stack's wear number), what the Wither leaves, and a golden apple
 item(334, 'treasure_map', 'Treasure Map', { stack: 1 });
-item(335, 'blight_star', 'Blight Star');
+item(335, 'blight_star', 'Nether Star');
 item(336, 'golden_apple', 'Golden Apple', { food: 4, sat: 9.6 });
 item(360, 'shade_eye', 'Eye of the Shade', { stack: 16 });
 item(361, 'nether_quartz', 'Nether Quartz');

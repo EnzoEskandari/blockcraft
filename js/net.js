@@ -3,6 +3,7 @@
 // Messages travel through the Blockcraft server (server.js), which only relays them within a room code.
 import * as THREE from 'three';
 import { G, store, load } from './game.js';
+import { SKIN_BY, mySkin } from './skins.js';
 import { R, itemModel, tintModel } from './render.js';
 import { buildModel, holdInHand, lightAt, explosionFx, explosionDamage, spawnBlockParticles } from './entities.js';
 import { BLOCKS, B, ITEMS } from './blocks.js';
@@ -52,11 +53,14 @@ function nameTag(text) {
 
 // Another player as seen by this browser. On the host it is also what mobs chase and hurt.
 export class Avatar {
-  constructor(id, name, slot) {
+  look() { return this.skin || this.slot; }
+
+  constructor(id, name, slot, skin = '') {
     this.id = id;
     this.netId = id;
     this.name = name;
     this.slot = slot;
+    this.skin = skin;   // the skin they wear ('' for a player from before skins: told apart by shirt colour)
     this.isPlayer = true;
     this.remote = true;
     this.def = { name };
@@ -81,7 +85,7 @@ export class Avatar {
     this.phase = 0;
     this.hurtTime = 0;
     this.deathTime = 0;
-    this.model = buildModel('player', slot);
+    this.model = buildModel('player', this.look());
     R.scene.add(this.model.root);
     this.tag = nameTag(name);
     R.scene.add(this.tag);
@@ -102,7 +106,7 @@ export class Avatar {
     if (this.heldMesh) { this.heldMesh.parent.remove(this.heldMesh); this.heldMesh = null; }
     if (this.offMesh) { this.offMesh.parent.remove(this.offMesh); this.offMesh = null; }
     this.offShown = -1;
-    this.model = buildModel('player', worn ? `${this.slot}|${worn}` : this.slot);
+    this.model = buildModel('player', worn ? `${this.look()}|${worn}` : this.look());
     const root = this.model.root;
     root.position.copy(old.root.position);
     root.rotation.copy(old.root.rotation);
@@ -295,7 +299,7 @@ export class Net {
           // the world comes from the player who is running it: a big one over a slow connection takes a while
           clearTimeout(timer);
           timer = setTimeout(() => fail('The player running this world did not send it in time. Ask them to keep Blockcraft open on their screen, then try again.', true), 90000);
-          net.send({ k: 'hello', name });
+          net.send({ k: 'hello', name, skin: mySkin() });
           net.onWorld = (snap) => { clearTimeout(timer); settled = true; resolve({ net, snap, dim: m.dim, me: m.me || null, build: m.build }); };
           net.onKick = (msg) => { clearTimeout(timer); fail(msg); };
           return;
@@ -427,11 +431,11 @@ export class Net {
     return out;
   }
 
-  addPlayer(id, name, slot) {
+  addPlayer(id, name, slot, skin) {
     let a = this.players.get(id);
-    if (a && a.name === name) return a;
+    if (a && a.name === name && (a.skin || '') === (SKIN_BY[skin] ? skin : '')) return a;
     if (a) a.dispose();
-    a = new Avatar(id, name, slot);
+    a = new Avatar(id, name, slot, SKIN_BY[skin] ? skin : '');
     this.players.set(id, a);
     return a;
   }
@@ -452,8 +456,8 @@ export class Net {
   // (`only`: just to that guest: someone spectating is told who is here without anyone being told of them)
   sendRoster(only = null) {
     // whoever is spectating is on nobody's list: not the one running the world, not a guest
-    const l = this.spec ? [] : [[0, this.name, 0]];
-    for (const a of this.players.values()) if (!a.hidden) l.push([a.id, a.name, a.slot]);
+    const l = this.spec ? [] : [[0, this.name, 0, mySkin()]];
+    for (const a of this.players.values()) if (!a.hidden) l.push([a.id, a.name, a.slot, a.skin || '']);
     if (only !== null) this.sendTo(only, { k: 'roster', l }); else this.send({ k: 'roster', l });
   }
 
@@ -622,7 +626,7 @@ export class Net {
         const info = this.peerInfo.get(from);
         if (!info) return;
         const name = info.name;
-        const a = this.addPlayer(from, name, slot);
+        const a = this.addPlayer(from, name, slot, typeof d.skin === 'string' ? d.skin : '');
         a.account = info.account;
         a.hidden = !!info.spec;
         this.sendTo(from, G.game.worldSnapshot(info.account, name));
@@ -736,10 +740,10 @@ export class Net {
       case 'kick': if (this.onKick) this.onKick(d.msg); break;
       case 'roster': {
         const keep = new Set();
-        for (const [id, name, slot] of d.l) {
+        for (const [id, name, slot, skin] of d.l) {
           if (id === this.id) continue;
           keep.add(id);
-          this.addPlayer(id, name, slot);
+          this.addPlayer(id, name, slot, skin);
         }
         for (const id of [...this.players.keys()]) if (!keep.has(id)) { this.players.get(id).dispose(); this.players.delete(id); }
         break;

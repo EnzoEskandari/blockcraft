@@ -1,6 +1,6 @@
 // Mobs of the Nether and the End (and the Void Dragon), their fireballs and bullets, and where they spawn;
-// and the Blight, the three-headed boss woken with soul sand and Charred Skulls.
-// Names and looks are this game's own: Wailer, Cinder, Snoutling, Tusker, Clamper, Void Dragon, the Blight...
+// and the Wither, the three-headed boss woken with soul sand and Charred Skulls.
+// Names and looks are this game's own: Wailer, Cinder, Snoutling, Tusker, Clamper, Void Dragon, the Wither...
 import * as THREE from 'three';
 import { G } from './game.js';
 import { R, itemModel, tintModel } from './render.js';
@@ -359,9 +359,9 @@ class ClamperBullet {
   dispose() { R.scene.remove(this.mesh); this.mesh.geometry.dispose(); this.mesh.material.dispose(); }
 }
 
-// A skull spat by the Blight: it bursts where it lands, and whoever it strikes withers. The blue ones are
+// A skull spat by the Wither: it bursts where it lands, and whoever it strikes withers. The blue ones are
 // slower and burst harder.
-class BlightSkull {
+class WitherSkull {
   constructor(x, y, z, vx, vy, vz, blue, owner, shooter) {
     this.pos = { x, y, z }; this.vel = { x: vx, y: vy, z: vz };
     this.blue = !!blue; this.owner = owner; this.shooter = shooter || null;
@@ -403,7 +403,7 @@ class BlightSkull {
     } else {
       e.invul = 0;
       e.hurt(8, this.pos.x, this.pos.z, false);
-      // the Blight feeds on what its skulls kill
+      // the Wither feeds on what its skulls kill
       const b = this.shooter;
       if (e.dead && b && !b.dead) b.hp = Math.min(b.maxHp, b.hp + 5);
     }
@@ -477,7 +477,7 @@ Entities.prototype.projectileFx = function (kind, a) {
   if (kind === 'fb') this.projectiles.push(new Fireball(a[0], a[1], a[2], a[3], a[4], a[5], a[6], 'fx'));
   else if (kind === 'ac') this.projectiles.push(new AcidCloud(a[0], a[1], a[2], true));
   else if (kind === 'cb') this.projectiles.push(new ClamperBullet(a[0], a[1], a[2], G.player, 'fx'));
-  else if (kind === 'sk') this.projectiles.push(new BlightSkull(a[0], a[1], a[2], a[3], a[4], a[5], a[6], 'fx'));
+  else if (kind === 'sk') this.projectiles.push(new WitherSkull(a[0], a[1], a[2], a[3], a[4], a[5], a[6], 'fx'));
 };
 
 // The fireball in front of the player, if any (to hit it back)
@@ -728,7 +728,7 @@ function finishDragon() {
   if (G.net) G.net.announce(msg); else G.ui.toast(msg);
 }
 
-// ---------------------------------------------------------------- the Blight
+// ---------------------------------------------------------------- the Wither
 // It fights the way the old three-headed terror does. Woken, it swells for eleven seconds and cannot be
 // hurt, then bursts. After that it flies at whoever is nearest: the middle head spits skulls at them while
 // the other two pick victims of their own (anything alive that is not undead). It mends itself slowly,
@@ -844,7 +844,7 @@ function blightAI(m, dt) {
     const blue = i === 0 && rand() < 0.14;
     const [hx, hy, hz] = blightHead(m, i);
     const ax = v.pos.x - hx, ay = v.pos.y + (v.h || 1.8) * 0.5 - hy, az = v.pos.z - hz, ad = Math.hypot(ax, ay, az) || 1, sp = blue ? 7 : 15;
-    const k = new BlightSkull(hx + ax / ad * 0.6, hy + ay / ad * 0.6, hz + az / ad * 0.6, ax / ad * sp, ay / ad * sp, az / ad * sp, blue, 'mob', m);
+    const k = new WitherSkull(hx + ax / ad * 0.6, hy + ay / ad * 0.6, hz + az / ad * 0.6, ax / ad * sp, ay / ad * sp, az / ad * sp, blue, 'mob', m);
     G.entities.projectiles.push(k);
     sfx('fireball', m.pos, { vol: 0.9, pitch: blue ? 0.5 : 0.75 });
     if (G.net) G.net.projectile('sk', [k.pos.x, k.pos.y, k.pos.z, k.vel.x, k.vel.y, k.vel.z, blue ? 1 : 0]);
@@ -994,11 +994,11 @@ Object.assign(MOB_TYPES, {
     init: scaled(3), dispose: cleanup, drops: [] },
 });
 Object.assign(MOB_TYPES, {
-  blight: { name: 'The Blight', hp: 300, w: 1.1, h: 3.3, speed: 5, hostile: true, always: true, persistent: true, heavy: true, boss: true, flies: true, fireImmune: true, blastProof: true, undead: true, xp: 50,
+  blight: { name: 'The Wither', hp: 300, w: 1.1, h: 3.3, speed: 5, hostile: true, always: true, persistent: true, heavy: true, boss: true, flies: true, fireImmune: true, blastProof: true, undead: true, xp: 50,
     ai: blightAI, animate: anims.blight, anim: 'blight', sound: 'wailer', pitch: 0.45, init: scaled(1.9),
     // behind its shell (at half health) nothing shot or thrown gets through; nothing at all while it wakes
     damageScale: (m, fx) => (m.waking ? 0 : m.angry && fx && (fx.arrow || fx.bolt || fx.shot || fx.fb) ? 0 : 1),
-    onDie: (m) => { if (isHost()) { const msg = 'The Blight has been destroyed!'; if (G.net) G.net.announce(msg); else G.ui.toast(msg); } },
+    onDie: (m) => { if (isHost()) { const msg = 'The Wither has been destroyed!'; if (G.net) G.net.announce(msg); else G.ui.toast(msg); } },
     drops: [drop('blight_star', 1, 1)] },
   cave_spider: { ...MOB_TYPES.spider, name: 'Cave Spider', hp: 12, w: 0.8, h: 0.55, damage: 2, poisonHit: true, pitch: 1.4, init: scaled(0.62), arthropod: true },
   mooshroom: { ...MOB_TYPES.cow, name: 'Mooshroom' },

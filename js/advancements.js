@@ -6,6 +6,7 @@
 import { G } from './game.js';
 import { ITEMS, ID, B } from './blocks.js';
 import { sfx } from './audio.js';
+import { unlockSkins } from './skins.js';
 import { structuresNear } from './structures.js';
 import { BIOME_NAMES, OVERWORLD_BIOMES } from './constants.js';
 import { DIM_BIOME_NAMES } from './dims.js';
@@ -44,8 +45,8 @@ export const ADV = [
   { key: 'bastion_loot', tab: 'nether', title: 'Their Gold, Now Yours', desc: 'Open a chest in a bastion.', icon: 'gold_block', xp: 25 },
   { key: 'rod', tab: 'nether', title: 'Rod of Embers', desc: 'Take a rod from a Cinder.', icon: 'cinder_rod', xp: 20, has: ['cinder_rod'] },
   { key: 'skull', tab: 'nether', title: 'A Grim Keepsake', desc: "Get a Charred Skeleton's skull.", icon: 'charred_skull', xp: 50, has: ['charred_skull'] },
-  { key: 'blight_wake', tab: 'nether', title: 'Three Heads Are Worse Than One', desc: 'Wake the Blight: three Charred Skulls in a row on a T of soul sand.', icon: 'soul_sand', xp: 50 },
-  { key: 'blight', tab: 'nether', title: "Blight's End", desc: 'Destroy the Blight.', icon: 'blight_star', xp: 100, hard: true },
+  { key: 'blight_wake', tab: 'nether', title: 'Three Heads Are Worse Than One', desc: 'Wake the Wither: three Charred Skulls in a row on a T of soul sand.', icon: 'soul_sand', xp: 50 },
+  { key: 'blight', tab: 'nether', title: 'Withered Away', desc: 'Destroy the Wither.', icon: 'blight_star', xp: 100, hard: true },
   { key: 'beacon', tab: 'nether', title: 'A Light for Miles', desc: 'Stand by a beacon that is lit: one set on nine blocks of iron, gold, diamond or emerald.', icon: 'beacon', xp: 100, hard: true },
   { key: 'shortcut', tab: 'nether', title: 'A Shortcut Through Fire', desc: 'Use the Nether to travel 7,000 blocks in the Overworld.', icon: 'obsidian', xp: 100, hard: true },
   { key: 'nether_lands', tab: 'nether', title: 'Hot Spots', desc: 'Visit every kind of land in the Nether.', icon: 'crimson_nylium', xp: 100, hard: true, all: NETHER_BIOMES, names: (b) => DIM_BIOME_NAMES[b] },
@@ -175,6 +176,13 @@ export class Advancements {
   tick(dt) {
     const p = G.player, w = G.world;
     if (!p || !w || p.dead || G.state !== 'playing') return;
+    // the hardest achievements are the keys to prize skins (looked at now and then, so ones made before
+    // skins existed count as well)
+    this.skinT = (this.skinT || 0) - dt;
+    if (this.skinT <= 0) {
+      this.skinT = 3;
+      for (const S of unlockSkins((key) => p.adv.has(key))) { G.ui.toast(`New skin: ${S.name}. Wear it from Skins on the title screen.`, 7); sfx('levelup', null, { vol: 0.7 }); }
+    }
     // a long fall survived: from the highest point since the feet last touched something
     if (p.flying || p.creative) this.peak = null;
     else if (p.onGround || p.inWater) {

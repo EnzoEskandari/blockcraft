@@ -20,12 +20,21 @@ varying vec3 vUv;
 varying vec3 vCol;
 varying vec2 vLight;
 varying float vDist;
+varying float vKind;
 void main() {
-  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  vec3 pos = position;
+  // grass, flowers and leaves stir in the wind (aTex.w says how much this corner moves)
+  if (aTex.w > 0.5) {
+    vec4 wp = modelMatrix * vec4(position, 1.0);
+    float k = aTex.w / 255.0, t = uTime * 1.7;
+    pos.x += sin(t + wp.x * 0.7 + wp.z * 0.45 + wp.y * 0.35) * 0.9 * k;
+    pos.z += cos(t * 0.8 + wp.x * 0.5 - wp.z * 0.6) * 0.75 * k;
+  }
+  vec4 mv = modelViewMatrix * vec4(pos, 1.0);
   gl_Position = projectionMatrix * mv;
   vDist = length(mv.xyz);
-  float scroll = abs(aTex.z - uWaterLayer) < 0.5 ? uTime * 0.35 : abs(aTex.z - uLavaLayer) < 0.5 ? uTime * 0.08 : 0.0;
-  vUv = vec3(aTex.x / 16.0, aTex.y / 16.0 - scroll, aTex.z);
+  vKind = abs(aTex.z - uWaterLayer) < 0.5 ? 1.0 : abs(aTex.z - uLavaLayer) < 0.5 ? 2.0 : 0.0;
+  vUv = vec3(aTex.x / 16.0, aTex.y / 16.0, aTex.z);
   vCol = aColor.rgb;
   vLight = aLight;
 }`;
@@ -44,8 +53,24 @@ varying vec3 vUv;
 varying vec3 vCol;
 varying vec2 vLight;
 varying float vDist;
+varying float vKind;
+uniform float uTime;
 void main() {
-  vec4 c = texture(uAtlas, vUv);
+  vec4 c;
+  if (vKind > 1.5) {
+    // lava: two slow currents folded together, brightening and dimming as it churns
+    vec4 a = texture(uAtlas, vec3(vUv.x, vUv.y - uTime * 0.05, vUv.z));
+    vec4 b = texture(uAtlas, vec3(vUv.y + uTime * 0.03, vUv.x + uTime * 0.02 + 0.5, vUv.z));
+    c = max(a, b * 0.92);
+    c.rgb *= 0.94 + 0.1 * sin(uTime * 1.1 + (vUv.x + vUv.y) * 6.2832);
+  } else if (vKind > 0.5) {
+    // water: two sets of ripples crossing, so the surface never moves in step with itself
+    vec4 a = texture(uAtlas, vec3(vUv.x + uTime * 0.02, vUv.y - uTime * 0.14, vUv.z));
+    vec4 b = texture(uAtlas, vec3(vUv.x - uTime * 0.05 + 0.5, vUv.y - uTime * 0.08 + 0.37, vUv.z));
+    c = mix(a, b, 0.5);
+    c.rgb += vec3(0.1, 0.12, 0.1) * smoothstep(0.62, 0.9, max(a.b, b.b)) * (0.6 + 0.4 * sin(uTime * 2.0 + vUv.x * 12.0));
+    c.a = 0.7;
+  } else c = texture(uAtlas, vUv);
   if (c.a < uAlphaTest) discard;
   float sky = vLight.x * uDaylight;
   float blk = vLight.y;
@@ -55,7 +80,11 @@ void main() {
   vec3 lc = vec3(b) * mix(vec3(1.0), vec3(1.1, 0.96, 0.8), clamp((blk - sky) * 1.5, 0.0, 1.0));
   // moonlight is a little blue
   lc *= mix(vec3(1.0), vec3(0.8, 0.88, 1.15), uMoon * clamp((sky - blk) * 2.0, 0.0, 1.0));
+  // daylight is a little warm where the sun reaches and cool in the shade
+  lc *= mix(vec3(1.0), mix(vec3(0.84, 0.92, 1.08), vec3(1.05, 1.0, 0.94), smoothstep(0.35, 0.95, vLight.x)), clamp((sky - blk) * 2.0, 0.0, 1.0) * (1.0 - uMoon) * 0.8);
+  if (vKind > 1.5) lc = vec3(1.0);   // lava glows by itself
   vec3 col = c.rgb * vCol * lc;
+  col = mix(vec3(dot(col, vec3(0.3, 0.59, 0.11))), col, 1.1);   // (a touch more colour)
   float f = smoothstep(uFogNear, uFogFar, vDist);
   gl_FragColor = vec4(mix(col, uFogColor, f), c.a);
 }`;
@@ -345,6 +374,18 @@ export function tintModel(obj, v, red = 0) {
 }
 
 // ---------------------------------------------------------------- first-person hand
+// The arm in front of you, in the colour of your skin's arm
+export function paintHand(c) {
+  const g = R.handSkin.getContext('2d');
+  const r = mulberry32(5);
+  for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+    const k = 0.92 + r() * 0.1;
+    g.fillStyle = `rgb(${c[0] * k | 0},${c[1] * k | 0},${c[2] * k | 0})`;
+    g.fillRect(x, y, 1, 1);
+  }
+  if (R.handArm && R.handArm.material.map) R.handArm.material.map.needsUpdate = true;
+}
+
 function buildHand() {
   R.handScene = new THREE.Scene();
   R.handCamera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 10);
@@ -354,14 +395,10 @@ function buildHand() {
 
   const skin = document.createElement('canvas');
   skin.width = skin.height = 8;
-  const g = skin.getContext('2d');
-  const r = mulberry32(5);
-  for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
-    const k = 0.92 + r() * 0.1;
-    g.fillStyle = `rgb(${196 * k | 0},${142 * k | 0},${108 * k | 0})`;
-    g.fillRect(x, y, 1, 1);
-  }
+  R.handSkin = skin;
   const arm = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.17, 0.62), new THREE.MeshBasicMaterial({ map: canvasTexture(skin) }));
+  R.handArm = arm;
+  paintHand([196, 142, 108]);
   R.handArm = arm;
   R.handItemId = -1;
   R.handItem = null;

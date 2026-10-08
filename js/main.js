@@ -29,8 +29,8 @@ const isGuest = () => !!(G.net && G.net.role === 'client');
 const SIM_R = 4;   // the host keeps chunks this far around each guest loaded and running
 
 // A Charred Skull has been set down: if it completes the figure (three skulls in a row on three blocks of
-// soul sand or soul soil, with a fourth under the middle one), the blocks vanish and the Blight wakes there
-function summonBlight(w, x, y, z) {
+// soul sand or soul soil, with a fourth under the middle one), the blocks vanish and the Wither wakes there
+function summonWither(w, x, y, z) {
   const soul = (a, b, c) => { const id = w.getBlock(a, b, c); return id === B.soul_sand || id === B.soul_soil; };
   for (const [dx, dz] of [[1, 0], [0, 1]]) {
     for (let o = -2; o <= 0; o++) {
@@ -42,7 +42,7 @@ function summonBlight(w, x, y, z) {
       w.setBlock(mx, y - 2, mz, 0);
       G.entities.spawnMob('blight', mx + 0.5, y - 2, mz + 0.5, { persistent: true }).fresh = true;
       sfx('portal_open', { x: mx, y, z: mz }, { vol: 1.2, pitch: 0.5 });
-      const msg = 'The Blight is waking...';
+      const msg = 'The Wither is waking...';
       if (G.net) G.net.announce(msg); else G.ui.toast(msg);
       return true;
     }
@@ -269,7 +269,7 @@ function onBlockChange(x, y, z, oldId, newId) {
   if (G.net) G.net.blockChanged(x, y, z, newId);
   if (isGuest()) return;   // falling sand, water and the rest happen on the host
   S.updates.push(x, y, z);
-  if (newId === B.charred_skull_block) summonBlight(w, x, y, z);
+  if (newId === B.charred_skull_block) summonWither(w, x, y, z);
   // any change can start, stop or turn a flow: the liquid here and next to it takes another look
   scheduleLiquid(w, x, y, z);
   for (const [dx, dy, dz] of NEIGHBORS6) scheduleLiquid(w, x + dx, y + dy, z + dz);
