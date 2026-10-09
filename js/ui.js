@@ -7,7 +7,7 @@ import { PROFESSIONS, LEVEL_NAMES, levelProgress } from './villagers.js';
 import { ADV, TABS } from './advancements.js';
 import { structuresNear, treasureAt } from './structures.js';
 import { SEA, BIOME } from './constants.js';
-import { SLOTS, CHARACTERS, PRIZES, item, owns, hasPrize, prizesIn, codeOf, myLook, mySkin, wear, wearLook, randomLook, armColour } from './skins.js';
+import { SLOTS, CHARACTERS, PRIZES, item, owns, hasPrize, prizesIn, codeOf, myLook, mySkin, wear, wearLook, randomLook, armColour, handColour } from './skins.js';
 import { skinDoll } from './entities.js';
 import { paintHand, applyGraphics } from './render.js';
 import { sameItem, stack, craftableTimes, takeIngredients } from './inventory.js';
@@ -631,7 +631,7 @@ export class UI {
 
   startPlaying() {
     // the arm in front of you is your skin's
-    paintHand(armColour(myLook()));
+    paintHand(armColour(myLook()), handColour(myLook()));
     this.stack.length = 0;
     G.screen = null;
     this.section(null);

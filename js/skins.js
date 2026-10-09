@@ -251,6 +251,11 @@ export function armColour(look) {
   const top = item('top', look.top);
   return top.sleeves || item('tone', look.tone).c;
 }
+// and of the hand at the end of it
+export function handColour(look) {
+  const top = item('top', look.top);
+  return (top.sleeves && top.gloves) || item('tone', look.tone).c;
+}
 
 // The parts of a look's model. `H` brings the model builder's own tools: { humanoid, rect, px }.
 // `bare`: an armour helmet is worn over it, so the hat and tall hair are left off.

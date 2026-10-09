@@ -4,6 +4,9 @@ import { G, isTouchDevice } from './game.js';
 import { atlasData, TILES, TEX, ICONS } from './textures.js';
 import { BLOCKS, ITEMS, B, ID, RENDER } from './blocks.js';
 import { smoothstep, mulberry32 } from './noise.js';
+import { itemModel, armGeometry } from './itemmodels.js';
+
+export { itemModel };
 
 THREE.ColorManagement.enabled = false;
 
@@ -29,6 +32,7 @@ varying vec3 vEnts;
 varying vec3 vView;
 varying vec3 vCell;
 varying vec4 vN;
+varying float vGloss;
 void main() {
   vec3 pos = position;
   // grass, flowers and leaves stir in the wind (aTex.w says how much this corner moves), more when a
@@ -48,9 +52,11 @@ void main() {
   vL = vec4(aLight, length(mv.xyz), abs(aTex.z - uWaterLayer) < 0.5 ? 1.0 : abs(aTex.z - uLavaLayer) < 0.5 ? 2.0 : 0.0);
   vUv = vec3(aTex.x / 16.0, aTex.y / 16.0, aTex.z);
   vCol = aColor.rgb;
-  // which way this side looks (0-5; 6: a plant, lit from above whichever way it is seen), and 8 more
-  // for a side that shines by itself
+  // which way this side looks (0-5; 6: a plant, lit from above whichever way it is seen), 8 more for a
+  // side that shines by itself, and in sixteens how it catches the light (1 glassy, 2 polished, 3 ore)
   float code = floor(aColor.a * 255.0 + 0.5);
+  vGloss = floor(code / 16.0);
+  code -= vGloss * 16.0;
   float glow = step(7.5, code);
   float face = code - glow * 8.0;
   float plant = step(5.5, face);
@@ -112,6 +118,7 @@ varying vec3 vEnts;
 varying vec3 vView;
 varying vec3 vCell;
 varying vec4 vN;
+varying float vGloss;
 float curve(float l) { return mix(l / (4.0 - 3.0 * l), l, uGamma); }
 #ifdef SHADOWS
 // How much of the sun reaches this point. Each reading of the shadow map is itself a blend of the four
@@ -230,6 +237,37 @@ void main() {
     col = mix(col, uSkyGlow * (0.35 + 0.65 * curve(sky)), fres * 0.6);
     col += uSunLight * 2.0 * glint * lit * curve(sky);
     c.a = mix(0.68, 0.95, fres) + glint * lit * 0.3;
+  }
+#endif
+#ifdef GLOSS
+  // Glassy stone, polished metal, gems, ice and the flecks in ore catch the light: here and there a dot
+  // of the texture glints, and which ones changes as you walk past
+  if (vGloss > 0.5 && vL.z < 36.0) {
+    ivec3 q = ivec3(floor((vCell + vN.xyz * 0.02) * 16.0));
+    // (judged from the middle of the dot, so a dot is lit whole or not at all)
+    vec3 mid = (vec3(q) + 0.5) / 16.0 - vCell;
+    vec3 eye = normalize(-(vView + mid - vN.xyz * dot(mid, vN.xyz)));
+    uint h = uint(q.x) * 1597334677u ^ uint(q.y) * 3812015801u ^ uint(q.z) * 2798796415u;
+    h = (h ^ (h >> 15u)) * 2246822519u;
+    h ^= h >> 13u;
+    vec3 r = vec3(float(h & 1023u), float((h >> 10u) & 1023u), float((h >> 20u) & 1023u)) / 1023.0;
+    float hi = max(c.r, max(c.g, c.b)), lo = min(c.r, min(c.g, c.b));
+    // (the light it gives back is its own colour, paler)
+    vec3 tint = mix(c.rgb / max(hi, 0.06), vec3(1.0), 0.5) * lc;
+    bool ore = vGloss > 2.5, polished = vGloss > 1.5 && !ore;
+    float turn = fract(r.x + dot(eye, r - 0.5) * 2.6 + uTime * 0.02);
+    // (few at a time: one dot in twenty of glassy stone, one in forty of polished, a quarter of an ore's flecks)
+    float glint = smoothstep(ore ? 0.75 : polished ? 0.975 : 0.95, 1.0, 1.0 - abs(turn * 2.0 - 1.0));
+    // (in ore only the flecks: the coloured dots and the white ones)
+    float amount = ore ? 0.5 * max(smoothstep(0.14, 0.26, hi - lo) * smoothstep(0.55, 0.7, hi), smoothstep(0.84, 0.92, lo)) : polished ? 0.3 : 0.4;
+    vec3 add = tint * glint * amount * (1.0 - smoothstep(12.0, 34.0, vL.z));
+    if (!ore) {
+      // a pale sheen where you look along a side, and polished things flash where they mirror the sun
+      float graze = 1.0 - max(dot(vN.xyz, eye), 0.0);
+      add += tint * (polished ? 0.16 : 0.1) * graze * graze * graze;
+      if (polished && vS.x > 0.001) add += uSunLight * tint * pow(max(dot(normalize(vN.xyz + (r - 0.5) * 0.1), normalize(uSunDir + eye)), 0.0), 20.0) * 0.35 * lit * curve(sky * uDaylight);
+    }
+    col += add;
   }
 #endif
   float f = smoothstep(uFogNear, uFogFar, vL.z);
@@ -389,6 +427,7 @@ export function applyGraphics() {
   const defines = { TAPS: q === 'off' ? 4 : R.shadow.taps };
   if (q !== 'off') defines.SHADOWS = '';
   if (lighting === 'max') defines.WATERFX = '';
+  if (lighting !== 'simple') defines.GLOSS = '';
   const key = JSON.stringify(defines);
   if (key !== R.defineKey) {
     R.defineKey = key;
@@ -1012,26 +1051,6 @@ export function canvasTexture(canvas) {
   return t;
 }
 
-const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
-const planeGeo = new THREE.PlaneGeometry(1, 1);
-// A small 3D model for an item: a textured cube for blocks, a flat sprite plane for the rest
-export function itemModel(id) {
-  const it = ITEMS[id];
-  if (it && it.isBlock && it.render === RENDER.CUBE) {
-    const f = it.faces;
-    const order = [f[0], f[1], f[2], f[3], it.facing ? it.front : f[4], f[5]];
-    const mats = order.map((l) => new THREE.MeshBasicMaterial({ map: canvasTexture(TILES[l]), alphaTest: 0.5, transparent: it.translucent }));
-    const m = new THREE.Mesh(cubeGeo, mats);
-    m.userData.cube = true;
-    m.layers.enable(2);   // (things lying on the ground or held in a hand cast shadows)
-    return m;
-  }
-  const mat = new THREE.MeshBasicMaterial({ map: canvasTexture(ICONS[id]), alphaTest: 0.5, side: THREE.DoubleSide });
-  const m = new THREE.Mesh(planeGeo, mat);
-  m.layers.enable(2);
-  return m;
-}
-
 export function tintModel(obj, v, red = 0) {
   const apply = (m) => { m.color.setRGB(v, v * (1 - red), v * (1 - red)); };
   obj.traverse((o) => {
@@ -1041,13 +1060,16 @@ export function tintModel(obj, v, red = 0) {
 }
 
 // ---------------------------------------------------------------- first-person hand
-// The arm in front of you, in the colour of your skin's arm
-export function paintHand(c) {
+// The arm in front of you: your skin's sleeve (or bare arm) and, at the end of it, the hand
+const ARM_LEN = 26;
+export function paintHand(c, hand = c) {
   const g = R.handSkin.getContext('2d');
   const r = mulberry32(5);
-  for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
-    const k = 0.92 + r() * 0.1;
-    g.fillStyle = `rgb(${c[0] * k | 0},${c[1] * k | 0},${c[2] * k | 0})`;
+  for (let y = 0; y < ARM_LEN; y++) for (let x = 0; x < 4; x++) {
+    const b = y < 3 ? hand : c;
+    // (a cuff where a sleeve ends)
+    const k = (0.93 + r() * 0.09) * (hand !== c && y === 3 ? 0.8 : 1);
+    g.fillStyle = `rgb(${b[0] * k | 0},${b[1] * k | 0},${b[2] * k | 0})`;
     g.fillRect(x, y, 1, 1);
   }
   if (R.handArm && R.handArm.material.map) R.handArm.material.map.needsUpdate = true;
@@ -1061,12 +1083,12 @@ function buildHand() {
   R.handHolder = holder;
 
   const skin = document.createElement('canvas');
-  skin.width = skin.height = 8;
+  skin.width = 4; skin.height = ARM_LEN;
   R.handSkin = skin;
-  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.17, 0.62), new THREE.MeshBasicMaterial({ map: canvasTexture(skin) }));
+  const arm = new THREE.Mesh(armGeometry(ARM_LEN), new THREE.MeshBasicMaterial({ map: canvasTexture(skin), vertexColors: true }));
+  arm.scale.setScalar(0.045);
   R.handArm = arm;
   paintHand([196, 142, 108]);
-  R.handArm = arm;
   R.handItemId = -1;
   R.handItem = null;
   R.swing = 0;
@@ -1090,7 +1112,7 @@ export function setOffItem(id) {
   if (m.userData.cube) {
     m.scale.setScalar(0.2);
     m.position.set(-0.46, -0.4, -0.7);
-    m.rotation.set(0.05, -Math.PI / 4 - 0.15, 0);
+    m.rotation.set(0.05, 1, 0);
   } else if (id === ID.shield) {
     m.scale.setScalar(0.5);
     m.position.set(-0.56, -0.47, -0.72);
@@ -1112,16 +1134,19 @@ export function setHeldItem(id) {
   R.handItem = null;
   if (!id) {
     const arm = R.handArm;
-    arm.position.set(0.44, -0.45, -0.58);
-    arm.rotation.set(-0.25, -0.18, 0.3);
+    // (reaching up and in from the corner, so its top and its side both show)
+    arm.position.set(0.55, -0.55, -0.62);
+    arm.rotation.set(0.7, 0.55, 0.3);
+    arm.translateZ((ARM_LEN - 14) / 2 * 0.045);   // (long enough that its other end stays out of sight)
     h.add(arm);
     return;
   }
   const m = itemModel(id);
   if (m.userData.cube) {
+    // (turned so its front and one side show beside its top)
     m.scale.setScalar(0.24);
     m.position.set(0.44, -0.38, -0.66);
-    m.rotation.set(0.05, Math.PI / 4 + 0.15, 0);
+    m.rotation.set(0.05, -1, 0);
   } else if (id === ID.shield) {
     m.scale.setScalar(0.5);
     m.position.set(0.56, -0.45, -0.72);
@@ -1156,6 +1181,12 @@ export function updateHand(dt, light, bob, sway, eat = -1, shield = 0) {
     -sw * 0.15 - e * 0.06,
   );
   h.rotation.set(sw * 0.8 + e * 0.1, sw * 0.5 + e * 0.2, sw * 0.3 - e * 0.1);
+  // (a bare arm jabs forward and in, a shorter movement than a tool's swing)
+  if (!R.handItemId) {
+    h.position.set(-sw * 0.2 + swayX, sw * 0.1 + swayY, -sw * 0.22);
+    h.rotation.set(sw * 0.2, sw * 0.3, sw * 0.1);
+    R.handArm.rotation.x = 0.7 - sw * 0.3;
+  }
   const item = R.handItem;
   if (item && item.userData.baseRot) {
     const b = item.userData.baseRot;

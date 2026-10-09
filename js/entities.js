@@ -1471,8 +1471,7 @@ class ItemEntity {
     this.spin += dt * 1.6;
     const bob = Math.sin(this.age * 2.5) * 0.06 + 0.1;
     this.mesh.position.set(this.pos.x, this.pos.y + bob + (this.cube ? 0.13 : 0.2), this.pos.z);
-    if (this.cube) this.mesh.rotation.y = this.spin;
-    else this.mesh.quaternion.copy(R.camera.quaternion);
+    this.mesh.rotation.y = this.spin;
     tintModel(this.mesh, lightAt(this.pos.x, this.pos.y + 0.3, this.pos.z));
   }
   dispose() {
@@ -1952,7 +1951,7 @@ class PrimedTNT {
   }
   dispose() {
     R.scene.remove(this.mesh);
-    this.mesh.material.forEach((m) => m.dispose());
+    this.mesh.material.dispose();
   }
 }
 

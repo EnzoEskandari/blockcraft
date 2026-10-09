@@ -32,6 +32,11 @@ Object.assign(BIOME_TINT, { 25: [0.9, 1, 0.9], 26: [0.9, 1, 0.9], 27: [0.8, 0.9,
 const FENCE_LINK = new Uint8Array(256); // blocks a fence connects to
 const LEAFY = new Uint8Array(256), STILL = new Uint8Array(256);   // leaves stir in the wind; these plants do not
 const GLOW = new Uint8Array(256);   // blocks that shine: 1 all over (glowstone, a torch, fire), 2 on their front only (a lit furnace)
+// Blocks that catch the light (see the blocks' shader): 16 glassy stone, 32 polished metal, gems and ice,
+// 48 ore, whose flecks sparkle
+const GLOSS = new Uint8Array(256);
+const GLASSY = ['obsidian', 'blackstone', 'gilded_blackstone', 'dragon_egg', 'coal_block'];
+const POLISHED = ['iron_block', 'gold_block', 'diamond_block', 'emerald_block', 'lapis_block', 'redstone_block', 'copper_block', 'quartz_block', 'ice', 'packed_ice', 'frosted_ice'];
 const AO = [0.5, 0.68, 0.84, 1];
 // Leaves drawn solid (Textures: Fast): the sides where one leaf block meets another of its kind are left out
 let solidLeaves = false;
@@ -82,6 +87,7 @@ export function initMesher() {
     FENCE_LINK[i] = (b.opaque && b.solid) || b.render === RENDER.FENCE ? 1 : 0;
     LEAFY[i] = b.key.endsWith('_leaves') ? 1 : 0;
     GLOW[i] = b.light >= 12 && b.render !== RENDER.LIQUID && !b.boxes ? (b.facing ? 2 : 1) : 0;
+    GLOSS[i] = GLASSY.includes(b.key) ? 16 : POLISHED.includes(b.key) ? 32 : b.key.endsWith('_ore') ? 48 : 0;
     STILL[i] = ['sugar_cane', 'bamboo', 'fire', 'cobweb', 'red_mushroom', 'dead_bush', 'nether_wart', 'crimson_fungus', 'warped_fungus'].includes(b.key) ? 1 : 0;
     if (b.boxes) {
       const own = [b.faces[0], b.faces[1], b.faces[2], b.faces[3], b.facing ? b.front : b.faces[4], b.faces[5]];
@@ -160,6 +166,7 @@ class MeshBuf {
   // `this.face` says which way the surface looks (0-5, as in FACES; 6 for plants, which have no one side):
   // the shader lights each side by where the sun is, so no shade is baked into the colour here.
   // `this.glow` (8) marks a side that shines by itself and is drawn at full brightness.
+  // (and, in sixteens, how it catches the light: see GLOSS)
   vert(x, y, z, u, v, layer, r, g, b, sky, blk, sway) {
     const o = this.v;
     this.pos[o * 3] = x; this.pos[o * 3 + 1] = y; this.pos[o * 3 + 2] = z;
@@ -385,7 +392,7 @@ export function buildChunkMesh(world, chunk) {
             if (OPAQUE[nb] || (cull && nb === id)) continue;
             if (f === 3 && y === 0) continue;
             const layer = f === front ? FRONT[id] : FACE[id * 6 + f];
-            buf.glow = GLOW[id] === 1 || (GLOW[id] === 2 && f === front) ? 8 : 0;
+            buf.glow = (GLOW[id] === 1 || (GLOW[id] === 2 && f === front) ? 8 : 0) | GLOSS[id];
             if (tint && (TINT[id] === 2 || f === 2)) cubeFace(buf, x, y, z, f, layer, ri, tint[0], tint[1], tint[2]);
             else cubeFace(buf, x, y, z, f, layer, ri, 1, 1, 1);
           }

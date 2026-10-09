@@ -67,6 +67,21 @@ const LAKESIDE = { seed: 2024, at: [2, -22], view: [0, 0, 12.5], pitch: -0.03, t
 export const UPDATES = [
   {
     // a small update: it keeps the A New Look picture
+    version: '1.9.6', name: 'In Your Hands', date: '2026-10-08',
+    splashes: ['Hold it up!', 'Shiny!', 'Look at that glint!', 'Three sides to everything!', 'Max it out!', 'How many fps?', 'Leaves on the wind!', 'Mind your shadow!',
+      'Light a torch!', 'Looks like rain!', 'Cherry petals!', 'Golden hour!'],
+    scene: LAKESIDE,
+    notes: [
+      'What you hold looks solid now. Tools, food and other items have thickness and shaded edges instead of being flat like paper.',
+      'Blocks in your hand are shaded on each side and turned so you see the top, the front and one side. A furnace or chest shows its front.',
+      'Slabs, fences, trapdoors, pressure plates, anvils, cauldrons, lecterns, enchanting tables and the like are held in their real shape, not as a flat picture.',
+      'The same goes for things lying on the ground (which now all turn slowly, as blocks did) and for what other players, skeletons and vindicators carry.',
+      'Your bare arm has shaded sides, shows your sleeve with your hand at the end of it, and jabs forward when you punch.',
+      'Obsidian, blackstone and coal blocks catch the light: a few dots glint, and which ones changes as you walk past. Blocks of iron, gold, diamond, emerald, lapis, redstone, copper and quartz, and ice, have a soft sheen and the odd sparkle. The flecks in ore sparkle too. It works by sunlight, moonlight and torchlight, and is off with Lighting set to Simple.',
+    ],
+  },
+  {
+    // a small update: it keeps the A New Look picture
     version: '1.9.5', name: 'Graphics Options', date: '2026-10-08',
     splashes: ['Max it out!', 'Turn it down!', 'How many fps?', 'Steady now!', 'Leaves on the wind!', 'Mind your shadow!', 'Light a torch!', 'Looks like rain!',
       'Same you, any device!', 'Cherry petals!', 'Golden hour!', 'Faster!'],
