@@ -67,6 +67,21 @@ const LAKESIDE = { seed: 2024, at: [2, -22], view: [0, 0, 12.5], pitch: -0.03, t
 export const UPDATES = [
   {
     // a small update: it keeps the A New Look picture
+    version: '1.9.5', name: 'Graphics Options', date: '2026-10-08',
+    splashes: ['Max it out!', 'Turn it down!', 'How many fps?', 'Steady now!', 'Leaves on the wind!', 'Mind your shadow!', 'Light a torch!', 'Looks like rain!',
+      'Same you, any device!', 'Cherry petals!', 'Golden hour!', 'Faster!'],
+    scene: LAKESIDE,
+    notes: [
+      'Options has three new graphics buttons, so you can turn everything up for looks or down for speed.',
+      'Lighting: Simple (the plain lighting the game used to have, and the fastest), Fancy (light from where the sun and moon stand, with shadows) or Max (water also mirrors the sky and glitters).',
+      'Shadows: Off, Low, Medium, High or Max. Higher settings are sharper, softer-edged and reach further; lamps cast shadows from Medium up. If the game cannot keep up it now turns shadows down a step at a time instead of straight off.',
+      'Textures: Fast (leaves are drawn solid, which helps most in forests), Fancy, or Max (far-off blocks stay sharp).',
+      'Frame Rate: Matches Screen, or Unlimited, which draws frames as fast as your device can. The number is shown with Show Coordinates turned on. A screen cannot show more frames than it refreshes, so Unlimited is for seeing what your device can do, and it uses more battery.',
+      'Shadows are drawn only for the part of the world you are looking at, which is less work.',
+    ],
+  },
+  {
+    // a small update: it keeps the A New Look picture
     version: '1.9.4', name: 'Steady Shadows', date: '2026-10-08',
     splashes: ['Steady now!', 'Leaves on the wind!', 'Mind your shadow!', 'Light a torch!', 'Looks like rain!', 'Same you, any device!', 'Cherry petals!', 'Surprise me!',
       'Golden hour!', 'Who are you today?', 'A gust!', 'Faster!'],

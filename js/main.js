@@ -6,8 +6,8 @@ import { BLOCKS, ITEMS, B, ID, RENDER, SMELTING, fuelValue, maxStack, canHarvest
 import { World, ckey, CH, GEN } from './world.js';
 import { ench } from './enchant.js';
 import { Advancements } from './advancements.js';
-import { initMesher, buildChunkMesh, computeLight } from './mesher.js';
-import { R, initRenderer, setChunkMeshes, disposeChunkMeshes, updateSky, render } from './render.js';
+import { initMesher, buildChunkMesh, computeLight, setSolidLeaves } from './mesher.js';
+import { R, initRenderer, setChunkMeshes, disposeChunkMeshes, updateSky, render, applyGraphics } from './render.js';
 import { Player } from './player.js';
 import { Entities, spawnBlockParticles, explode, leafFall } from './entities.js';
 import { UI } from './ui.js';
@@ -1106,6 +1106,14 @@ export const Game = {
   },
 
   renderDistChanged() { buildOffsets(); },
+  // Textures was changed between Fast (leaves drawn solid) and the rest: the land is built again
+  leavesChanged() {
+    const solid = G.settings.textures === 'fast';
+    if (solid === S.solidLeaves) return;
+    S.solidLeaves = solid;
+    setSolidLeaves(solid);
+    if (G.world) for (const c of G.world.chunks.values()) c.dirty = true;
+  },
 
   // ------------------------------------------------------------ online worlds
   // Online worlds live on the Blockcraft server, each with its own permanent link. Whoever is in the
@@ -1678,9 +1686,17 @@ function saveWorld(playerOverride) {
 }
 
 // ---------------------------------------------------------------- loop
+// Each frame is drawn when the screen is ready for one. With Frame Rate set to Unlimited (in a world,
+// and while the page is in view) frames are drawn as fast as the device can make them instead: the screen
+// shows no more of them than before, but the fps figure says what the device can really do.
 let last = performance.now();
+const asap = new MessageChannel();
+asap.port1.onmessage = () => loop(performance.now());
 function loop(now) {
-  requestAnimationFrame(loop);
+  const free = G.settings.fpsLimit === 'unlimited' && G.state === 'playing' && !document.hidden;
+  if (free) asap.port2.postMessage(0); else requestAnimationFrame(loop);
+  // (never more than 250 a second, or the steps get too small to count)
+  if (free && now - last < 4) return;
   const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
   last = now;
   frame(dt);
@@ -1770,9 +1786,9 @@ function frame(dt) {
   updateChunks(paused ? 14 : 7);
   G.player.updateCamera(dt);
   tickWeather(paused ? 0 : dt, host);
-  // Shadows cost a second drawing of the land. Where the game cannot keep up with them (an old tablet),
-  // they are turned off once, unless the player has set them by hand.
-  if (!paused && G.clock > 15 && G.settings.shadows && !G.settings.shadowsPicked && R.shared.uShadowOn.value && document.visibilityState === 'visible') {
+  // Shadows are the dearest thing drawn. Where the game cannot keep up with them (an old tablet), they
+  // are turned down a step at a time, unless the player has set them by hand.
+  if (!paused && G.clock > 15 && R.gfx.shadows !== 'off' && !G.settings.shadowsPicked && R.shared.uShadowOn.value && document.visibilityState === 'visible') {
     // (by the clock on the wall: the game's own steps never count for less than a twentieth of a second)
     const now = performance.now();
     if (!S.perfAt || now - S.perfLast > 1000) { S.perfAt = now; S.perfN = 0; }
@@ -1781,9 +1797,13 @@ function frame(dt) {
       S.slow = S.perfN / ((now - S.perfAt) / 1000) < 18 ? (S.slow || 0) + 1 : 0;
       S.perfAt = 0;
       if (S.slow >= 2) {
-        G.settings.shadows = false; G.settings.shadowsPicked = true;
+        const steps = ['off', 'low', 'medium', 'high', 'max'];
+        G.settings.shadowQ = steps[Math.max(0, steps.indexOf(R.gfx.shadows) - 1)];
+        S.slow = 0;
+        applyGraphics();
         saveSettings();
-        G.ui.toast('Shadows were turned off to keep the game smooth. You can turn them back on in Options.', 8);
+        G.ui.syncOptions();
+        G.ui.toast(G.settings.shadowQ === 'off' ? 'Shadows were turned off to keep the game smooth. You can turn them back on in Options.' : 'Shadows were turned down to keep the game smooth. You can change them in Options.', 8);
       }
     }
   }
@@ -1798,6 +1818,8 @@ function frame(dt) {
 // ---------------------------------------------------------------- boot
 function boot(hotData) {
   loadSettings();
+  S.solidLeaves = G.settings.textures === 'fast';
+  setSolidLeaves(S.solidLeaves);
   buildTextures();
   buildIcons();
   initMesher();

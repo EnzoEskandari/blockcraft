@@ -27,7 +27,11 @@ export const G = {
     showCoords: false,
     gamma: 0.5,
     viewBob: true,
-    shadows: true,        // the sun and moon cast shadows (turned off by itself on a device too slow for it)
+    // graphics: each can be turned down for speed (see applyGraphics in render.js)
+    lighting: 'max',      // simple | fancy | max
+    shadowQ: 'high',      // off | low | medium | high | max (turned down by itself on a device too slow for it)
+    textures: 'fancy',    // fast | fancy | max
+    fpsLimit: 'screen',   // screen | unlimited
   },
 };
 
@@ -47,5 +51,8 @@ export function remove(key) {
 export function loadSettings() {
   const s = load('settings');
   if (s && typeof s === 'object') Object.assign(G.settings, s);
+  // (from before shadows had qualities: they were on or off)
+  if (s && s.shadows === false && !s.shadowQ) G.settings.shadowQ = 'off';
+  delete G.settings.shadows;
 }
 export function saveSettings() { store('settings', G.settings); }

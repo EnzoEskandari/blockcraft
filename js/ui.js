@@ -9,7 +9,7 @@ import { structuresNear, treasureAt } from './structures.js';
 import { SEA, BIOME } from './constants.js';
 import { SLOTS, CHARACTERS, PRIZES, item, owns, hasPrize, prizesIn, codeOf, myLook, mySkin, wear, wearLook, randomLook, armColour } from './skins.js';
 import { skinDoll } from './entities.js';
-import { paintHand } from './render.js';
+import { paintHand, applyGraphics } from './render.js';
 import { sameItem, stack, craftableTimes, takeIngredients } from './inventory.js';
 import { isEnchanted, enchList, enchLine, ENCH, xpForLevel, enchantability, tableLevels, tableOffer, enchanted, anvil, grind, repairItem, countShelves } from './enchant.js';
 import { requestLock, exitLock, setTouchMode, resetTouch } from './input.js';
@@ -1131,7 +1131,10 @@ export class UI {
       { key: 'touchSens', label: 'Touch Look Speed', min: 0.2, max: 3, step: 0.05, fmt: (v) => Math.round(v * 100) + '%' },
       { key: 'autoJump', label: 'Auto-Jump', toggle: true },
       { key: 'viewBob', label: 'View Bobbing', toggle: true },
-      { key: 'shadows', label: 'Shadows', toggle: true },
+      { key: 'lighting', label: 'Lighting', cycle: ['simple', 'fancy', 'max'], names: { simple: 'Simple', fancy: 'Fancy', max: 'Max' } },
+      { key: 'shadowQ', label: 'Shadows', cycle: ['off', 'low', 'medium', 'high', 'max'], names: { off: 'Off', low: 'Low', medium: 'Medium', high: 'High', max: 'Max' } },
+      { key: 'textures', label: 'Textures', cycle: ['fast', 'fancy', 'max'], names: { fast: 'Fast', fancy: 'Fancy', max: 'Max' } },
+      { key: 'fpsLimit', label: 'Frame Rate', cycle: ['screen', 'unlimited'], names: { screen: 'Matches Screen', unlimited: 'Unlimited' } },
       { key: 'touch', label: 'Touch Controls', cycle: ['auto', 'on', 'off'], names: { auto: 'Auto', on: 'On', off: 'Off' } },
       { key: 'touchAim', label: 'Touch Aiming', cycle: ['finger', 'crosshair'], names: { finger: 'Where You Tap', crosshair: 'Crosshair' } },
       { key: 'dayLength', label: 'Day Length', cycle: [1200, 600], names: { 1200: '20 min', 600: '10 min' } },
@@ -1152,7 +1155,11 @@ export class UI {
           sfx('click');
           if (o.toggle) G.settings[o.key] = !G.settings[o.key];
           else G.settings[o.key] = o.cycle[(o.cycle.indexOf(G.settings[o.key]) + 1) % o.cycle.length];
-          if (o.key === 'shadows') G.settings.shadowsPicked = true;   // (chosen by hand: the game leaves it alone from now on)
+          if (o.key === 'shadowQ') {
+            G.settings.shadowsPicked = true;   // (chosen by hand: the game leaves it alone from now on)
+            // shadows need a sun to cast them
+            if (G.settings.shadowQ !== 'off' && G.settings.lighting === 'simple') { G.settings.lighting = 'fancy'; this.toast('Lighting set to Fancy, so that shadows show'); this.syncOptions(); }
+          }
           this.applySetting(o.key);
           sync();
         });
@@ -1187,6 +1194,11 @@ export class UI {
     clearTimeout(this.saveTimer);
     if (dragging) this.saveTimer = setTimeout(saveSettings, 400); else saveSettings();
     if (key === 'volume') setVolume(G.settings.volume);
+    if (key === 'lighting' || key === 'shadowQ' || key === 'textures') {
+      applyGraphics();
+      // (leaves are drawn solid or not when the land is built, so it is built again)
+      if (key === 'textures' && G.game) G.game.leavesChanged();
+    }
     if (key === 'renderDist' && G.game) G.game.renderDistChanged();
     if (key === 'touch') {
       const t = G.settings.touch;

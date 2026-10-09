@@ -33,6 +33,9 @@ const FENCE_LINK = new Uint8Array(256); // blocks a fence connects to
 const LEAFY = new Uint8Array(256), STILL = new Uint8Array(256);   // leaves stir in the wind; these plants do not
 const GLOW = new Uint8Array(256);   // blocks that shine: 1 all over (glowstone, a torch, fire), 2 on their front only (a lit furnace)
 const AO = [0.5, 0.68, 0.84, 1];
+// Leaves drawn solid (Textures: Fast): the sides where one leaf block meets another of its kind are left out
+let solidLeaves = false;
+export function setSolidLeaves(on) { solidLeaves = !!on; }
 
 // faces: +x, -x, +y, -y, +z, -z; corners listed BL, BR, TR, TL as seen from outside
 const FACES = [
@@ -374,7 +377,7 @@ export function buildChunkMesh(world, chunk) {
         if (rt === RENDER.CUBE) {
           const buf = TRANS[id] ? TB : OB;
           buf.sway = LEAFY[id] ? 110 : 0;
-          const cull = CULLSAME[id] || TRANS[id];
+          const cull = CULLSAME[id] || TRANS[id] || (solidLeaves && LEAFY[id]);
           let front = -1;
           if (FACING[id]) front = [4, 1, 5, 0][meta ? meta[(y << 8) | (z << 4) | x] & 3 : 0];
           for (let f = 0; f < 6; f++) {

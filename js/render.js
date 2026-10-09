@@ -58,7 +58,9 @@ void main() {
     : face < 3.5 ? vec3(0.0, -1.0, 0.0) : face < 4.5 ? vec3(0.0, 0.0, 1.0) : face < 5.5 ? vec3(0.0, 0.0, -1.0) : vec3(0.0, 1.0, 0.0);
   // the shading every side has always had, and a gentler one for when the sun is doing the work
   float shade = face < 1.5 ? 0.6 : face < 2.5 ? 1.0 : face < 3.5 ? 0.5 : face < 5.5 ? 0.8 : 1.0;
-  vS = vec4(plant > 0.5 ? 0.7 : max(dot(n, uSunDir), 0.0) * 1.12, mix(shade, sqrt(shade), uDirK), shade, glow);
+  // (the last: 1 for a side that shines, a quarter for a leaf)
+  float leaf = plant < 0.5 && aTex.w > 100.0 && aTex.w < 120.0 ? 0.25 : 0.0;
+  vS = vec4(plant > 0.5 ? 0.7 : max(dot(n, uSunDir), 0.0) * 1.12, mix(shade, sqrt(shade), uDirK), shade, glow + leaf);
   vShadow = (uShadowFromView * still).xyz;
   vEnts = (uEntsFromView * still).xyz;
   vView = still.xyz * mat3(viewMatrix);
@@ -82,6 +84,8 @@ uniform sampler2DShadow uLampEnts;
 uniform float uShadowOn;
 uniform float uShadowTexel;
 uniform vec2 uShadowFar;
+uniform vec4 uShadowRect;
+uniform float uSolidLeaves;
 uniform mat3 uShadowLin;
 uniform mat3 uEntsLin;
 uniform vec4 uLamp;
@@ -116,8 +120,14 @@ float curve(float l) { return mix(l / (4.0 - 3.0 * l), l, uGamma); }
 // instead of jumping.
 float sunAt(vec3 sc) {
   float z = sc.z - 0.00006, t = uShadowTexel;
+#if TAPS == 1
+  return texture(uShadowMap, vec3(sc.xy, z));
+#elif TAPS == 2
+  return 0.5 * (texture(uShadowMap, vec3(sc.xy + t * vec2(-0.5, -0.5), z)) + texture(uShadowMap, vec3(sc.xy + t * vec2(0.5, 0.5), z)));
+#else
   return 0.25 * (texture(uShadowMap, vec3(sc.xy + t * vec2(-0.75, -0.25), z)) + texture(uShadowMap, vec3(sc.xy + t * vec2(0.25, -0.75), z))
     + texture(uShadowMap, vec3(sc.xy + t * vec2(0.75, 0.25), z)) + texture(uShadowMap, vec3(sc.xy + t * vec2(-0.25, 0.75), z)));
+#endif
 }
 // whether the lamp can see a point (v: from the lamp to it), by the one of its six views that looks that way
 float lampSees(vec3 v, float back) {
@@ -144,7 +154,10 @@ void main() {
   else if (surface) c = texture(uAtlas, vec3(vUv.x + uTime * 0.012, vUv.y - uTime * 0.03, vUv.z));   // still water drifts
   else if (water) c = texture(uAtlas, vec3(vUv.x, vUv.y - uTime * 0.35, vUv.z));   // and falls
   else c = texture(uAtlas, vUv);
-  if (c.a < uAlphaTest) discard;
+  if (c.a < uAlphaTest) {
+    // (leaves drawn solid, for speed: the gaps are filled with the leaf's own colour, darker)
+    if (uSolidLeaves > 0.5 && abs(vS.w - 0.25) < 0.1) c = vec4(textureLod(uAtlas, vUv, 4.0).rgb * 0.62, 1.0); else discard;
+  }
   // the sun (or the moon): read from the shadow map around you, and guessed from the open sky further off
   float open = smoothstep(0.7, 0.97, sky);
   float lit = open;
@@ -164,6 +177,9 @@ void main() {
     float edge = smoothstep(uShadowFar.x - 10.0, uShadowFar.x, vL.z);
     vec2 e = abs(sc.xy - 0.5) * 2.0;
     if (max(max(e.x, e.y), abs(sc.z - 0.5) * 2.0) > 0.995) edge = 1.0;
+    // (only the part of the picture you could see when it was drawn has anything in it)
+    vec2 inside = min(sc.xy - uShadowRect.xy, uShadowRect.zw - sc.xy);
+    edge = max(edge, 1.0 - smoothstep(0.0, 0.012, min(inside.x, inside.y)));
     if (edge < 1.0) {
       float s = sunAt(sc);
       // animals, players and things on the ground have a picture of their own, drawn afresh each frame
@@ -198,6 +214,7 @@ void main() {
   if (lava) lc = vec3(0.96 + 0.06 * sin(uTime * 1.1 + (vUv.x + vUv.y) * 6.2832));   // lava glows by itself
   else if (vS.w > 0.5) lc = max(lc, vec3(0.97));   // and so does anything that shines
   vec3 col = c.rgb * vCol * lc;
+#ifdef WATERFX
   if (surface) {
     // water mirrors the sky more the flatter you look across it, and the sun glitters on its ripples
     // (one glint to a dot of the texture, so it stays blocky)
@@ -214,6 +231,7 @@ void main() {
     col += uSunLight * 2.0 * glint * lit * curve(sky);
     c.a = mix(0.68, 0.95, fres) + glint * lit * 0.3;
   }
+#endif
   float f = smoothstep(uFogNear, uFogFar, vL.z);
   gl_FragColor = vec4(mix(col, uFogColor, f), c.a);
 }`;
@@ -222,20 +240,25 @@ void main() {
 // nothing within `uHole.w` of the lamp itself, which would otherwise be shut inside its own block
 const SHADOW_VS = `
 attribute vec4 aTex;
+attribute vec4 aColor;
 varying vec3 vUv;
 varying vec3 vAt;
+varying float vLeaf;
 void main() {
   vUv = vec3(aTex.x / 16.0, aTex.y / 16.0, aTex.z);
+  vLeaf = aTex.w > 100.0 && aTex.w < 120.0 && aColor.a * 255.0 < 5.5 ? 1.0 : 0.0;
   vAt = (modelMatrix * vec4(position, 1.0)).xyz;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }`;
 const SHADOW_FS = `
 uniform sampler2DArray uAtlas;
 uniform vec4 uHole;
+uniform float uSolidLeaves;
 varying vec3 vUv;
 varying vec3 vAt;
+varying float vLeaf;
 void main() {
-  if (texture(uAtlas, vUv).a < 0.5) discard;
+  if (texture(uAtlas, vUv).a < 0.5 && !(uSolidLeaves > 0.5 && vLeaf > 0.5)) discard;
   if (uHole.w > 0.0 && distance(vAt, uHole.xyz) < uHole.w) discard;
   gl_FragColor = vec4(1.0);
 }`;
@@ -306,6 +329,8 @@ export function initRenderer(container) {
     uEntsLin: { value: new THREE.Matrix3() },
     uLampEnts: { value: null },
     uShadowFar: { value: new THREE.Vector2(54, 30) },
+    uShadowRect: { value: new THREE.Vector4(0, 0, 1, 1) },
+    uSolidLeaves: { value: 0 },
     uShadowOn: { value: 0 },
     uShadowTexel: { value: 1 / 1024 },
     uShadowFromView: { value: new THREE.Matrix4() },
@@ -316,19 +341,19 @@ export function initRenderer(container) {
     uLampLevel: { value: 14 },
   };
   R.shared = shared;
-  // (SHADOWS: the shader with the shadow pictures in it; without, the plain one, which is quicker)
-  R.shadowShader = G.settings.shadows !== false;
+  // (which parts of the shader are in use is decided by the settings: see applyGraphics)
   R.opaqueMat = new THREE.ShaderMaterial({
-    uniforms: { ...shared, uAlphaTest: { value: 0.5 } }, defines: R.shadowShader ? { SHADOWS: '' } : {},
+    uniforms: { ...shared, uAlphaTest: { value: 0.5 } }, defines: { TAPS: 4 },
     vertexShader: CHUNK_VS, fragmentShader: CHUNK_FS,
   });
   R.transMat = new THREE.ShaderMaterial({
-    uniforms: { ...shared, uAlphaTest: { value: 0.02 } }, defines: R.shadowShader ? { SHADOWS: '' } : {},
+    uniforms: { ...shared, uAlphaTest: { value: 0.02 } }, defines: { TAPS: 4 },
     vertexShader: CHUNK_VS, fragmentShader: CHUNK_FS,
     transparent: true, depthWrite: false, side: THREE.DoubleSide,
   });
 
   buildShadows();
+  applyGraphics();
   buildSky();
   buildClouds();
   buildHighlight();
@@ -347,6 +372,35 @@ function onResize() {
   R.handCamera.updateProjectionMatrix();
 }
 
+// ---------------------------------------------------------------- graphics settings
+// Options has three: Lighting (simple: as the game was lit before there was a sun to speak of; fancy:
+// light from where the sun and moon stand, and shadows; max: the sky mirrored in water as well), Shadows
+// (off, or four qualities: see SHADOW_Q) and Textures (fast: leaves drawn solid and the plainest
+// filtering; fancy; max: far-off textures kept sharp). This puts them into effect.
+export function applyGraphics() {
+  const st = G.settings, r = R.renderer;
+  const lighting = ['simple', 'fancy', 'max'].includes(st.lighting) ? st.lighting : 'max';
+  const textures = ['fast', 'fancy', 'max'].includes(st.textures) ? st.textures : 'fancy';
+  let q = SHADOW_Q[st.shadowQ] ? st.shadowQ : st.shadowQ === 'off' ? 'off' : 'high';
+  // (simple lighting has no sun to cast a shadow; and a card that refused the shadow shader gets none)
+  if (lighting === 'simple' || R.shadowBroken) q = 'off';
+  R.gfx = { lighting, textures, shadows: q };
+  if (q !== 'off') sizeShadows(q);
+  const defines = { TAPS: q === 'off' ? 4 : R.shadow.taps };
+  if (q !== 'off') defines.SHADOWS = '';
+  if (lighting === 'max') defines.WATERFX = '';
+  const key = JSON.stringify(defines);
+  if (key !== R.defineKey) {
+    R.defineKey = key;
+    for (const m of [R.opaqueMat, R.transMat]) { m.defines = { ...defines }; m.needsUpdate = true; }
+    R.frames = 0;
+  }
+  R.shared.uSolidLeaves.value = textures === 'fast' ? 1 : 0;
+  const a = R.atlas, min = textures === 'fast' ? THREE.NearestMipmapNearestFilter : textures === 'max' ? THREE.LinearMipmapLinearFilter : THREE.NearestMipmapLinearFilter;
+  const aniso = textures === 'max' ? Math.min(8, r.capabilities.getMaxAnisotropy()) : 1;
+  if (a.minFilter !== min || a.anisotropy !== aniso) { a.minFilter = min; a.anisotropy = aniso; a.needsUpdate = true; }
+}
+
 // ---------------------------------------------------------------- shadows
 // The sun's view of the land around you is drawn into a depth picture; the blocks' shader looks each point
 // up in it to see whether the sun reaches there. What is drawn is the far side of everything (the faces
@@ -363,7 +417,7 @@ const UP_Z = new THREE.Vector3(0, 0, 1);
 
 // A picture that holds depths only, read by the shader as "is this point nearer than what is stored?"
 function depthTarget(w, h) {
-  const t = new THREE.WebGLRenderTarget(w, h, { depthBuffer: true, stencilBuffer: false });
+  const t = new THREE.WebGLRenderTarget(w, h, { depthBuffer: true, stencilBuffer: false, format: THREE.RedFormat, type: THREE.UnsignedByteType });
   t.texture.minFilter = t.texture.magFilter = THREE.NearestFilter;
   t.texture.generateMipmaps = false;
   t.depthTexture = new THREE.DepthTexture(w, h);
@@ -372,49 +426,73 @@ function depthTarget(w, h) {
   return t;
 }
 
+// How much is spent on shadows, by the setting in Options: how many dots across the land's picture is and
+// how far it reaches, how many readings are blended for a point, the size of each of a lamp's six views
+// (0: lamps cast no shadows), how far the sun moves before the land is drawn again (1 - cos of the angle),
+// and the same two numbers for the picture of the things that move.
+const big = () => R.renderer.capabilities.maxTextureSize >= 4096 && !isTouchDevice;
+const SHADOW_Q = {
+  low: () => ({ size: 1024, reach: isTouchDevice ? 36 : 40, taps: 1, tile: 0, step: 1.2e-6, esize: 512, ereach: 20 }),
+  medium: () => ({ size: 2048, reach: 48, taps: 2, tile: 256, step: 6e-7, esize: 1024, ereach: 26 }),
+  high: () => ({ size: 2048, reach: isTouchDevice ? 56 : 64, taps: 4, tile: isTouchDevice ? 256 : 512, step: 3e-7, esize: 1024, ereach: isTouchDevice ? 28 : 32 }),
+  max: () => ({ size: big() ? 4096 : 2048, reach: big() ? 96 : 64, taps: 4, tile: 512, step: 1.5e-7, esize: big() ? 2048 : 1024, ereach: big() ? 44 : 32 }),
+};
+
 function buildShadows() {
-  // (sixteen dots of the picture or more to a block, the same as a block's own texture)
-  const size = 2048, reach = isTouchDevice ? 56 : 64, esize = 1024, ereach = isTouchDevice ? 28 : 32;
-  const target = depthTarget(size, size), back = depthTarget(size, size), ents = depthTarget(esize, esize);
-  const camera = new THREE.OrthographicCamera(-reach, reach, reach, -reach, 1, 420);
+  const camera = new THREE.OrthographicCamera(-64, 64, 64, -64, 1, 420);
   camera.layers.set(1);
-  const ecam = new THREE.OrthographicCamera(-ereach, ereach, ereach, -ereach, 1, 420);
+  const ecam = new THREE.OrthographicCamera(-32, 32, 32, -32, 1, 420);
   ecam.layers.set(2);
   R.shadow = {
-    size, reach, target, back, camera, esize, ereach, ents, ecam, age: 99, drawn: false, entCalls: 0,
+    q: '', camera, ecam, age: 99, drawn: false, entCalls: 0,
     dirty: true, at: 0, gap: isTouchDevice ? 170 : 100, centre: new THREE.Vector3(), dir: new THREE.Vector3(),
     // (a drawing of the land under way: which part comes next, and where it was aimed)
     anchor: new THREE.Vector3(1e9, 0, 0), eanchor: new THREE.Vector3(1e9, 0, 0), turned: true,
     part: -1, parts: isTouchDevice ? 4 : 2, toCentre: new THREE.Vector3(), toDir: new THREE.Vector3(), toVP: new THREE.Matrix4(),
+    // (the part of the picture that was drawn: what you could see, and some way round it)
+    rect: [0, 0, 1, 1], toRect: [0, 0, 1, 1],
     hole: { value: new THREE.Vector4() },
     // (the bodies of animals, monsters and players, and things lying on the ground: both sides, as some are flat)
     bodies: new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, colorWrite: false }),
   };
   R.shadow.blocks = new THREE.ShaderMaterial({
-    uniforms: { uAtlas: R.shared.uAtlas, uHole: R.shadow.hole }, vertexShader: SHADOW_VS, fragmentShader: SHADOW_FS, side: THREE.BackSide, colorWrite: false,
+    uniforms: { uAtlas: R.shared.uAtlas, uHole: R.shadow.hole, uSolidLeaves: R.shared.uSolidLeaves }, vertexShader: SHADOW_VS, fragmentShader: SHADOW_FS, side: THREE.BackSide, colorWrite: false,
   });
-  R.shared.uShadowMap.value = target.depthTexture;
-  R.shared.uShadowEnts.value = ents.depthTexture;
-  R.shared.uShadowTexel.value = 1 / size;
-  R.shared.uShadowFar.value.set(reach - 10, ereach - 2);
-
-  // The nearest lamp's shadows: what it sees in each of six directions, side by side in one picture
-  // (and the same again for the things that move)
-  const tile = isTouchDevice ? 256 : 512;
-  const lt = depthTarget(tile * 3, tile * 2), le = depthTarget(tile * 3, tile * 2);
-  lt.scissorTest = le.scissorTest = true;
   // (looking east, west, up, down, south, north: the same order, and the same idea of "up", as the shader's)
   const views = [[1, 0, 0, 0, 1, 0], [-1, 0, 0, 0, 1, 0], [0, 1, 0, 0, 0, 1], [0, -1, 0, 0, 0, -1], [0, 0, 1, 0, 1, 0], [0, 0, -1, 0, 1, 0]];
   R.lamp = {
-    tile, target: lt, ents: le, views, camera: new THREE.PerspectiveCamera(90, 1, LAMP_NEAR, LAMP_FAR),
+    tile: 0, views, camera: new THREE.PerspectiveCamera(90, 1, LAMP_NEAR, LAMP_FAR),
     at: null, pos: new THREE.Vector3(), cell: new THREE.Vector3(), level: 14, hole: 0.87, on: 0, scan: 0, age: 99,
     dirty: true, landAt: 0, bare: false, want: null, power: 1, strength: 1,
   };
-  R.shared.uLampMap.value = lt.depthTexture;
-  R.shared.uLampEnts.value = le.depthTexture;
+  sizeShadows('high');
+}
+
+// The pictures themselves, made (or made again) for a quality
+function sizeShadows(q) {
+  const S = R.shadow, L = R.lamp, Q = SHADOW_Q[q]();
+  if (S.q === q) return;
+  for (const t of [S.target, S.back, S.ents, L.target, L.ents]) if (t) t.dispose();
+  Object.assign(S, { q, size: Q.size, reach: Q.reach, esize: Q.esize, ereach: Q.ereach, taps: Q.taps, step: Q.step });
+  S.target = depthTarget(Q.size, Q.size); S.back = depthTarget(Q.size, Q.size); S.ents = depthTarget(Q.esize, Q.esize);
+  for (const [cam, r] of [[S.camera, Q.reach], [S.ecam, Q.ereach]]) { cam.left = cam.bottom = -r; cam.right = cam.top = r; cam.clearViewOffset(); cam.updateProjectionMatrix(); }
+  S.drawn = false; S.part = -1; S.dirty = true; S.anchor.set(1e9, 0, 0); S.eanchor.set(1e9, 0, 0);
+  // The lamp's shadows: what it sees in each of six directions, side by side in one picture (and the same
+  // again for the things that move). Where lamps cast none, a scrap of a picture stands in.
+  L.tile = Q.tile; L.at = null; L.on = 0; L.dirty = true;
+  const T = Math.max(2, Q.tile);
+  L.target = depthTarget(T * 3, T * 2); L.ents = depthTarget(T * 3, T * 2);
+  L.target.scissorTest = L.ents.scissorTest = true;
+  const sh = R.shared;
+  sh.uShadowMap.value = S.target.depthTexture;
+  sh.uShadowEnts.value = S.ents.depthTexture;
+  sh.uLampMap.value = L.target.depthTexture;
+  sh.uLampEnts.value = L.ents.depthTexture;
+  sh.uShadowTexel.value = 1 / Q.size;
+  sh.uShadowFar.value.set(Q.reach - 10, Q.ereach - 2);
   // (every one of these pictures has to exist before the land is first drawn, whether or not it has been
   // needed yet: the blocks' shader names them all, and will draw nothing if one is missing)
-  for (const t of [target, back, ents, lt, le]) { R.renderer.setRenderTarget(t); R.renderer.clear(); }
+  for (const t of [S.target, S.back, S.ents, L.target, L.ents]) { R.renderer.setRenderTarget(t); R.renderer.clear(); }
   R.renderer.setRenderTarget(null);
 }
 
@@ -438,41 +516,97 @@ function aimAlongLight(cam, reach, size, L, anchor) {
   cam.updateMatrixWorld();
 }
 
+// Only what you can see needs shadows. This finds the part of a picture taken along the light (middle
+// `centre`, across `sx` and up `sy`, reaching `reach` each way) that your view falls on, out to `far`
+// blocks, with the view widened by `wide` (sideways) and `tall` (up and down) and `pad` blocks to spare:
+// as left, bottom, right, top, each from 0 to 1. Whatever stands between that ground and the sun is in
+// the same part of the picture, so nothing that could shade it is left out.
+const vr = new THREE.Vector3(), vu = new THREE.Vector3(), vf = new THREE.Vector3(), vd = new THREE.Vector3();
+function viewRect(out, centre, sx, sy, reach, far, wide, tall, pad) {
+  const cam = R.camera, e = cam.matrixWorld.elements, c = cam.position;
+  const V = cam.fov * Math.PI / 360 + tall, H = Math.atan(Math.tan(cam.fov * Math.PI / 360) * cam.aspect) + wide;
+  // (a view that takes in nearly everything round you: all of the picture)
+  if (H > 1.45 || V > 1.45) { out[0] = out[1] = 0; out[2] = out[3] = 1; return out; }
+  vr.set(e[0], e[1], e[2]); vu.set(e[4], e[5], e[6]); vf.set(-e[8], -e[9], -e[10]);
+  vd.subVectors(c, centre);
+  const u0 = vd.dot(sx), v0 = vd.dot(sy);
+  let ul = u0, uh = u0, vl = v0, vh = v0;
+  for (let i = 0; i <= 8; i++) for (let j = 0; j <= 4; j++) {
+    const a = H * (i / 4 - 1), b = V * (j / 2 - 1), cb = Math.cos(b);
+    vd.copy(vf).multiplyScalar(cb * Math.cos(a)).addScaledVector(vr, cb * Math.sin(a)).addScaledVector(vu, Math.sin(b));
+    const u = u0 + vd.dot(sx) * far, v = v0 + vd.dot(sy) * far;
+    if (u < ul) ul = u; if (u > uh) uh = u; if (v < vl) vl = v; if (v > vh) vh = v;
+  }
+  const k = 1 / (2 * reach);
+  out[0] = Math.max(0, (ul - pad) * k + 0.5); out[1] = Math.max(0, (vl - pad) * k + 0.5);
+  out[2] = Math.min(1, (uh + pad) * k + 0.5); out[3] = Math.min(1, (vh + pad) * k + 0.5);
+  return out;
+}
+// A picture's camera and target set to draw only that part (whole dots; nothing else about the picture
+// changes, so a point is still looked up in the same place)
+function drawPart(cam, target, size, rect) {
+  const x0 = Math.floor(rect[0] * size), y0 = Math.floor(rect[1] * size), x1 = Math.ceil(rect[2] * size), y1 = Math.ceil(rect[3] * size);
+  const w = Math.max(1, x1 - x0), h = Math.max(1, y1 - y0);
+  cam.setViewOffset(size, size, x0, size - y1, w, h);
+  target.viewport.set(x0, y0, w, h);
+  target.scissor.set(x0, y0, w, h);
+  target.scissorTest = true;
+  rect[0] = x0 / size; rect[1] = y0 / size; rect[2] = x1 / size; rect[3] = y1 / size;
+}
+function drawWhole(cam, target, size) {
+  cam.clearViewOffset();
+  target.viewport.set(0, 0, size, size);
+  target.scissor.set(0, 0, size, size);
+  target.scissorTest = false;
+}
+const fx = new THREE.Vector3(), fy = new THREE.Vector3(), seen = [0, 0, 1, 1];
+
 // The land, as the sun sees it. Drawing all of it is a great deal of work for one frame, so (unless it is
 // wanted at once) it is drawn a part at a time over a few frames, into a second picture that takes the
 // place of the first when it is whole. The chunks are shared out among four layers, checkerboard fashion
 // (see placeMesh), and a part is one or two of those.
-function drawLand(atOnce) {
+function drawLand(atOnce, quick) {
   const S = R.shadow, cam = S.camera, r = R.renderer, scene = R.scene, fog = scene.fog;
   if (S.part < 0) {
     // (along the light as it was when last drawn, unless the sun has since moved enough to tell: the
     // same dots fall on the same ground then, and a redrawn picture looks just like the old one)
     if (!S.drawn || S.turned) S.toDir.copy(R.shared.uSunDir.value); else S.toDir.copy(S.dir);
+    drawWhole(cam, S.back, S.size);
     aimAlongLight(cam, S.reach, S.size, S.toDir, S.anchor);
     S.toCentre.copy(sc);
     S.toVP.copy(BIAS).multiply(cam.projectionMatrix).multiply(cam.matrixWorldInverse);
     S.dirty = false;
     S.part = 0;
+    // (how many of the four layers of chunks go into each frame's part: two at a time when it is wanted
+    // quickly, because you have turned to look somewhere new)
+    S.per = quick ? 2 : 4 / S.parts;
     r.setRenderTarget(S.back);
     r.clear();
+    // only the part you can see, and some way round it so that turning your head does not outrun it
+    // (sx and sy are as aimAlongLight left them: the picture's own across and up)
+    viewRect(S.toRect, sc, sx, sy, S.reach, S.reach - 8, 0.45, 0.35, 5);
+    if ((S.toRect[2] - S.toRect[0]) * (S.toRect[3] - S.toRect[1]) < 0.85) drawPart(cam, S.back, S.size, S.toRect);
+    else { S.toRect[0] = S.toRect[1] = 0; S.toRect[2] = S.toRect[3] = 1; }
   }
   scene.fog = null;
   S.hole.value.w = 0;
   r.setRenderTarget(S.back);
   scene.overrideMaterial = S.blocks;
-  if (atOnce) { cam.layers.set(1); S.part = S.parts; } else {
-    const per = 4 / S.parts;
+  if (atOnce) { cam.layers.set(1); S.part = 4; } else {
     cam.layers.disableAll();
-    for (let k = 0; k < per; k++) cam.layers.enable(10 + S.part * per + k);
+    for (let k = 0; k < S.per; k++) cam.layers.enable(10 + S.part * S.per + k);
     S.part++;
   }
   r.render(scene, cam);
   scene.overrideMaterial = null;
   scene.fog = fog;
   r.setRenderTarget(null);
-  if (S.part >= S.parts) {
+  if (S.part * S.per >= 4) {
     // whole: it becomes the picture the blocks are lit by
+    drawWhole(cam, S.back, S.size);
     [S.target, S.back] = [S.back, S.target];
+    for (let i = 0; i < 4; i++) S.rect[i] = S.toRect[i];
+    R.shared.uShadowRect.value.set(S.rect[0], S.rect[1], S.rect[2], S.rect[3]);
     lightVP.copy(S.toVP);
     R.shared.uShadowLin.value.setFromMatrix4(lightVP);
     R.shared.uShadowMap.value = S.target.depthTexture;
@@ -484,34 +618,49 @@ function drawLand(atOnce) {
 // The things that move (layer 2, set where their models are built), near you
 function drawBodies() {
   const S = R.shadow, cam = S.ecam, r = R.renderer, scene = R.scene, fog = scene.fog;
+  drawWhole(cam, S.ents, S.esize);
   aimAlongLight(cam, S.ereach, S.esize, S.drawn ? S.dir : R.shared.uSunDir.value, S.eanchor);
   entsVP.copy(BIAS).multiply(cam.projectionMatrix).multiply(cam.matrixWorldInverse);
   R.shared.uEntsLin.value.setFromMatrix4(entsVP);
   scene.fog = null;
   r.setRenderTarget(S.ents);
   r.clear();
+  // (only the ones whose shadows you could see)
+  viewRect(seen, sc, sx, sy, S.ereach, S.ereach, 0.12, 0.12, 3);
+  if ((seen[2] - seen[0]) * (seen[3] - seen[1]) < 0.9) { drawPart(cam, S.ents, S.esize, seen); r.setRenderTarget(S.ents); }
   scene.overrideMaterial = S.bodies;
   r.render(scene, cam);
   S.entCalls = r.info.render.calls;
   scene.overrideMaterial = null;
   scene.fog = fog;
+  drawWhole(cam, S.ents, S.esize);
   r.setRenderTarget(null);
 }
 
 function sunShadows() {
   const S = R.shadow, L = R.shared.uSunDir.value, c = R.camera.position;
-  let due = true, now = true;
+  let due = true, now = true, soon = false;
   if (S.drawn) {
     const turned = 1 - S.dir.dot(L), dx = c.x - S.centre.x, dy = c.y - S.centre.y, dz = c.z - S.centre.z;
     const far = dx * dx + dy * dy + dz * dz;
     // (a twenty-second of a degree of sun, which moves the tip of a tall shadow half a dot, or six
     // blocks of walking; at once if the time was changed or you were moved)
-    S.turned = turned > 3e-7;
+    S.turned = turned > S.step;
     due = S.dirty || S.turned || far > 36;
     now = turned > 2e-4 || far > 900;
+    // (or you have turned to look at ground the picture has nothing drawn for: begun straight away)
+    let turnedTo = false;
+    if (S.part < 0 && (S.rect[0] > 0 || S.rect[1] > 0 || S.rect[2] < 1 || S.rect[3] < 1)) {
+      fx.crossVectors(UP_Z, S.dir).normalize(); fy.crossVectors(S.dir, fx);
+      viewRect(seen, S.centre, fx, fy, S.reach, S.reach - 10, 0.15, 0.12, 1);
+      turnedTo = seen[0] < S.rect[0] || seen[1] < S.rect[1] || seen[2] > S.rect[2] || seen[3] > S.rect[3];
+    }
+    if (turnedTo) { due = true; soon = true; }
   }
+  // (a drawing under way goes on; a new one starts at once if it must, otherwise no sooner than `gap`
+  // after the last, and is spread over a few frames unless the whole scene has just changed)
   if (S.part >= 0) drawLand(false);
-  else if (due && (now || performance.now() - S.at >= S.gap)) drawLand(now);
+  else if (due && (now || soon || performance.now() - S.at >= S.gap)) drawLand(now, soon);
   // (every frame, so that a shadow keeps step with what casts it; every other where there is a crowd)
   if (++S.age >= (S.entCalls > (isTouchDevice ? 70 : 140) ? 2 : 1)) { S.age = 0; drawBodies(); }
 }
@@ -1172,7 +1321,8 @@ export function updateSky(time, dt, underwater, inLava) {
   // cut off by whatever stands in the way. The rest comes from the whole sky and is a little blue. The moon
   // does the same more faintly, and under heavy cloud there is no sun to speak of, only the grey sky.
   const moon = s < 0, night = 1 - smoothstep(0.45, 0.85, G.daylight);
-  const dirK = smoothstep(0.04, 0.3, Math.abs(s)) * (1 - 0.94 * wx.over);
+  // (with Lighting set to Simple there is no sun to speak of: every side is shaded as it always was)
+  const dirK = R.gfx.lighting === 'simple' ? 0 : smoothstep(0.04, 0.3, Math.abs(s)) * (1 - 0.94 * wx.over);
   const frac = (moon ? 0.34 : 0.46) * dirK;
   const dl = Math.min(1, skyLook(G.daylight) * (1 - 0.16 * wx.over - 0.2 * wx.dark) + wx.flash * 0.8);
   sh.uSunDir.value.copy(sunDir).multiplyScalar(moon ? -1 : 1);
@@ -1196,26 +1346,20 @@ export function render() {
   scene.updateMatrixWorld();
   scene.matrixWorldAutoUpdate = false;
   R.camera.updateMatrixWorld();
-  // With shadows off the blocks get the plain shader, which has less to do.
-  const shadows = G.settings.shadows !== false && !R.shadowBroken;
-  if (shadows !== R.shadowShader) {
-    R.shadowShader = shadows;
-    for (const m of [R.opaqueMat, R.transMat]) { m.defines = shadows ? { SHADOWS: '' } : {}; m.needsUpdate = true; }
-    R.frames = 0;
-  }
   // A graphics card that will not draw with the shadow shader says so, and draws nothing. Rather than
   // leave the world blank, that is looked for now and then and the plain shader used from then on.
+  const shadows = R.gfx.shadows !== 'off';
   if (shadows) {
     const n = R.frames = (R.frames || 0) + 1, gl = r.getContext();
     if (n === 4) while (gl.getError() !== gl.NO_ERROR) { /* (whatever went before is not ours) */ }
     else if (n === 40 || (n > 40 && n % 300 === 0)) {
-      if (gl.getError() !== gl.NO_ERROR) { R.shadowBroken = true; console.warn('Blockcraft: the shadow shader would not draw here; shadows are off.'); }
+      if (gl.getError() !== gl.NO_ERROR) { R.shadowBroken = true; console.warn('Blockcraft: the shadow shader would not draw here; shadows are off.'); applyGraphics(); }
     }
   }
   const want = shadows && sh.uDirK.value > 0.02 && G.dim !== 'nether' && G.dim !== 'end';
   if (want) sunShadows(); else { S.drawn = false; S.part = -1; }
   sh.uShadowOn.value = want && S.drawn ? 1 : 0;
-  updateLamp(R.frameDt || 0, shadows && G.state === 'playing');
+  updateLamp(R.frameDt || 0, R.gfx.shadows !== 'off' && R.lamp.tile > 0 && G.state === 'playing');
   sh.uShadowFromView.value.copy(lightVP).multiply(R.camera.matrixWorld);
   sh.uEntsFromView.value.copy(entsVP).multiply(R.camera.matrixWorld);
   r.clear();
