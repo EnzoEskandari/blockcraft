@@ -71,7 +71,7 @@ export function initInput() {
       return;
     }
     if (G.state !== 'playing') return;
-    if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab', 'F3'].includes(code)) e.preventDefault();
+    if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab', 'F3', 'F5'].includes(code)) e.preventDefault();
     if (G.touchMode && !e.repeat && code !== 'Escape') setTouchMode(G.settings.touch === 'on');
     if (!e.repeat) {
       if (code === 'Space') input.jumpPressed = true;
@@ -86,6 +86,7 @@ export function initInput() {
       if (code === 'KeyF') input.swapHands = true;
       if (code === 'KeyL') { G.ui.openScreen('adv'); return; }
       if (code === 'F3') { G.settings.showCoords = !G.settings.showCoords; }
+      if (code === 'F5' || code === 'KeyV') G.game.nextView();
       if (code === 'Escape' && !document.pointerLockElement) { G.ui.openScreen('pause'); return; }
       if (code.startsWith('Digit')) {
         const n = +code.slice(5);
@@ -264,6 +265,8 @@ function initTouch() {
   hold('t-pause', () => { if (playing()) G.ui.openScreen('pause'); });
   hold('t-drop', () => { if (playing()) input.drop = true; });
   hold('t-shield', () => { touch.block = true; }, () => { touch.block = false; });
+  hold('t-trade', () => { if (playing()) G.player.trade(); });
+  hold('t-view', () => { if (playing()) G.game.nextView(); });
 
   document.addEventListener('gesturestart', (e) => e.preventDefault());
   document.addEventListener('dblclick', (e) => e.preventDefault());

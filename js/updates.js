@@ -67,6 +67,20 @@ const LAKESIDE = { seed: 2024, at: [2, -22], view: [0, 0, 12.5], pitch: -0.03, t
 export const UPDATES = [
   {
     // a small update: it keeps the A New Look picture
+    version: '1.9.7', name: 'Points of View', date: '2026-10-08',
+    splashes: ['Look at yourself!', 'Press V!', 'Nice hat!', 'The golem is back!', 'Hold it up!', 'Shiny!', 'Max it out!', 'Leaves on the wind!',
+      'Mind your shadow!', 'Light a torch!', 'Looks like rain!', 'Golden hour!'],
+    scene: LAKESIDE,
+    notes: [
+      'Two new views. Third person looks at you from behind; second person faces you. You see your own character, with its armour and whatever it is holding. Switch with V (or F5) on a keyboard, the eye button on iPad, or View in Options. Every world starts in first person.',
+      'From outside, the camera stays this side of walls and ceilings, and on iPad you still tap the thing you want to hit, mine or use.',
+      'On iPad a tap on a villager now hits it, as it does any other creature. To trade, stand by a villager and press the Trade button that appears.',
+      'A village whose iron golem is killed gets a new one five minutes later, as long as a villager still lives there. Golems lost before this update are counted from now.',
+      'Fixed: in a room with more than one lamp, shadows faded out and back in when you looked from one lamp to another. The lamp that casts the shadows is now chosen by where you stand, not where you look.',
+    ],
+  },
+  {
+    // a small update: it keeps the A New Look picture
     version: '1.9.6', name: 'In Your Hands', date: '2026-10-08',
     splashes: ['Hold it up!', 'Shiny!', 'Look at that glint!', 'Three sides to everything!', 'Max it out!', 'How many fps?', 'Leaves on the wind!', 'Mind your shadow!',
       'Light a torch!', 'Looks like rain!', 'Cherry petals!', 'Golden hour!'],

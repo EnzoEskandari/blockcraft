@@ -27,6 +27,7 @@ export const G = {
     showCoords: false,
     gamma: 0.5,
     viewBob: true,
+    view: 'first',        // first | third (from behind you) | second (from in front, facing you)
     // graphics: each can be turned down for speed (see applyGraphics in render.js)
     lighting: 'max',      // simple | fancy | max
     shadowQ: 'high',      // off | low | medium | high | max (turned down by itself on a device too slow for it)

@@ -1135,6 +1135,7 @@ export class UI {
       { key: 'shadowQ', label: 'Shadows', cycle: ['off', 'low', 'medium', 'high', 'max'], names: { off: 'Off', low: 'Low', medium: 'Medium', high: 'High', max: 'Max' } },
       { key: 'textures', label: 'Textures', cycle: ['fast', 'fancy', 'max'], names: { fast: 'Fast', fancy: 'Fancy', max: 'Max' } },
       { key: 'fpsLimit', label: 'Frame Rate', cycle: ['screen', 'unlimited'], names: { screen: 'Matches Screen', unlimited: 'Unlimited' } },
+      { key: 'view', label: 'View', cycle: ['first', 'third', 'second'], names: { first: 'First Person', third: 'Third Person', second: 'Second Person' } },
       { key: 'touch', label: 'Touch Controls', cycle: ['auto', 'on', 'off'], names: { auto: 'Auto', on: 'On', off: 'Off' } },
       { key: 'touchAim', label: 'Touch Aiming', cycle: ['finger', 'crosshair'], names: { finger: 'Where You Tap', crosshair: 'Crosshair' } },
       { key: 'dayLength', label: 'Day Length', cycle: [1200, 600], names: { 1200: '20 min', 600: '10 min' } },
@@ -1269,6 +1270,9 @@ export class UI {
       const held = inv.held;
       $('t-shield').hidden = !((held && held.id === ID.shield) || (off && off.id === ID.shield));
     }
+    // the Trade button, on touch screens, while a villager is in reach
+    const trade = !!p.tradeMob && !p.dead;
+    if (c.trade !== trade) { c.trade = trade; $('t-trade').hidden = !trade; }
     const survival = !p.creative;
     if (c.survival !== survival) { c.survival = survival; $('stats').style.visibility = $('xp-bar').style.visibility = survival ? 'visible' : 'hidden'; }
     const xpKey = p.xpLevel + ':' + Math.round(p.xp / xpForLevel(p.xpLevel) * 200);
@@ -1341,7 +1345,7 @@ export class UI {
     if (c.shaky !== shaky) { c.shaky = shaky; $('food').classList.toggle('shaky', shaky); }
 
     // Crosshair (hidden when touch aims at the finger) and the attack cooldown indicator
-    const cross = !(G.touchMode && G.settings.touchAim === 'finger');
+    const cross = !(G.touchMode && G.settings.touchAim === 'finger') && !p.outside;
     if (c.cross !== cross) { c.cross = cross; $('crosshair').hidden = !cross; }
     const str = p.attackStrength();
     const showInd = cross && str < 1 && !p.dead;
@@ -1354,7 +1358,7 @@ export class UI {
     }
     const hurt = p.hurtTime > 0 ? Math.min(1, p.hurtTime / 0.5) : 0;
     if (c.hurt !== hurt) { c.hurt = hurt; $('vignette').style.opacity = (hurt * hurt * 0.45).toFixed(2); }
-    const uw = p.headInWater;
+    const uw = p.camInWater;
     if (c.uw !== uw) { c.uw = uw; $('water-overlay').hidden = !uw; }
 
     if (this.toastTimer > 0) {

@@ -13,6 +13,7 @@ import { lookOf, lookParts } from './skins.js';
 import { makeTrades, levelOf, LEVEL_NAMES, PROFESSIONS } from './villagers.js';
 import { villagerPlan, villagerSleep, wake } from './villagerai.js';
 import { cleanEnch, ench, randomBook, randomlyEnchanted } from './enchant.js';
+import { structureMob } from './structures.js';
 
 const rand = Math.random;
 const TAU = Math.PI * 2;
@@ -804,6 +805,7 @@ class Mob {
     this.deathTime = 0;
     if (this.def.onDie) this.def.onDie(this, killer);
     if (this.key && G.world) G.world.deadMobs.add(this.key);
+    if (this.key && G.world && G.world.golemDue && VILLAGE_GOLEM.test(this.key)) G.world.golemDue.set(this.key, GOLEM_WAIT);
     const dropItem = (id, n, x, y, z) => G.entities.dropItem(id, n, x, y, z);
     // killed by a player a moment ago: they get the experience, and Looting brings more drops
     const by = this.hitBy && G.clock - this.hitAt < 8 ? this.hitBy : null;
@@ -1402,6 +1404,22 @@ class Mob {
     R.scene.remove(this.model.root);
     this.model.mat.dispose();
   }
+}
+
+// A village's own golem (not the one caged at an outpost), and how long a village waits for another
+const VILLAGE_GOLEM = /^village:-?\d+:-?\d+:golem$/;
+export const GOLEM_WAIT = 300;
+// Somewhere near where the first golem stood that one fits now: on solid ground, with room to stand
+function golemSpot(w, at) {
+  const bx = Math.floor(at.x), by = Math.floor(at.y), bz = Math.floor(at.z);
+  for (let r = 0; r <= 6; r++) for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) {
+    if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+    for (const dy of [0, 1, -1, 2, -2, 3, -3]) {
+      const x = bx + dx + 0.5, y = by + dy, z = bz + dz + 0.5, id = w.getBlock(bx + dx, y, bz + dz);
+      if (w.isSolid(bx + dx, y - 1, bz + dz) && id !== B.water && id !== B.lava && !boxBlocked(w, x, y, z, 0.7, 2.7)) return { x, y, z };
+    }
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------- dropped items
@@ -2250,7 +2268,31 @@ export class Entities {
     }
     if (this.spawnTimer <= 0) {
       this.spawnTimer = 1;
-      if (!isClient()) { this.spawnHostiles(); this.despawn(); if (this.tickSpawners) this.tickSpawners(); }
+      if (!isClient()) { this.spawnHostiles(); this.despawn(); if (this.tickSpawners) this.tickSpawners(); this.tickGolems(1); }
+    }
+  }
+
+  // A village whose iron golem has been killed gets another, but not at once: five minutes of play
+  // later, and only while a villager still lives there. (`golemDue`: the golem's key -> seconds to go.)
+  tickGolems(dt) {
+    const w = G.world, due = w && w.golemDue;
+    if (!due) return;
+    // (golems killed before villages did this are counted from now)
+    if (!due.scanned) { due.scanned = true; for (const k of w.deadMobs) if (VILLAGE_GOLEM.test(k) && !due.has(k)) due.set(k, GOLEM_WAIT); }
+    for (const [key, left] of due) {
+      if (left > dt) { due.set(key, left - dt); continue; }
+      const at = structureMob(w, key);
+      if (!at || this.mobs.some((m) => m.key === key && !m.dead)) { due.delete(key); if (at) w.deadMobs.delete(key); continue; }
+      const ch = w.getChunk(Math.floor(at.x) >> 4, Math.floor(at.z) >> 4);
+      if (!ch || !ch.meshed) { due.set(key, 0); continue; }   // (nobody is there to see it: it waits)
+      // no villagers, no golem; and it needs somewhere to stand
+      const spot = this.mobs.some((m) => m.def.villager && !m.dead && Math.hypot(m.pos.x - at.x, m.pos.z - at.z) < 64) ? golemSpot(w, at) : null;
+      if (!spot) { due.set(key, 30); continue; }
+      due.delete(key);
+      w.deadMobs.delete(key);
+      const g = this.spawnMob('iron_golem', spot.x, spot.y, spot.z, { key, home: { x: at.x, y: at.y, z: at.z }, persistent: true });
+      sfx('golem', g.pos, { pitch: 0.7 });
+      for (let i = 0; i < 24; i++) this.particles.spawn(spot.x + (rand() - 0.5) * 1.4, spot.y + rand() * 2.6, spot.z + (rand() - 0.5) * 1.4, (rand() - 0.5) * 1.5, rand() * 1.5, (rand() - 0.5) * 1.5, 0.86, 0.86, 0.84, 0.07, 0.8, 0.5);
     }
   }
 

@@ -103,6 +103,7 @@ export class World {
     this.crops = new Map();           // "x,y,z" -> growth time for wheat that is still growing
     this.fires = new Map();           // "x,y,z" -> fire state
     this.deadMobs = new Set();        // keys of structure mobs that were killed (they don't come back)
+    this.golemDue = new Map();        // except a village's iron golem: its key -> seconds until another comes
     this.stored = new Map();          // ckey -> animals, villagers and items kept while that chunk is unloaded
     this.spawned = new Set();         // ckeys of chunks that have had their animals placed
     this.spawners = new Map();        // "x,y,z" -> monster spawner state

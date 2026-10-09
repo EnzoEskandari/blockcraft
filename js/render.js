@@ -716,14 +716,16 @@ function landChanged(chunk) {
 // Which lamp is lighting the place you are in: the one whose light, spreading with nothing in its way,
 // would be just what there is where you stand (a lamp through a wall would give more than there is, so it
 // is passed over). Torches, glowstone and the like; not lava or fire, which light from all over.
+// Only where you stand decides it, so the shadows do not change as you look about. Standing in the dark,
+// it is the lamp lighting what you look at instead.
 const LAMPS = new Map();
 for (const key of ['torch', 'glowstone', 'shroomlight', 'end_rod', 'furnace_lit', 'beacon']) if (B[key]) LAMPS.set(B[key], key === 'torch' || key === 'end_rod' ? 0.66 : 0.87);
 const lampDir = new THREE.Vector3();
 function findLamp() {
-  const w = G.world, c = R.camera.position;
+  const w = G.world, c = R.lampEye || R.camera.position;
   if (!w) return null;
-  // two places it may be lighting: where you stand, and what you are looking at (up to seven blocks off)
   const cx = Math.floor(c.x), cy = Math.floor(c.y), cz = Math.floor(c.z);
+  // (what you are looking at, up to seven blocks off)
   let ax = cx, ay = cy, az = cz;
   R.camera.getWorldDirection(lampDir);
   for (let t = 0.5; t <= 7; t += 0.5) {
@@ -733,8 +735,15 @@ function findLamp() {
   }
   const here = w.getLight(cx, cy, cz)[1], there = w.getLight(ax, ay, az)[1];
   if (here < 3 && there < 3) return null;
-  let best = null, bestScore = 0, top = 0, second = 0;
+  // the best by where you stand, and the best by what you look at: [lamp, its score, the top two scores]
+  const near = [null, 0, 0, 0], far = [null, 0, 0, 0];
   const L = R.lamp, RX = 12, RY = 9;
+  const rate = (o, score, x, y, z, id) => {
+    if (score > o[2]) { o[3] = o[2]; o[2] = score; } else if (score > o[3]) o[3] = score;
+    // (the lamp already casting keeps the job unless another is clearly the one now)
+    if (L.at && L.at.x === x && L.at.y === y && L.at.z === z) score += 4;
+    if (score > o[1]) { o[1] = score; o[0] = { x, y, z, id }; }
+  };
   for (let chz = (cz - RX) >> 4; chz <= (cz + RX) >> 4; chz++) for (let chx = (cx - RX) >> 4; chx <= (cx + RX) >> 4; chx++) {
     const ch = w.getChunk(chx, chz);
     if (!ch || ch.emitters <= 0) continue;
@@ -745,16 +754,13 @@ function findLamp() {
       if (!LAMPS.has(id)) continue;
       const level = BLOCKS[id].light;
       const g0 = level - (Math.abs(x - cx) + Math.abs(y - cy) + Math.abs(z - cz)), g1 = level - (Math.abs(x - ax) + Math.abs(y - ay) + Math.abs(z - az));
-      let score = Math.max(g0 >= 2 && g0 <= here + 1 ? g0 : 0, g1 >= 2 && g1 <= there + 1 ? g1 + 1 : 0);
-      if (!score) continue;
-      if (score > top) { second = top; top = score; } else if (score > second) second = score;
-      // (the lamp already casting keeps the job unless another is clearly the one now)
-      if (L.at && L.at.x === x && L.at.y === y && L.at.z === z) score += 4;
-      if (score > bestScore) { bestScore = score; best = { x, y, z, id }; }
+      if (g0 >= 2 && g0 <= here + 1) rate(near, g0, x, y, z, id);
+      if (g1 >= 2 && g1 <= there + 1) rate(far, g1, x, y, z, id);
     }
   }
+  const o = near[0] ? near : far, best = o[0];
   // Where several lamps light a place about equally, none of them throws much of a shadow
-  if (best) best.power = Math.max(0.3, Math.min(1, (top - second) / 3));
+  if (best) best.power = Math.max(0.3, Math.min(1, (o[2] - o[3]) / 3));
   return best;
 }
 
@@ -807,7 +813,7 @@ function placeLamp(at) {
   else {
     const open = (dx, dy, dz) => (w.isSolid(at.x + dx, at.y + dy, at.z + dz) ? 0 : 1);
     const ex = open(1, 0, 0), wx = open(-1, 0, 0), up = open(0, 1, 0), dn = open(0, -1, 0), so = open(0, 0, 1), no = open(0, 0, -1);
-    const n = ex + wx + up + dn + so + no, c = R.camera.position;
+    const n = ex + wx + up + dn + so + no, c = R.lampEye || R.camera.position;
     let sx = ex - wx, sy = up - dn, sz = so - no;
     // (open on two opposite sides only: a lamp in a thin ceiling or wall)
     if (n === 2 && !sx && !sy && !sz) { if (ex) sx = c.x > x ? 1 : -1; else if (up) sy = c.y > y ? 1 : -1; else sz = c.z > z ? 1 : -1; }

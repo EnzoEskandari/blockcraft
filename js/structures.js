@@ -1700,6 +1700,15 @@ export function structurePartsNear(world, cx, cz, margin, g4 = true) {
   return out;
 }
 
+// Where a structure's creature was first put, from its key ('village:3:-2:golem'), or null
+export function structureMob(world, key) {
+  const m = /^([a-z_]+):(-?\d+):(-?\d+):/.exec(key || '');
+  const T = m && TYPES.find((t) => t.name === m[1]);
+  if (!T || dimOf(T) !== world.dim) return null;
+  const plan = regionPlan(world, T, +m[2], +m[3]);
+  return (plan && plan.mobs.find((s) => s.key === key)) || null;
+}
+
 // Nearest structures of a type (used by the locate helper in the debug screen)
 export function structuresNear(world, x, z, radius, only = null) {
   const out = [];

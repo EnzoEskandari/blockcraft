@@ -12,6 +12,7 @@ import { sfx, blockSound } from './audio.js';
 import { hitParticles } from './entities.js';
 import { iconColors } from './textures.js';
 import { ench, bonusDamage, wears, protection, xpForLevel } from './enchant.js';
+import { Body } from './body.js';
 
 const GRAVITY = 32;
 const JUMP_V = 9.0;
@@ -70,6 +71,11 @@ export class Player {
     this.bobAmt = 0;
     this.stepDist = 0;
     this.target = null;
+    // seen from outside (second or third person): your own body, and what the camera is in
+    this.body = new Body();
+    this.outside = false;
+    this.camInWater = this.camInLava = false;
+    this.tradeMob = null;
     this.fovKick = 0;
     this.frozen = true;
     this.lastJumpTap = 0;
@@ -481,9 +487,21 @@ export class Player {
   // The pick ray: the crosshair, or on touch screens the point under the finger
   pickRay(input) {
     if (input.aim) {
-      const cam = R.camera;
-      tmpV.set(input.aim.x, input.aim.y, 0.5).unproject(cam).sub(cam.position).normalize();
-      return { ox: cam.position.x, oy: cam.position.y, oz: cam.position.z, dx: tmpV.x, dy: tmpV.y, dz: tmpV.z };
+      const cam = R.camera, c = cam.position;
+      tmpV.set(input.aim.x, input.aim.y, 0.5).unproject(cam).sub(c).normalize();
+      if (!this.outside) return { ox: c.x, oy: c.y, oz: c.z, dx: tmpV.x, dy: tmpV.y, dz: tmpV.z };
+      // Seen from outside: find what the finger is on as the camera sees it, then reach for that from
+      // your own eyes
+      const far = 40;
+      const hit = raycast(G.world, c.x, c.y, c.z, tmpV.x, tmpV.y, tmpV.z, far, (id) => id !== B.water && id !== B.lava && id !== B.nether_portal && id !== B.end_portal);
+      const mob = G.entities.pickMob(c.x, c.y, c.z, tmpV.x, tmpV.y, tmpV.z, far);
+      const pl = G.net ? G.net.pickPlayer(c.x, c.y, c.z, tmpV.x, tmpV.y, tmpV.z, far) : null;
+      let t = hit ? hit.dist + 0.02 : far;
+      if (mob && mob.t < t) t = mob.t + 0.05;
+      if (pl && pl.t < t) t = pl.t + 0.05;
+      const tx = c.x + tmpV.x * t - this.pos.x, ty = c.y + tmpV.y * t - this.eyeY, tz = c.z + tmpV.z * t - this.pos.z;
+      const n = Math.hypot(tx, ty, tz) || 1;
+      return { ox: this.pos.x, oy: this.eyeY, oz: this.pos.z, dx: tx / n, dy: ty / n, dz: tz / n };
     }
     // from the camera itself, so the crosshair picks exactly the block it is drawn over (view bobbing moves the camera)
     const d = this.lookDir(), c = R.camera.position;
@@ -599,18 +617,20 @@ export class Player {
     } else this.mining = null;
     showHighlight(target && target.block ? target.block : null, this.mining ? this.mining.progress : 0);
 
-    // Touch: a finger held on a mob keeps hitting it. (A tap on a villager opens its trades, so this is
-    // how a villager is hit on a touch screen.)
+    // Touch: a finger held on a mob keeps hitting it
     this.holdHit = Math.max(0, (this.holdHit || 0) - dt);
     if (input.touchHold && target && target.mob && !this.frozen && this.holdHit <= 0) {
       this.attack(target.mob);
       this.holdHit = 0.55;
     }
 
+    // Touch: a villager you are standing by and facing can be traded with from the Trade button (a tap
+    // on a villager hits it, as it does anything else)
+    this.tradeMob = G.touchMode && !this.frozen ? this.villagerInReach() : null;
+
     // Touch tap: hit a mob, otherwise use/place; with food in hand a tap starts eating
     if (input.tap && !this.frozen) {
       if (this.eating && this.eating.auto) this.eating = null;
-      else if (target && target.mob && target.mob.def.villager) this.use(target, true);
       else if (target && target.mob) this.attack(target.mob);
       else if (isFood) {
         if (!this.use(target, true)) {
@@ -646,6 +666,29 @@ export class Player {
   swing() {
     swingHand();
     this.lastSwing = G.clock;
+  }
+
+  // The nearest villager within reach that you are facing, with nothing in the way
+  villagerInReach() {
+    const d = this.lookDir(), ex = this.pos.x, ey = this.eyeY, ez = this.pos.z;
+    const reach = (this.creative ? 6 : 5) - 1.5;
+    let best = null, bd = reach;
+    for (const m of G.entities.mobs) {
+      if (!m.def.villager || m.dead) continue;
+      const dx = m.pos.x - ex, dy = m.pos.y + m.h * 0.6 - ey, dz = m.pos.z - ez;
+      const dist = Math.hypot(dx, dy, dz);
+      if (dist >= bd || dist < 0.01) continue;
+      // (in front of you: within about sixty degrees of where you look, or right beside you)
+      if (dist > 1 && (dx * d.x + dy * d.y + dz * d.z) / dist < 0.5) continue;
+      const hit = raycast(G.world, ex, ey, ez, dx / dist, dy / dist, dz / dist, dist, (id) => BLOCKS[id].solid && !BLOCKS[id].door);
+      if (hit && hit.dist < dist - 0.4) continue;
+      best = m; bd = dist;
+    }
+    return best;
+  }
+  trade() {
+    const m = this.tradeMob;
+    if (m && !m.dead && !this.dead && !this.spectator) this.use({ mob: m }, true);
   }
 
   crumbs(id) {
@@ -1334,11 +1377,27 @@ export class Player {
   }
 
   // ------------------------------------------------------------ camera
+  // How far the camera can stand off from your eyes along a line before something solid is in its way
+  viewRoom(x, y, z, dx, dy, dz, want) {
+    let room = want;
+    const solid = (id) => BLOCKS[id].solid;
+    for (let i = 0; i < 8; i++) {
+      const hit = raycast(G.world, x + (i & 1 ? 0.1 : -0.1), y + (i & 2 ? 0.1 : -0.1), z + (i & 4 ? 0.1 : -0.1), dx, dy, dz, want, solid);
+      if (hit && hit.dist < room) room = hit.dist;
+    }
+    return Math.max(0, room - 0.12);
+  }
+
+  // You see from your own eyes, or from outside: from behind (third person), or from in front, looking
+  // back at yourself (second person)
   updateCamera(dt) {
     const cam = R.camera;
+    const view = this.spectator ? 'first' : (G.settings.view || 'first');
+    const outside = view === 'third' || view === 'second';
+    this.outside = outside;
     const bob = G.settings.viewBob ? this.bobAmt : 0;
-    const bx = Math.sin(this.bob * Math.PI) * 0.045 * bob;
-    const by = Math.abs(Math.cos(this.bob * Math.PI)) * 0.07 * bob;
+    const bx = outside ? 0 : Math.sin(this.bob * Math.PI) * 0.045 * bob;
+    const by = outside ? 0 : Math.abs(Math.cos(this.bob * Math.PI)) * 0.07 * bob;
     const sy = Math.sin(this.yaw), cy = Math.cos(this.yaw);
     let shakeX = 0, shakeY = 0;
     if (G.shake > 0) {
@@ -1346,16 +1405,34 @@ export class Player {
       shakeX = (Math.random() - 0.5) * G.shake * 0.4;
       shakeY = (Math.random() - 0.5) * G.shake * 0.4;
     }
-    cam.position.set(this.pos.x + cy * bx + shakeX, this.eyeY + by - 0.05 * bob + shakeY, this.pos.z - sy * bx);
+    cam.position.set(this.pos.x + cy * bx + shakeX, this.eyeY + by - (outside ? 0 : 0.05 * bob) + shakeY, this.pos.z - sy * bx);
     // Hurt camera: a quick roll that eases back
     const f = this.hurtTime / HURT_TIME;
-    const roll = this.dead ? 0.6 : Math.sin(Math.pow(f, 4) * Math.PI) * 0.24 * this.hurtRoll;
+    const roll = this.dead && !outside ? 0.6 : Math.sin(Math.pow(f, 4) * Math.PI) * 0.24 * this.hurtRoll * (outside ? 0.4 : 1);
     cam.rotation.set(this.pitch, this.yaw, roll);
-    const fov = G.settings.fov * (1 + this.fovKick * 0.12) * (this.headInWater ? 0.9 : 1);
+    let room = 0;
+    if (outside) {
+      const d = this.lookDir(), k = view === 'third' ? -1 : 1;
+      const ex = this.pos.x, ey = this.dead ? this.pos.y + 0.6 : this.eyeY, ez = this.pos.z;
+      room = this.viewRoom(ex, ey, ez, d.x * k, d.y * k, d.z * k, 4);
+      cam.position.set(ex + d.x * k * room + shakeX, ey + d.y * k * room + shakeY, ez + d.z * k * room);
+      if (view === 'second') cam.rotation.set(-this.pitch, this.yaw + Math.PI, roll);
+    }
+    // (lamps cast their shadows by where you are, not where the camera has been put)
+    if (!R.lampEye) R.lampEye = { x: 0, y: 0, z: 0 };
+    R.lampEye.x = this.pos.x; R.lampEye.y = this.eyeY; R.lampEye.z = this.pos.z;
+    // what the camera is in: water and lava are seen through from inside
+    if (outside) {
+      const id = G.world.getBlock(Math.floor(cam.position.x), Math.floor(cam.position.y), Math.floor(cam.position.z));
+      this.camInWater = id === B.water; this.camInLava = id === B.lava;
+    } else { this.camInWater = this.headInWater; this.camInLava = this.headInLava; }
+    const fov = G.settings.fov * (1 + this.fovKick * 0.12) * (this.camInWater ? 0.9 : 1);
     if (Math.abs(cam.fov - fov) > 0.01) { cam.fov = fov; cam.updateProjectionMatrix(); }
-    if (this.dead && this.pos.y > -60) cam.position.y = this.pos.y + 0.3;
+    if (this.dead && !outside && this.pos.y > -60) cam.position.y = this.pos.y + 0.3;
     const [s, b] = G.world.getLight(Math.floor(this.pos.x), Math.floor(this.eyeY), Math.floor(this.pos.z));
     updateHand(dt, brightness(s, b), this.bob * Math.PI, bob, this.eating ? this.eating.t : -1, this.shieldHand || 0);
-    R.handHolder.visible = !this.dead;
+    R.handHolder.visible = !this.dead && !outside;
+    // (your own body, unless the camera has been pushed right up against it)
+    this.body.update(dt, this, outside && room > 0.7);
   }
 }

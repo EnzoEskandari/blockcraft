@@ -795,6 +795,15 @@ export const Game = {
     G.ui.toast(mode === 'creative' ? 'Creative mode' : 'Survival mode');
   },
   // An admin goes to a spot (no height given: the ground there)
+  // First person, then from behind (third person), then from in front (second person), and round again
+  nextView() {
+    const order = ['first', 'third', 'second'];
+    G.settings.view = order[(order.indexOf(G.settings.view) + 1) % order.length];
+    saveSettings();
+    G.ui.syncOptions();
+    G.ui.toast({ first: 'First person', third: 'Third person: from behind you', second: 'Second person: facing you' }[G.settings.view]);
+  },
+
   teleport(x, y, z) {
     const p = G.player, w = G.world;
     if (!p || !Number.isFinite(x + z)) return;
@@ -1009,6 +1018,7 @@ export const Game = {
   },
 
   quitToTitle() {
+    G.settings.view = 'first';   // (the next world starts from your own eyes)
     saveWorld();
     if (G.net) G.net.close();
     teardown();
@@ -1553,6 +1563,7 @@ function teardown() {
   clearSignMeshes();
   if (G.world) for (const c of G.world.chunks.values()) disposeChunkMeshes(c);
   if (G.entities) G.entities.clear();
+  if (G.player && G.player.body) G.player.body.dispose();
   G.world = null;
   S.urgent.clear();
   S.updates.length = 0;
@@ -1573,6 +1584,8 @@ function startWorld(meta, data, opts = {}) {
   w.onChange = onBlockChange;
   w.villagerTrades = new Map(Object.entries((data && data.villagers) || {}));
   w.deadMobs = new Set((data && data.deadMobs) || []);
+  // (village golems due back: key -> seconds of play still to wait)
+  w.golemDue = new Map(Object.entries((data && data.golems) || {}).filter(([, t]) => Number.isFinite(t)).map(([k, t]) => [k, Math.max(0, t)]));
   w.guests = (data && data.guests) || {};
   w.stored = new Map(Object.entries((data && data.entities) || {}).map(([k, v]) => [Number(k), v]));
   w.spawned = new Set((data && data.spawned) || []);
@@ -1656,6 +1669,7 @@ function saveWorld(playerOverride) {
     spawned: [...w.spawned],
     villagers: Object.fromEntries(w.villagerTrades),
     deadMobs: [...w.deadMobs],
+    golems: Object.fromEntries([...(w.golemDue || [])].map(([k, t]) => [k, Math.round(t)])),
     flags: w.flags || {},
     edits, containers, saplings: [...S.saplings.keys()],
     signs: Object.fromEntries(w.signs),
@@ -1807,7 +1821,7 @@ function frame(dt) {
       }
     }
   }
-  updateSky(G.time, paused ? 0 : dt, G.player.headInWater, G.player.headInLava);
+  updateSky(G.time, paused ? 0 : dt, G.player.camInWater, G.player.camInLava);
   G.ui.update(dt);
   render();
   endFrame();
@@ -1818,6 +1832,7 @@ function frame(dt) {
 // ---------------------------------------------------------------- boot
 function boot(hotData) {
   loadSettings();
+  G.settings.view = 'first';   // (every visit starts from your own eyes)
   S.solidLeaves = G.settings.textures === 'fast';
   setSolidLeaves(S.solidLeaves);
   buildTextures();

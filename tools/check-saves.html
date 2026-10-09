@@ -66,6 +66,12 @@ async function check(fx) {
     if (e.weather && WX.weatherKind() !== e.weather) bad.push(`the weather is ${WX.weatherKind()}, expected ${e.weather}`);
     if (e.look && SK.mySkin() !== e.look) bad.push(`the character is ${SK.mySkin()}, expected ${e.look}`);
     for (const k of e.prizes || []) if (!SK.hasPrize(k)) bad.push(`the prize for "${k}" is gone`);
+    // a village waiting for its next iron golem is still waiting (1.9.7 on)
+    if (e.golem) {
+      const t = G.world.golemDue.get(e.golem.key);
+      if (!(t > e.golem.left - 600 && t <= e.golem.left)) bad.push(`the village's wait for a golem is ${t}, expected about ${e.golem.left}`);
+      if (!G.world.deadMobs.has(e.golem.key)) bad.push('the dead golem is no longer counted as dead');
+    }
     if (e.nether) { const [x, y, z] = e.nether; if (G.world.getBlock(x, y, z) !== B.gold_block) bad.push('the gold block in the Nether is gone'); }
     if (G.dim !== 'overworld') { G.game.travel('overworld', 'spawn'); await waitPlaying(G); }
     const [x, y, z] = e.pos;
