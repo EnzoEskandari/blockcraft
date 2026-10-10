@@ -80,6 +80,17 @@ const BASTION_BRIDGE = {
 
 export const UPDATES = [
   {
+    // a small update: it keeps the Nether & Noise picture
+    version: '1.10.1', name: 'Rings & Swings', date: '2026-10-09',
+    splashes: ['Saddle up!', 'Neigh!', 'Hee-haw!', 'Mind the lava!', 'Knock it back!', 'Row, row, row!', 'Black brick and gold!', 'Four new lands!', 'It moos now!', 'Two eyes each!',
+      'Swim for it!', 'Ride a strider!', 'What a hoard!', 'Baa!'],
+    scene: BASTION_BRIDGE,
+    notes: [
+      'Your bare arm is back where it was and swings the way it used to when you mine or punch.',
+      'Cherry and acacia logs show rings on their cut ends, like every other log, instead of looking like planks.',
+    ],
+  },
+  {
     version: '1.10', name: 'Nether & Noise', date: '2026-10-09',
     splashes: ['Saddle up!', 'Neigh!', 'Hee-haw!', 'Mind the lava!', 'Knock it back!', 'Row, row, row!', 'Black brick and gold!', 'Four new lands!', 'It moos now!', 'Two eyes each!',
       'Swim for it!', 'Ride a strider!', 'What a hoard!', 'Baa!'],

@@ -292,10 +292,10 @@ block(194, 'frosted_ice', 'Frosted Ice', { tex: 'ice', hardness: 0.5, tool: 'pic
 // ---- Lands & Legends (1.8): the blocks of the new lands, and of the Wither
 const SOIL = () => [B.grass, B.dirt, B.snowy_grass, B.podzol, B.mycelium];
 const capDrops = (r) => { const n = Math.floor(r() * 3) - 1; return n > 0 ? [[ID.red_mushroom, n]] : []; };
-block(195, 'acacia_log', 'Acacia Log', { tex: { top: 'acacia_planks', bottom: 'acacia_planks', side: 'acacia_log' }, hardness: 2, tool: 'axe', sound: 'wood', fuel: 15 });
+block(195, 'acacia_log', 'Acacia Log', { tex: { top: 'acacia_log_top', bottom: 'acacia_log_top', side: 'acacia_log' }, hardness: 2, tool: 'axe', sound: 'wood', fuel: 15 });
 block(196, 'acacia_leaves', 'Acacia Leaves', { ...leaves(false), tex: 'oak_leaves', tint: 2 });
 block(197, 'acacia_planks', 'Acacia Planks', { hardness: 2, tool: 'axe', sound: 'wood', fuel: 15 });
-block(198, 'cherry_log', 'Cherry Log', { tex: { top: 'cherry_planks', bottom: 'cherry_planks', side: 'cherry_log' }, hardness: 2, tool: 'axe', sound: 'wood', fuel: 15 });
+block(198, 'cherry_log', 'Cherry Log', { tex: { top: 'cherry_log_top', bottom: 'cherry_log_top', side: 'cherry_log' }, hardness: 2, tool: 'axe', sound: 'wood', fuel: 15 });
 block(199, 'cherry_leaves', 'Cherry Leaves', leaves(false));
 block(200, 'cherry_planks', 'Cherry Planks', { hardness: 2, tool: 'axe', sound: 'wood', fuel: 15 });
 block(201, 'red_sand', 'Red Sand', { hardness: 0.5, tool: 'shovel', sound: 'sand', gravity: true });

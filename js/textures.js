@@ -982,6 +982,9 @@ Object.assign(PAINTERS, {
   acacia_log: (p) => bark(p, [104, 98, 90], [70, 64, 58]),
   acacia_planks: (p) => planks(p, [176, 96, 52]),
   cherry_log: (p) => bark(p, [58, 36, 44], [38, 22, 30]),
+  // (the cut ends: rings of the wood inside the bark, as on every other log)
+  cherry_log_top: (p) => logTop(p, [228, 180, 176], [200, 146, 146], [58, 36, 44]),
+  acacia_log_top: (p) => logTop(p, [186, 104, 62], [158, 84, 48], [104, 98, 90]),
   cherry_planks: (p) => planks(p, [228, 180, 172]),
   cherry_leaves: (p) => {
     leavesTex(p, [240, 158, 196]);

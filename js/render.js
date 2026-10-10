@@ -1067,7 +1067,7 @@ export function tintModel(obj, v, red = 0) {
 
 // ---------------------------------------------------------------- first-person hand
 // The arm in front of you: your skin's sleeve (or bare arm) and, at the end of it, the hand
-const ARM_LEN = 26;
+const ARM_LEN = 14;
 export function paintHand(c, hand = c) {
   const g = R.handSkin.getContext('2d');
   const r = mulberry32(5);
@@ -1140,10 +1140,8 @@ export function setHeldItem(id) {
   R.handItem = null;
   if (!id) {
     const arm = R.handArm;
-    // (reaching up and in from the corner, so its top and its side both show)
-    arm.position.set(0.55, -0.55, -0.62);
-    arm.rotation.set(0.7, 0.55, 0.3);
-    arm.translateZ((ARM_LEN - 14) / 2 * 0.045);   // (long enough that its other end stays out of sight)
+    arm.position.set(0.44, -0.45, -0.58);
+    arm.rotation.set(-0.25, -0.18, 0.3);
     h.add(arm);
     return;
   }
@@ -1187,12 +1185,6 @@ export function updateHand(dt, light, bob, sway, eat = -1, shield = 0) {
     -sw * 0.15 - e * 0.06,
   );
   h.rotation.set(sw * 0.8 + e * 0.1, sw * 0.5 + e * 0.2, sw * 0.3 - e * 0.1);
-  // (a bare arm jabs forward and in, a shorter movement than a tool's swing)
-  if (!R.handItemId) {
-    h.position.set(-sw * 0.2 + swayX, sw * 0.1 + swayY, -sw * 0.22);
-    h.rotation.set(sw * 0.2, sw * 0.3, sw * 0.1);
-    R.handArm.rotation.x = 0.7 - sw * 0.3;
-  }
   const item = R.handItem;
   if (item && item.userData.baseRot) {
     const b = item.userData.baseRot;
