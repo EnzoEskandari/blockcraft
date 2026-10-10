@@ -50,6 +50,8 @@ export const ADV = [
   { key: 'blight', tab: 'nether', title: 'Withered Away', desc: 'Destroy the Wither.', icon: 'blight_star', xp: 100, hard: true },
   { key: 'beacon', tab: 'nether', title: 'A Light for Miles', desc: 'Stand by a beacon that is lit: one set on nine blocks of iron, gold, diamond or emerald.', icon: 'beacon', xp: 100, hard: true },
   { key: 'shortcut', tab: 'nether', title: 'A Shortcut Through Fire', desc: 'Use the Nether to travel 7,000 blocks in the Overworld.', icon: 'obsidian', xp: 100, hard: true },
+  { key: 'debris', tab: 'nether', title: 'Hidden in the Depths', desc: 'Dig up ancient debris, deep in the rock of the Nether.', icon: 'ancient_debris', xp: 25, has: ['ancient_debris'] },
+  { key: 'smith', tab: 'nether', title: 'Tougher Than Diamond', desc: 'Turn a diamond tool or piece of armour into netherite at a smithing table.', icon: 'netherite_ingot', xp: 50 },
   { key: 'strider', tab: 'nether', title: 'Hot Foot', desc: 'Ride a saddled strider out over the lava.', icon: 'saddle', xp: 50 },
   { key: 'new_nether_lands', tab: 'nether', title: 'Further In', desc: 'Visit the Obsidian Spires, the Fungal Caverns, the Ashen Forest and the Quartz Gardens.', icon: 'crying_obsidian', xp: 100, hard: true, all: NEW_NETHER_BIOMES, names: (b) => DIM_BIOME_NAMES[b] },
   { key: 'nether_lands', tab: 'nether', title: 'Hot Spots', desc: 'Visit every kind of land in the Nether.', icon: 'crimson_nylium', xp: 100, hard: true, all: NETHER_BIOMES, names: (b) => DIM_BIOME_NAMES[b] },

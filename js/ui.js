@@ -1,7 +1,7 @@
 // HUD, menus and inventory screens (plain DOM).
 import { UPDATES, LATEST } from './updates.js';
 import { G, saveSettings } from './game.js';
-import { BLOCKS, ITEMS, ID, B, maxStack, itemName, matchRecipe, fuelValue, SMELTING, creativeList, RECIPES, inTag } from './blocks.js';
+import { BLOCKS, ITEMS, ID, B, maxStack, itemName, matchRecipe, fuelValue, SMELTING, creativeList, RECIPES, inTag, smith, NETHERITE_OF } from './blocks.js';
 import { iconURL, ICONS, drawAscii, TILES, TEX, armorSilhouette, shieldSilhouette } from './textures.js';
 import { PROFESSIONS, LEVEL_NAMES, levelProgress } from './villagers.js';
 import { ADV, TABS } from './advancements.js';
@@ -25,8 +25,8 @@ const h = (tag, cls, text) => {
   return e;
 };
 
-const CONTAINERS = ['inventory', 'crafting', 'furnace', 'chest', 'trade', 'enchant', 'anvil', 'grind'];
-const TEMP = ['enchant', 'anvil', 'grind'];   // screens whose slots only hold things while they are open
+const CONTAINERS = ['inventory', 'crafting', 'furnace', 'chest', 'trade', 'enchant', 'anvil', 'grind', 'smith'];
+const TEMP = ['enchant', 'anvil', 'grind', 'smith'];   // screens whose slots only hold things while they are open
 const SPLASHES = ['Now on iPad!', 'Punch a tree!', 'Made of blocks!', 'Mind the Boomers!', '100% procedural!', 'Try the caves!', 'Smooth lighting!', 'Hold to mine!', 'Seeds are fun!'];
 
 // ---------------------------------------------------------------- pixel icons for the HUD
@@ -234,7 +234,7 @@ export class UI {
 
   // ---------------------------------------------------------------- screens
   section(name) {
-    const map = { inventory: 'container', crafting: 'container', furnace: 'container', chest: 'container', creative: 'container', trade: 'container', enchant: 'container', anvil: 'container', grind: 'container' };
+    const map = { inventory: 'container', crafting: 'container', furnace: 'container', chest: 'container', creative: 'container', trade: 'container', enchant: 'container', anvil: 'container', grind: 'container', smith: 'container' };
     const id = 's-' + (map[name] || name);
     for (const s of document.querySelectorAll('.screen')) s.hidden = s.id !== id;
     const chat = name === 'chat';
@@ -1443,6 +1443,7 @@ export class UI {
     if (!c) return null;
     if (c.kind === 'anvil') return anvil(c.data.slots[0], c.data.slots[1], (a, b) => { const k = repairItem(a); return !!k && inTag(k, b); });
     if (c.kind === 'grind') return grind(c.data.slots[0]);
+    if (c.kind === 'smith') return smith(c.data.slots[0], c.data.slots[1], c.data.slots[2]);
     return null;
   }
 
@@ -1460,6 +1461,12 @@ export class UI {
       if (b.count <= 0) c.data.slots[1] = null;
       sfx('anvil');
       if (G.adv) G.adv.did('anvil');
+    } else if (c.kind === 'smith') {
+      // the template and the ingot are used up, and the diamond thing becomes the netherite one
+      for (const i of [0, 2]) { const u = c.data.slots[i]; u.count--; if (u.count <= 0) c.data.slots[i] = null; }
+      c.data.slots[1] = null;
+      sfx('anvil', null, { pitch: 0.8 });
+      if (G.adv) G.adv.did('smith');
     } else {
       c.data.slots[0] = null;
       sfx('anvil', null, { vol: 0.5 });
@@ -1529,7 +1536,7 @@ export class UI {
     const add = (parent, ref) => { const el = this.slot(ref); parent.appendChild(el); this.container.els.push(el); return el; };
     const grid = (cols, cls) => { const g = h('div', 'grid ' + (cls || '')); g.style.setProperty('--cols', cols); return g; };
 
-    const titles = { inventory: 'Crafting', crafting: 'Crafting', furnace: 'Furnace', chest: 'Chest', enchant: 'Enchant', anvil: 'Repair & Combine', grind: 'Grindstone' };
+    const titles = { inventory: 'Crafting', crafting: 'Crafting', furnace: 'Furnace', chest: 'Chest', enchant: 'Enchant', anvil: 'Repair & Combine', grind: 'Grindstone', smith: 'Upgrade Gear' };
     const head = h('div', 'panel-head');
     head.appendChild(h('div', 'panel-title', titles[kind]));
     const close = h('button', 'close', '✕');
@@ -1641,6 +1648,23 @@ export class UI {
       const note = h('div', 'hint anvil-cost', '');
       panel.appendChild(note);
       this.container.note = note;
+    } else if (kind === 'smith') {
+      // a template, a diamond tool or piece of armour, and a netherite ingot in; the netherite thing out
+      this.craft = null;
+      data.slots = [null, null, null];
+      const row = h('div', 'craft-row anvil-row');
+      add(row, { kind: 'normal', arr: data.slots, i: 0, ok: (s) => s.id === ID.netherite_upgrade });
+      row.appendChild(h('div', 'plus', '+'));
+      add(row, { kind: 'normal', arr: data.slots, i: 1, max: 1, ok: (s) => NETHERITE_OF.has(s.id) });
+      row.appendChild(h('div', 'plus', '+'));
+      add(row, { kind: 'normal', arr: data.slots, i: 2, ok: (s) => s.id === ID.netherite_ingot });
+      row.appendChild(h('div', 'arrow'));
+      const res = add(row, { kind: 'made' });
+      res.classList.add('big');
+      panel.appendChild(row);
+      const note = h('div', 'hint anvil-cost', '');
+      panel.appendChild(note);
+      this.container.note = note;
     } else if (kind === 'chest') {
       this.craft = null;
       const g = grid(9);
@@ -1679,7 +1703,13 @@ export class UI {
     if (this.container.note) {
       // what the anvil asks for, or what the grindstone gives
       const m = this.made(), p = G.player, n = this.container.note;
-      if (this.container.kind === 'grind') n.textContent = m ? 'Takes the enchantments off and gives some experience back.' : 'Put an enchanted item or book in to take its enchantments off.';
+      if (this.container.kind === 'smith') {
+        const [a, b, c] = this.container.data.slots;
+        n.textContent = m ? 'It keeps its enchantments. The template and the ingot are used up.'
+          : !a ? 'Put a Netherite Upgrade Template on the left. They are found in bastion chests in the Nether.'
+            : !b ? 'Now add a diamond tool, sword or piece of armour.'
+              : !c ? 'Now add a netherite ingot: four netherite scraps and four gold ingots make one.' : '';
+      } else if (this.container.kind === 'grind') n.textContent = m ? 'Takes the enchantments off and gives some experience back.' : 'Put an enchanted item or book in to take its enchantments off.';
       else if (!m) {
         // (say why nothing comes of it, when it is a book that does not suit the thing)
         const a = this.container.data.slots[0], b = this.container.data.slots[1];

@@ -3,7 +3,7 @@ import { Simplex, mulberry32, hash3, fbm2, smoothstep } from './noise.js';
 import { B, BLOCKS } from './blocks.js';
 import { CS, CH, SEA, BIOME, BIOME_NAMES, FROZEN } from './constants.js';
 import { stampStructures, structurePartsNear } from './structures.js';
-import { generateNether, generateEnd, netherBiome, endColumn } from './dims.js';
+import { generateNether, generateEnd, netherBiome, endColumn, placeDebris } from './dims.js';
 import { carveTunnels, placeOres, deepslateAt, MORE_DIAMONDS } from './caves.js';
 
 export { CS, CH, SEA, BIOME, BIOME_NAMES };
@@ -605,6 +605,7 @@ export class World {
     if (this.dim === 'nether') generateNether(this, chunk);
     else generateEnd(this, chunk);
     stampStructures(this, chunk);
+    if (this.dim === 'nether') placeDebris(this, chunk);   // (last, so none lies bare in a fortress or a bastion)
     return this.finishChunk(chunk);
   }
 

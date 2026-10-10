@@ -996,7 +996,7 @@ Object.assign(MOB_TYPES, {
     drops: [drop('wailer_tear', 0, 1), drop('gunpowder', 0, 2)] },
   cinder: { name: 'Cinder', hp: 20, w: 0.6, h: 1.8, speed: 2.3, hostile: true, sight: 16, fireImmune: true, ai: cinderAI, animate: anims.cinder, anim: 'cinder', sound: 'cinder', pitch: 1,
     drops: [drop('cinder_rod', 0, 1)] },
-  magma_slime: { name: 'Magma Slime', hp: 16, w: 2, h: 2, speed: 2.4, hostile: true, slime: true, fireImmune: true, sound: 'slime', pitch: 0.7, drops: [], anim: 'slime' },
+  magma_slime: { name: 'Magma Slime', noFall: true, hp: 16, w: 2, h: 2, speed: 2.4, hostile: true, slime: true, fireImmune: true, sound: 'slime', pitch: 0.7, drops: [], anim: 'slime' },
   snoutling: { name: 'Snoutling', hp: 16, w: 0.6, h: 1.95, speed: 2.6, hostile: true, goldLover: true, damage: 4, fireImmune: false, tick: snoutlingTick, sound: 'snoutling', pitch: 1, anim: 'human',
     init: (m) => holdItem(m, 'golden_sword'), drops: [drop('gold_nugget', 0, 2)] },
   snoutling_brute: { name: 'Snoutling Brute', hp: 50, w: 0.6, h: 1.95, speed: 2.7, hostile: true, always: true, persistent: true, damage: 9, axe: true, sound: 'snoutling', pitch: 0.7, anim: 'human',

@@ -94,8 +94,8 @@ export function itemTags(id) {
 }
 
 // How readily an item takes enchantments at the table (0: not at all)
-const TOOL_ABILITY = { wooden: 15, stone: 5, iron: 14, golden: 22, diamond: 10 };
-const ARMOR_ABILITY = { leather: 15, chainmail: 12, iron: 9, golden: 25, diamond: 10 };
+const TOOL_ABILITY = { wooden: 15, stone: 5, iron: 14, golden: 22, diamond: 10, netherite: 15 };
+const ARMOR_ABILITY = { leather: 15, chainmail: 12, iron: 9, golden: 25, diamond: 10, netherite: 15 };
 export function enchantability(id) {
   const it = ITEMS[id];
   if (!it) return 0;
@@ -201,7 +201,7 @@ export function randomlyEnchanted(rng, id, level, treasure = false) {
 
 // ---------------------------------------------------------------- the anvil
 // What mends each kind of thing, a quarter of its durability per piece
-const REPAIR = { wooden: '#planks', stone: '#cobblestone', iron: 'iron_ingot', golden: 'gold_ingot', diamond: 'diamond', leather: 'leather', chainmail: 'iron_ingot' };
+const REPAIR = { wooden: '#planks', stone: '#cobblestone', iron: 'iron_ingot', golden: 'gold_ingot', diamond: 'diamond', leather: 'leather', chainmail: 'iron_ingot', netherite: 'netherite_ingot' };
 export function repairItem(id) {
   const it = ITEMS[id];
   if (!it || !it.durability) return null;

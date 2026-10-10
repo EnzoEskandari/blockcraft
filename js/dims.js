@@ -176,6 +176,29 @@ export function generateNether(world, chunk) {
   }
 }
 
+// (1.10.3) Ancient debris: a few pieces in each chunk, most of them far down, every one buried in rock on all
+// six sides so none shows without digging. It has random numbers of its own and only ever takes the place of
+// netherrack nobody can see: the Nether stays just as it was, and land already explored has debris in it too.
+const SIDES = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+export function placeDebris(world, chunk) {
+  const blocks = chunk.blocks;
+  const rng = mulberry32((hash3(world.seed ^ 0xdeb715, chunk.cx, 5, chunk.cz) * 4294967296) >>> 0);
+  const at = (x, y, z) => (y << 8) | (z << 4) | x;
+  const buried = (x, y, z) => SIDES.every(([a, b, c]) => { const n = blocks[at(x + a, y + b, z + c)]; return n !== 0 && BLOCKS[n].opaque; });
+  const vein = (ymin, ymax, most) => {
+    let x = 1 + (rng() * 14 | 0), y = ymin + (rng() * (ymax - ymin + 1) | 0), z = 1 + (rng() * 14 | 0);
+    const n = 1 + (rng() * most | 0);
+    for (let k = 0; k < n; k++) {
+      // (kept a block in from the chunk's edge, where every neighbour is known)
+      if (x >= 1 && x <= 14 && z >= 1 && z <= 14 && y > 1 && y < CH - 2 && blocks[at(x, y, z)] === B.netherrack && buried(x, y, z)) blocks[at(x, y, z)] = B.ancient_debris;
+      const d = rng() * 6 | 0;
+      if (d === 0) x++; else if (d === 1) x--; else if (d === 2) z++; else if (d === 3) z--; else if (d === 4) y++; else y--;
+    }
+  };
+  vein(8, 22, 3); vein(8, 22, 3);   // under the lava sea
+  vein(8, 110, 2);                  // and now and then anywhere
+}
+
 // ---- what stands in the new lands (each keeps inside its own chunk)
 const cell = (x, y, z) => (y << 8) | (z << 4) | x;
 const fits = (x, y, z) => x >= 0 && x < 16 && z >= 0 && z < 16 && y > 1 && y < CH - 2;

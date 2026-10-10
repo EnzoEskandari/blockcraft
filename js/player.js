@@ -929,6 +929,7 @@ export class Player {
       if (id === B.enchanting_table) { G.ui.openScreen('enchant', { x: t.x, y: t.y, z: t.z }); return true; }
       if (id === B.anvil) { G.ui.openScreen('anvil', {}); return true; }
       if (id === B.grindstone) { G.ui.openScreen('grind', {}); return true; }
+      if (id === B.smithing_table) { G.ui.openScreen('smith', {}); return true; }
       if (id === B.furnace || id === B.furnace_lit) { G.ui.openScreen('furnace', G.game.container(t.x, t.y, t.z, 'furnace')); return true; }
       if (id === B.chest) { sfx('chest', t); G.ui.openScreen('chest', G.game.container(t.x, t.y, t.z, 'chest')); return true; }
       if (id === B.tnt && held && held.id === ID.flint_and_steel) {
@@ -1398,9 +1399,11 @@ export class Player {
     if (fromX != null) {
       const dx = this.pos.x - fromX, dz = this.pos.z - fromZ;
       const d = Math.hypot(dx, dz) || 1;
-      this.vel.x += (dx / d) * 6;
-      this.vel.z += (dz / d) * 6;
-      this.vel.y = Math.max(this.vel.y, 5.5);
+      // (netherite armour is heavy: each piece takes a tenth off how far a blow throws you)
+      const steady = 1 - this.armor.reduce((n, a) => n + (a && ITEMS[a.id].armor ? ITEMS[a.id].armor.steady || 0 : 0), 0);
+      this.vel.x += (dx / d) * 6 * steady;
+      this.vel.z += (dz / d) * 6 * steady;
+      this.vel.y = Math.max(this.vel.y, 5.5 * steady);
       // Tilt the view away from the hit, the way the original's hurt camera does
       const right = { x: Math.cos(this.yaw), z: -Math.sin(this.yaw) };
       this.hurtRoll = (right.x * -dx + right.z * -dz) > 0 ? -1 : 1;

@@ -54,6 +54,13 @@ How it works:
 - Animals, villagers and dropped items are kept when you walk away.
 - Press **T** (or the **T** button on iPad) to chat.
 
+## Ancient Debris (1.10.3)
+
+- **Netherite**: `ancient_debris` (block 244) is placed by `placeDebris` in `js/dims.js`, called after structures are stamped. It has its own random numbers and only replaces netherrack that has an opaque block on all six sides, a block in from the chunk edge, so it is added to explored land too without changing anything that can be seen (the same kind of additive pass as the 1.7 diamonds). Smelting gives `netherite_scrap`; four scraps and four gold ingots make a `netherite_ingot`.
+- **Smithing** (`smith` and `NETHERITE_OF` in `js/blocks.js`, the `smith` screen in `js/ui.js`): a template, a diamond tool or piece of armour and an ingot make the netherite thing, with its enchantments and the same share of wear. Netherite gear has its own item numbers (379 to 387): the tool and armour id blocks have no room for a sixth material, so it is not in `TOOL_MATERIALS` / `ARMOR_MATERIALS`.
+- **Templates in chests**: a loot table's `more` list is rolled by `rollLoot` with a separate random stream and only fills slots still empty, so an unopened chest holds everything it would have held before.
+- **Mob fall damage**: `Mob.fallDist` in `js/entities.js`, the player's rule (three blocks free, a point for each block after). `noFall` on a mob type switches it off (chicken, iron golem, magma slime); flyers and special AIs are not affected.
+
 ## Nether & Noise (1.10)
 
 - **Explored land is untouched.** The generator version is 5 (`GEN` in `js/world.js`). A save from an older version has every chunk people had seen marked as generator 4, so only unseen parts of the Nether get the new lands and buildings. `netherBiome` gives the four new lands (numbered 40 to 43 in `NB`) only where `genAt` is 5 or more. The first kinds of fortress and bastion have `until: 5` in `TYPES` and stand only where part of their land had been seen; `nether_fortress` and `nether_bastion` have `since: 5` and stand only where none of it had. New kinds go on the **end** of `TYPES`: a kind's place in the list is part of how its spots are picked.

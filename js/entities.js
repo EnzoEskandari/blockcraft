@@ -295,7 +295,7 @@ function humanoid(limb, skin, shirt, pants, headPaint, extra = {}) {
 
 const modelCache = new Map();
 // Armour worn over a player model: [helmet, chestplate, leggings, boots] item ids (0 for none)
-const ARMOR_COLORS = { leather: [150, 94, 58], chainmail: [134, 136, 142], iron: [214, 214, 218], golden: [238, 202, 64], diamond: [92, 220, 212] };
+const ARMOR_COLORS = { leather: [150, 94, 58], chainmail: [134, 136, 142], iron: [214, 214, 218], golden: [238, 202, 64], diamond: [92, 220, 212], netherite: [72, 64, 70] };
 function armorParts(ids) {
   const out = [];
   ids.forEach((id, slot) => {
@@ -571,7 +571,7 @@ export const MOB_TYPES = {
   pig: { name: 'Pig', hp: 10, w: 0.9, h: 0.9, speed: 1.7, sound: 'pig', pitch: 1.1, drops: [drop('porkchop', 1, 3)], anim: 'quad' },
   cow: { name: 'Cow', hp: 10, w: 0.9, h: 1.4, speed: 1.5, sound: 'cow', pitch: 0.7, drops: [drop('beef', 1, 3), drop('leather', 0, 2)], anim: 'quad' },
   sheep: { name: 'Sheep', hp: 8, w: 0.9, h: 1.3, speed: 1.6, sound: 'sheep', pitch: 1.2, drops: [drop('mutton', 1, 2)], anim: 'quad' },
-  chicken: { name: 'Chicken', hp: 4, w: 0.4, h: 0.7, speed: 1.4, sound: 'chicken', pitch: 1.6, drops: [drop('chicken', 1, 1), drop('feather', 0, 2)], anim: 'biped' },
+  chicken: { name: 'Chicken', noFall: true, hp: 4, w: 0.4, h: 0.7, speed: 1.4, sound: 'chicken', pitch: 1.6, drops: [drop('chicken', 1, 1), drop('feather', 0, 2)], anim: 'biped' },
   zombie: { name: 'Zombie', hp: 20, w: 0.6, h: 1.95, speed: 2.4, hostile: true, damage: 3, burns: true, zombieLike: true, sound: 'zombie', pitch: 0.8, drops: [drop('rotten_flesh', 0, 2)], anim: 'human' },
   husk: { name: 'Husk', hp: 20, w: 0.6, h: 1.95, speed: 2.4, hostile: true, damage: 3, hungerHit: true, zombieLike: true, sound: 'zombie', pitch: 0.65, drops: [drop('rotten_flesh', 0, 2)], anim: 'human' },
   drowned: { name: 'Drowned', hp: 20, w: 0.6, h: 1.95, speed: 1.9, hostile: true, damage: 3, burns: true, swims: true, zombieLike: true, sound: 'zombie', pitch: 1.0, drops: [drop('rotten_flesh', 0, 2), { key: 'trident', min: 1, max: 1, chance: 0.08 }], anim: 'human' },
@@ -586,7 +586,7 @@ export const MOB_TYPES = {
   gloomwing: { name: 'Gloomwing', hp: 20, w: 0.9, h: 0.5, speed: 7, hostile: true, flies: true, sight: 32, burns: true, damage: 2, sound: 'gloomwing', pitch: 1, drops: [drop('gloom_membrane', 0, 1)], anim: 'wing' },
   pillager: { name: 'Pillager', hp: 24, w: 0.6, h: 1.95, speed: 2.3, hostile: true, always: true, ranged: 'crossbow', persistent: true, sound: 'illager', pitch: 1, drops: [drop('arrow', 0, 2), { key: 'crossbow', min: 1, max: 1, chance: 0.1 }], anim: 'illager' },
   vindicator: { name: 'Vindicator', hp: 24, w: 0.6, h: 1.95, speed: 2.7, hostile: true, always: true, damage: 8, axe: true, huntsVillagers: true, persistent: true, sound: 'illager', pitch: 0.85, drops: [drop('emerald', 0, 1)], anim: 'illager' },
-  iron_golem: { name: 'Iron Golem', hp: 100, w: 1.4, h: 2.7, speed: 1.5, golem: true, damage: 12, persistent: true, sound: 'golem', pitch: 0.5, drops: [drop('iron_ingot', 3, 5), drop('poppy', 0, 2)], anim: 'golem' },
+  iron_golem: { name: 'Iron Golem', noFall: true, hp: 100, w: 1.4, h: 2.7, speed: 1.5, golem: true, damage: 12, persistent: true, sound: 'golem', pitch: 0.5, drops: [drop('iron_ingot', 3, 5), drop('poppy', 0, 2)], anim: 'golem' },
   villager: { name: 'Villager', hp: 20, w: 0.6, h: 1.95, speed: 1.5, villager: true, persistent: true, sound: 'villager', pitch: 1, drops: [], anim: 'villager' },
 };
 const PASSIVE = ['pig', 'cow', 'sheep', 'chicken'];
@@ -638,6 +638,7 @@ class Mob {
     this.persistent = !!def.persistent || !!opts.persistent;
     this.yaw = rand() * TAU;
     this.onGround = false;
+    this.fallDist = 0;   // how far it has dropped since it last stood on something
     this.inWater = false;
     this.hurtTime = 0;
     this.invul = 0;
@@ -1166,9 +1167,25 @@ class Mob {
     } else {
       this.vel.y = Math.max(this.vel.y - 32 * dt, this.type === 'chicken' ? -3 : -60);
     }
+    const fromY = this.pos.y;
     const res = moveBox(w, this, this.vel.x * dt, this.vel.y * dt, this.vel.z * dt, this.inWater ? 0 : 0.6);   // slabs are walked up
     if (res.y) this.vel.y = 0;
     this.onGround = res.ground;
+    // A long drop hurts mobs as it hurts you: three blocks are free, every block past that costs a point.
+    // (Not in water or lava; not chickens, which flutter down; not golems or anything that flies.)
+    if (this.inWater || this.inLava || def.noFall || def.flies || this.mount) this.fallDist = 0;
+    else if (fromY > this.pos.y) this.fallDist += fromY - this.pos.y;
+    if (this.onGround) {
+      const far = this.fallDist;
+      this.fallDist = 0;
+      if (far > 3.5) {
+        this.invul = 0;
+        this.hurt(Math.floor(far - 3), this.pos.x, this.pos.z, false, 0);
+        this.vel.y = 0;
+        if (pdist < 16) sfx('fall', this.pos, { vol: 0.7 });
+        if (this.dead) return;
+      }
+    }
     // a cactus pricks whatever brushes against it
     this.prickT = (this.prickT || 0) - dt;
     if (this.prickT <= 0) { this.prickT = 0.5; if (touching(w, this, B.cactus)) { this.invul = 0; this.hurt(1, this.pos.x, this.pos.z, false, 0); if (this.dead) return; } }
@@ -1479,7 +1496,9 @@ class ItemEntity {
         else { const k = Math.min(1, dt * 12); this.pos.x += (n.x - this.pos.x) * k; this.pos.y += (n.y - this.pos.y) * k; this.pos.z += (n.z - this.pos.z) * k; }
       }
     } else {
-      const inWater = w.getBlock(Math.floor(this.pos.x), Math.floor(this.pos.y + 0.1), Math.floor(this.pos.z)) === B.water;
+      const here = w.getBlock(Math.floor(this.pos.x), Math.floor(this.pos.y + 0.1), Math.floor(this.pos.z));
+      // (things of netherite float up through lava, so they can be fished back out)
+      const inWater = here === B.water || (here === B.lava && ITEMS[this.id] && ITEMS[this.id].fireproof);
       if (inWater) this.vel.y = Math.min(this.vel.y + 20 * dt, 1.2);
       else this.vel.y -= 24 * dt;
       const res = moveBox(w, this, this.vel.x * dt, this.vel.y * dt, this.vel.z * dt);
@@ -2046,7 +2065,7 @@ export function explode(x, y, z, power) {
     if (d > r * (0.75 + rand() * 0.35)) continue;
     const X = bx + dx, Y = by + dy, Z = bz + dz;
     const id = w.getBlock(X, Y, Z);
-    if (!id || id === B.water || id === B.bedrock || id === B.obsidian || BLOCKS[id].hardness < 0) continue;   // (nor portals and their frames)
+    if (!id || id === B.water || id === B.bedrock || id === B.obsidian || BLOCKS[id].blastProof || BLOCKS[id].hardness < 0) continue;   // (nor portals and their frames)
     removed.push([X, Y, Z, id]);
   }
   for (const [X, Y, Z, id] of removed) {

@@ -81,6 +81,22 @@ const BASTION_BRIDGE = {
 export const UPDATES = [
   {
     // a small update: it keeps the Nether & Noise picture
+    version: '1.10.3', name: 'Ancient Debris', date: '2026-10-09',
+    splashes: ['Saddle up!', 'Neigh!', 'Hee-haw!', 'Mind the lava!', 'Knock it back!', 'Row, row, row!', 'Black brick and gold!', 'Four new lands!', 'It moos now!', 'Two eyes each!',
+      'Swim for it!', 'Ride a strider!', 'What a hoard!', 'Baa!', 'Plant a cherry tree!', 'Tougher than diamond!', 'Mind the drop!'],
+    scene: BASTION_BRIDGE,
+    notes: [
+      'Netherite, the toughest stuff there is. It starts as ancient debris, buried deep in the rock of the Nether: most of it lies below the lava sea, around levels 8 to 22. It never shows on a cave wall, so you have to tunnel for it, and only a diamond pickaxe digs it out.',
+      'Smelt ancient debris in a furnace to get a netherite scrap. Four scraps and four gold ingots, laid anywhere on a crafting table, make one netherite ingot.',
+      'The smithing table has a job at last. Put in a Netherite Upgrade Template, a diamond tool, sword or piece of armour, and a netherite ingot: the diamond thing becomes netherite and keeps its enchantments.',
+      'Templates lie in bastion chests in the Nether: always in a treasure room, now and then in the others. To copy one, put it on a crafting table with seven diamonds around it and a block of netherrack under it: two come back.',
+      'Netherite armour protects more than diamond, lasts longer, and keeps you steadier when something hits you. Netherite tools dig faster, hit harder and last longer. Anything made of netherite floats on lava instead of sinking, and explosions cannot break ancient debris or a Block of Netherite (nine ingots).',
+      'Mobs take fall damage now, just as you do: three blocks are free and every block past that hurts. Chickens still flutter down safely, and iron golems and magma slimes do not mind a drop.',
+      'The Nether you have already explored has ancient debris too, but only inside solid rock: nothing you have seen or built has changed. Bastion chests you have not opened yet can hold a template; ones you have opened stay as they are.',
+    ],
+  },
+  {
+    // a small update: it keeps the Nether & Noise picture
     version: '1.10.2', name: 'Seven Saplings', date: '2026-10-09',
     splashes: ['Saddle up!', 'Neigh!', 'Hee-haw!', 'Mind the lava!', 'Knock it back!', 'Row, row, row!', 'Black brick and gold!', 'Four new lands!', 'It moos now!', 'Two eyes each!',
       'Swim for it!', 'Ride a strider!', 'What a hoard!', 'Baa!', 'Plant a cherry tree!'],

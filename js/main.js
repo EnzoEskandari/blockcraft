@@ -101,7 +101,7 @@ function tickPlates() {
 
 // Beacons: one that stands on a three-by-three of iron, gold, diamond or emerald blocks under open sky
 // mends everyone within thirty blocks and quickens their digging. (Each player works out their own.)
-const MINERAL = new Set([B.iron_block, B.gold_block, B.diamond_block, B.emerald_block]);
+const MINERAL = new Set([B.iron_block, B.gold_block, B.diamond_block, B.emerald_block, B.netherite_block]);
 function tickBeacons(dt) {
   S.beaconT = (S.beaconT || 0) - dt;
   const w = G.world, p = G.player;
@@ -676,7 +676,7 @@ function tickSaplings() {
 // Blocks Silk Touch can't bring home whole
 const NO_SILK = new Set([B.spawner, B.farmland, B.dirt_path, B.bedrock, B.end_portal_frame, B.end_portal_frame_filled]);
 // Experience kept in a furnace for each thing it smelts, handed over when the result is taken out
-const SMELT_XP = { iron_ingot: 0.7, gold_ingot: 1, copper_ingot: 0.7, diamond: 1, emerald: 1, coal: 0.1, lapis_lazuli: 0.2, redstone: 0.3, nether_quartz: 0.2, charcoal: 0.15, brick: 0.3, glass: 0.1, stone: 0.1, deepslate: 0.1, terracotta: 0.35, nether_brick: 0.1 };
+const SMELT_XP = { iron_ingot: 0.7, gold_ingot: 1, copper_ingot: 0.7, diamond: 1, emerald: 1, coal: 0.1, lapis_lazuli: 0.2, redstone: 0.3, nether_quartz: 0.2, charcoal: 0.15, brick: 0.3, glass: 0.1, stone: 0.1, deepslate: 0.1, terracotta: 0.35, nether_brick: 0.1, netherite_scrap: 2 };
 const smeltXp = (id) => { const it = ITEMS[id]; return it ? SMELT_XP[it.key] ?? (it.food ? 0.35 : 0.1) : 0; };
 
 export const Game = {

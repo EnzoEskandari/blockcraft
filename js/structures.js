@@ -113,7 +113,7 @@ const LOOT = {
       ['flint_and_steel', 1, 1, 5], ['nether_wart', 3, 7, 5], ['obsidian', 2, 4, 2], ['cinder_rod', 1, 2, 4], ['magma_cream', 1, 3, 4]],
   },
   bastion: {
-    rolls: [4, 8], wear: [0, 0.3], sure: [['gold_block', 1, 2]],
+    rolls: [4, 8], wear: [0, 0.3], sure: [['gold_block', 1, 2]], more: [['netherite_upgrade', 1, 1, 0.3], ['netherite_scrap', 1, 1, 0.12]],
     items: [['gold_ingot', 3, 9, 16], ['gold_nugget', 6, 17, 12], ['diamond', 1, 3, 6], ['golden_helmet', 1, 1, 5], ['golden_boots', 1, 1, 5], ['golden_leggings', 1, 1, 4],
       ['golden_axe', 1, 1, 4], ['diamond_sword', 1, 1, 2], ['diamond_chestplate', 1, 1, 2], ['obsidian', 2, 6, 6], ['magma_cream', 2, 6, 6], ['cinder_rod', 1, 3, 3],
       ['shade_pearl', 1, 2, 4], ['arrow', 5, 17, 6], ['gilded_blackstone', 2, 6, 5], ['string', 3, 8, 5]],
@@ -126,18 +126,19 @@ const LOOT = {
       ['diamond_horse_armor', 1, 1, 1], ['nether_quartz', 3, 9, 5], ['enchanted_book', 1, 1, 3]],
   },
   bastion_hall: {
-    rolls: [5, 9], wear: [0, 0.25], sure: [['gold_ingot', 3, 8]],
+    rolls: [5, 9], wear: [0, 0.25], sure: [['gold_ingot', 3, 8]], more: [['netherite_upgrade', 1, 1, 0.25], ['netherite_scrap', 1, 1, 0.12]],
     items: [['gold_ingot', 3, 9, 14], ['gold_nugget', 6, 17, 10], ['gold_block', 1, 2, 5], ['diamond', 1, 3, 6], ['golden_helmet', 1, 1, 4], ['golden_boots', 1, 1, 4], ['golden_leggings', 1, 1, 4],
       ['golden_axe', 1, 1, 4], ['iron_sword', 1, 1, 4], ['diamond_sword', 1, 1, 2], ['diamond_pickaxe', 1, 1, 2], ['obsidian', 3, 7, 6], ['crying_obsidian', 1, 4, 5], ['magma_cream', 2, 6, 5],
       ['cinder_rod', 1, 3, 3], ['shade_pearl', 1, 3, 5], ['arrow', 8, 20, 6], ['gilded_blackstone', 2, 6, 4], ['string', 3, 8, 4], ['golden_apple', 1, 1, 3], ['enchanted_book', 1, 1, 4], ['saddle', 1, 1, 3]],
   },
   bastion_stable: {
-    rolls: [5, 8], wear: [0, 0.25], sure: [['saddle', 1, 1], ['leather', 2, 5]],
+    rolls: [5, 8], wear: [0, 0.25], sure: [['saddle', 1, 1], ['leather', 2, 5]], more: [['netherite_upgrade', 1, 1, 0.15]],
     items: [['saddle', 1, 1, 8], ['leather_horse_armor', 1, 1, 6], ['iron_horse_armor', 1, 1, 6], ['golden_horse_armor', 1, 1, 8], ['diamond_horse_armor', 1, 1, 3], ['hay_bale', 2, 6, 8],
       ['apple', 2, 6, 6], ['wheat', 4, 12, 6], ['gold_ingot', 2, 7, 10], ['gold_nugget', 5, 14, 8], ['diamond', 1, 2, 4], ['golden_apple', 1, 1, 3], ['string', 2, 6, 4], ['porkchop', 2, 5, 5], ['leather', 2, 6, 6]],
   },
   bastion_treasure: {
     rolls: [7, 11], wear: [0, 0.1], sure: [['diamond', 3, 6], ['gold_block', 2, 4], ['golden_apple', 1, 2]],
+    more: [['netherite_upgrade', 1, 1, 1], ['ancient_debris', 1, 2, 0.4], ['netherite_scrap', 1, 2, 0.35], ['netherite_ingot', 1, 1, 0.15]],
     items: [['diamond', 2, 6, 12], ['gold_block', 1, 4, 10], ['gold_ingot', 6, 16, 10], ['emerald', 2, 8, 5], ['diamond_sword', 1, 1, 6], ['diamond_pickaxe', 1, 1, 6], ['diamond_axe', 1, 1, 4],
       ['diamond_helmet', 1, 1, 5], ['diamond_chestplate', 1, 1, 5], ['diamond_leggings', 1, 1, 5], ['diamond_boots', 1, 1, 5], ['diamond_horse_armor', 1, 1, 5], ['saddle', 1, 1, 4],
       ['enchanted_book', 1, 1, 14], ['golden_apple', 1, 2, 8], ['crying_obsidian', 3, 8, 6], ['shade_pearl', 2, 6, 6], ['experience_bottle', 3, 8, 6], ['iron_block', 1, 3, 5], ['cinder_rod', 2, 5, 4]],
@@ -230,6 +231,18 @@ export function rollLoot(table, seed) {
     let pick = r() * total;
     const it = items.find((x) => (pick -= x[3]) < 0) || items[0];
     put(it[0], it[1], it[2]);
+  }
+  // (1.10.3) what a table has `more` of ([thing, least, most, chance]) is rolled on its own and goes into slots
+  // still empty: a chest nobody has opened yet holds all it would have held before, and maybe this as well
+  if (T.more) {
+    const r2 = mulberry32((seed ^ 0x5eb715) >>> 0);
+    for (const [key, min, max, chance] of T.more) {
+      const hit = r2() < chance, n = min + Math.floor(r2() * (max - min + 1));
+      let slot = Math.floor(r2() * 27);
+      if (!hit || !ID[key]) continue;
+      for (let t = 0; t < 27 && slots[slot]; t++) slot = (slot + 7) % 27;
+      if (!slots[slot]) slots[slot] = { id: ID[key], count: n, dmg: 0 };
+    }
   }
   return slots;
 }

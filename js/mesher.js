@@ -36,7 +36,7 @@ const GLOW = new Uint8Array(256);   // blocks that shine: 1 all over (glowstone,
 // 48 ore, whose flecks sparkle
 const GLOSS = new Uint8Array(256);
 const GLASSY = ['obsidian', 'crying_obsidian', 'blackstone', 'gilded_blackstone', 'dragon_egg', 'coal_block', 'polished_blackstone_bricks', 'chiseled_polished_blackstone'];
-const POLISHED = ['iron_block', 'gold_block', 'diamond_block', 'emerald_block', 'lapis_block', 'redstone_block', 'copper_block', 'quartz_block', 'quartz_pillar', 'ice', 'packed_ice', 'frosted_ice'];
+const POLISHED = ['iron_block', 'gold_block', 'diamond_block', 'emerald_block', 'lapis_block', 'redstone_block', 'copper_block', 'quartz_block', 'quartz_pillar', 'ice', 'packed_ice', 'frosted_ice', 'netherite_block'];
 const AO = [0.5, 0.68, 0.84, 1];
 // Leaves drawn solid (Textures: Fast): the sides where one leaf block meets another of its kind are left out
 let solidLeaves = false;

@@ -49,6 +49,8 @@ function block(id, key, name, o = {}) {
     slow: o.slow || 0,         // movement multiplier while inside (cobweb)
     flammable: o.flammable || 0, // how readily fire burns this block away (0 = never)
     sapling: o.sapling || null, // the kind of tree it grows into
+    blastProof: !!o.blastProof, // explosions leave it standing
+    fireproof: !!o.fireproof,   // dropped, it floats on lava instead of sinking out of reach
   };
   BLOCKS[id] = d;
   B[key] = id;
@@ -354,6 +356,9 @@ block(240, 'jungle_sapling', 'Jungle Sapling', { ...plant, support: GROUND, sapl
 block(241, 'dark_oak_sapling', 'Dark Oak Sapling', { ...plant, support: GROUND, sapling: 'dark_oak' });
 block(242, 'acacia_sapling', 'Acacia Sapling', { ...plant, support: GROUND, sapling: 'acacia' });
 block(243, 'cherry_sapling', 'Cherry Sapling', { ...plant, support: GROUND, sapling: 'cherry' });
+// (1.10.3) netherite: ancient debris lies deep in the Nether's rock, takes a diamond pickaxe, and shrugs off explosions
+block(244, 'ancient_debris', 'Ancient Debris', { tex: { top: 'ancient_debris_top', bottom: 'ancient_debris_top', side: 'ancient_debris_side' }, hardness: 30, tool: 'pickaxe', level: 3, blastProof: true, fireproof: true });
+block(245, 'netherite_block', 'Block of Netherite', { hardness: 50, tool: 'pickaxe', level: 3, sound: 'metal', blastProof: true, fireproof: true });
 
 export const JOB_BLOCKS = {};   // profession -> block id
 for (const b of BLOCKS) if (b && b.job) JOB_BLOCKS[b.job] = b.id;
@@ -395,6 +400,7 @@ function item(id, key, name, o = {}) {
     armor: o.armor || null,    // { slot: 0 helmet | 1 chestplate | 2 leggings | 3 boots, points, toughness }
     hidden: !!o.hidden,
     horseArmor: o.horseArmor || 0,   // the share of a blow this takes off a horse wearing it
+    fireproof: !!o.fireproof,        // dropped, it floats on lava instead of sinking out of reach
   };
   ITEMS[id] = d;
   ID[key] = id;
@@ -476,6 +482,11 @@ item(372, 'iron_horse_armor', 'Iron Horse Armour', { stack: 1, horseArmor: 0.2 }
 item(373, 'golden_horse_armor', 'Golden Horse Armour', { stack: 1, horseArmor: 0.28 });
 item(374, 'diamond_horse_armor', 'Diamond Horse Armour', { stack: 1, horseArmor: 0.44 });
 item(375, 'boat', 'Boat', { stack: 1 });
+// (1.10.3) netherite: scrap smelted from ancient debris, the ingot made of four scraps and four gold ingots,
+// and the template (found in bastions) that a smithing table needs to turn diamond gear into netherite
+item(376, 'netherite_scrap', 'Netherite Scrap', { fireproof: true });
+item(377, 'netherite_ingot', 'Netherite Ingot', { fireproof: true });
+item(378, 'netherite_upgrade', 'Netherite Upgrade Template', { fireproof: true });
 
 export const TOOL_MATERIALS = [
   { key: 'wooden', name: 'Wooden', tier: 0, speed: 2, durability: 59, dmg: 0, ing: '#planks' },
@@ -531,6 +542,38 @@ ARMOR_MATERIALS.forEach((m, mi) => {
   });
 });
 
+// Netherite gear is not crafted: a smithing table makes it out of the diamond piece (see NETHERITE_OF).
+// It gets its own numbers, since the blocks of tool and armour ids above have no room for a sixth material.
+export const NETHERITE = { key: 'netherite', name: 'Netherite', tier: 4, speed: 9, durability: 2031, points: [3, 8, 6, 3], tough: 3, dur: 37 };
+[...TOOL_TYPES, { key: 'hoe', name: 'Hoe' }].forEach((t, ti) => {
+  const dia = ITEMS[ID[`diamond_${t.key}`]];
+  item(379 + ti, `netherite_${t.key}`, `Netherite ${t.name}`, {
+    stack: 1, tool: t.key, tier: NETHERITE.tier, speed: NETHERITE.speed, durability: NETHERITE.durability,
+    damage: dia.damage + (t.key === 'hoe' ? 0 : 1), attackSpeed: dia.attackSpeed, icon: 'tool', fireproof: true,
+  }).material = 'netherite';
+});
+ARMOR_PIECES.forEach((pc, pi) => {
+  item(384 + pi, `netherite_${pc.key}`, `Netherite ${pc.name}`, {
+    stack: 1, durability: NETHERITE.dur * pc.mul, icon: 'armor', fireproof: true,
+    armor: { slot: pi, points: NETHERITE.points[pi], toughness: NETHERITE.tough, steady: 0.1 },
+  }).material = 'netherite';
+});
+// the diamond thing each netherite thing is made from (by item number)
+export const NETHERITE_OF = new Map();
+for (const k of ['sword', 'pickaxe', 'axe', 'shovel', 'hoe', 'helmet', 'chestplate', 'leggings', 'boots']) NETHERITE_OF.set(ID[`diamond_${k}`], ID[`netherite_${k}`]);
+// What a smithing table makes of a template, a diamond tool or piece of armour, and a netherite ingot:
+// the same thing in netherite, keeping its enchantments, with the same share of its wear
+export function smith(template, gear, ingot) {
+  if (!template || !gear || !ingot) return null;
+  if (template.id !== ID.netherite_upgrade || ingot.id !== ID.netherite_ingot) return null;
+  const to = NETHERITE_OF.get(gear.id);
+  if (!to) return null;
+  const worn = (gear.dmg || 0) / ITEMS[gear.id].durability;
+  const out = { id: to, count: 1, dmg: Math.floor(worn * ITEMS[to].durability) };
+  if (gear.e) out.e = { ...gear.e };
+  return { out };
+}
+
 export function itemDef(id) { return ITEMS[id] || null; }
 export function maxStack(id) { const d = ITEMS[id]; return d ? d.stack : 64; }
 export function itemName(id) { const d = ITEMS[id]; return d ? d.name : '?'; }
@@ -544,7 +587,7 @@ const TAGS = {
   '#coal': ['coal', 'charcoal'],
   '#cobblestone': ['cobblestone', 'cobbled_deepslate', 'blackstone'],   // what stone tools and furnaces can be made of
   '#wooden_slab': ['oak_slab', 'birch_slab', 'spruce_slab', 'jungle_slab', 'dark_oak_slab', 'crimson_slab', 'warped_slab', 'acacia_slab', 'cherry_slab'],
-  '#mineral_block': ['iron_block', 'gold_block', 'diamond_block', 'emerald_block'],
+  '#mineral_block': ['iron_block', 'gold_block', 'diamond_block', 'emerald_block', 'netherite_block'],
 };
 
 const RECIPE_DEFS = [
@@ -639,6 +682,12 @@ for (const [block, ingot] of [['emerald_block', 'emerald'], ['iron_block', 'iron
   RECIPE_DEFS.push({ shape: ['###', '###', '###'], key: { '#': ingot }, out: [block, 1] });
   RECIPE_DEFS.push({ in: [block], out: [ingot, 9] });
 }
+// (1.10.3) netherite: four scraps and four gold ingots make an ingot (in any arrangement); a template is
+// copied with seven diamonds around it and a block of netherrack under it (the one you put in comes back with another)
+RECIPE_DEFS.push({ in: ['netherite_scrap', 'netherite_scrap', 'netherite_scrap', 'netherite_scrap', 'gold_ingot', 'gold_ingot', 'gold_ingot', 'gold_ingot'], out: ['netherite_ingot', 1] });
+RECIPE_DEFS.push({ shape: ['DTD', 'DND', 'DDD'], key: { D: 'diamond', T: 'netherite_upgrade', N: 'netherrack' }, out: ['netherite_upgrade', 2] });
+RECIPE_DEFS.push({ shape: ['###', '###', '###'], key: { '#': 'netherite_ingot' }, out: ['netherite_block', 1] });
+RECIPE_DEFS.push({ in: ['netherite_block'], out: ['netherite_ingot', 9] });
 for (const m of TOOL_MATERIALS) {
   RECIPE_DEFS.push({ shape: ['XX', ' S', ' S'], key: { X: m.ing, S: 'stick' }, out: [`${m.key}_hoe`, 1] });
 }
@@ -753,6 +802,7 @@ const SMELT_DEFS = {
   deepslate_coal_ore: 'coal', deepslate_iron_ore: 'iron_ingot', deepslate_gold_ore: 'gold_ingot', deepslate_diamond_ore: 'diamond',
   deepslate_redstone_ore: 'redstone', deepslate_lapis_ore: 'lapis_lazuli', deepslate_emerald_ore: 'emerald', deepslate_copper_ore: 'copper_ingot',
   polished_blackstone_bricks: 'cracked_polished_blackstone_bricks', nether_bricks: 'cracked_nether_bricks', charred_log: 'charcoal', ember_log: 'charcoal',
+  ancient_debris: 'netherite_scrap',
 };
 
 // Mining a block drops it only with a good enough pickaxe (stone needs wood, iron ore stone,

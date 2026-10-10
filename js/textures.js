@@ -1174,6 +1174,20 @@ Object.assign(PAINTERS, {
     for (let k = 0; k < 5; k++) { const x = Math.floor(p.r() * 16), y = Math.floor(p.r() * 12), len = 2 + Math.floor(p.r() * 3); for (let i = 0; i < len; i++) p.set(x, y + i, i === 1 ? [255, 214, 90] : [240, 110, 24]); }
   },
   quartz_pillar: (p) => p.each((x, y) => (x % 4 === 3 ? jit([196, 186, 176], 4, p.r) : x % 4 === 0 ? jit([246, 242, 234], 3, p.r) : jit([232, 226, 216], 4, p.r))),
+  // (1.10.3) ancient debris: bands of old brown metal round its sides, a coil of it on the ends
+  ancient_debris_side: (p) => {
+    const n = vnoise(p.r, 5);
+    p.each((x, y) => {
+      const band = (y + Math.floor(n(x, y) * 3)) % 5;
+      return jit(band === 0 ? [146, 110, 96] : band === 1 ? [114, 84, 74] : band === 3 ? [68, 48, 44] : [92, 66, 60], 6, p.r);
+    });
+  },
+  ancient_debris_top: (p) => p.each((x, y) => {
+    const dx = x - 7.5, dy = y - 7.5, d = Math.hypot(dx, dy);
+    const s = (((d * 1.15 + Math.atan2(dy, dx) * 0.51) % 3.2) + 3.2) % 3.2;
+    return jit(d > 7.3 ? [72, 50, 46] : s < 0.95 ? [152, 116, 100] : s < 1.9 ? [108, 80, 70] : [82, 58, 52], 6, p.r);
+  }),
+  netherite_block: (p) => metal(p, [70, 62, 66]),
   quartz_pillar_top: (p) => p.each((x, y) => { const d = Math.max(Math.abs(x - 7.5), Math.abs(y - 7.5)); return d > 6 ? jit([206, 196, 186], 4, p.r) : jit([238, 232, 224], 4, p.r); }),
 });
 
@@ -1478,6 +1492,11 @@ Object.assign(ART, {
     'OSOW....OSSO....', '.OSOWWWW.OSSO...', '..OSSSO...OSSO..', '...OOO.....OSSO.',
     '............OSO.', '.............O..',
   ],
+  template: [
+    '................', '..OOOOOOOOOOOO..', '..OLLLLLLLLLHO..', '..OLHHHHHHHHhO..', '..OLHHHDDHHHhO..', '..OLHHDNNDHHhO..',
+    '..OLHDNNNNDHhO..', '..OLHDNNNNDHhO..', '..OLHHDNNDHHhO..', '..OLHHHDDHHHhO..', '..OLHHHHHHHHhO..', '..OLHhHHhHHhhO..',
+    '..OHhhhhhhhhhO..', '..OOOOOOOOOOOO..', '................', '................',
+  ],
   trident: [
     '..........O..O.O', '.........OLO.OLO', '..........OLOLHO', '.......O...OLHO.',
     '......OLO.OLHO..', '.......OLOLHHO..', '........OLHHOO..', '.......OSOLO....',
@@ -1615,6 +1634,9 @@ Object.assign(ITEM_ART, {
   golden_horse_armor: ['horse_armor', pal3([250, 218, 70], [210, 150, 30], [255, 250, 180], { O: [120, 80, 10] })],
   diamond_horse_armor: ['horse_armor', pal3([74, 226, 212], [30, 160, 150], [200, 255, 250], { O: [14, 80, 76] })],
   boat: ['boat', pal3([176, 140, 86], [128, 96, 54], [206, 172, 116], { O: [70, 50, 26] })],
+  netherite_scrap: ['lump', pal3([108, 80, 70], [72, 52, 46], [154, 120, 104], { O: [36, 24, 22] })],
+  netherite_ingot: ['ingot', pal3([82, 74, 80], [50, 44, 50], [134, 124, 130], { O: [20, 16, 20] })],
+  netherite_upgrade: ['template', pal3([92, 84, 90], [60, 54, 60], [132, 122, 128], { O: [26, 22, 26], D: [82, 230, 220], N: [40, 34, 40] })],
 });
 const TOOL_PAL = {
   wooden: [[150, 112, 60], [104, 76, 38], [190, 152, 96]],
@@ -1622,6 +1644,7 @@ const TOOL_PAL = {
   iron: [[214, 214, 214], [150, 150, 150], [250, 250, 250]],
   golden: [[250, 218, 70], [210, 150, 30], [255, 250, 180]],
   diamond: [[74, 226, 212], [30, 160, 150], [200, 255, 250]],
+  netherite: [[86, 78, 84], [52, 46, 52], [140, 128, 136]],
 };
 
 function isoIcon(top, left, right, half = false) {
