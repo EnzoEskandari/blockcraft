@@ -586,11 +586,12 @@ async function command(ws, text) {
   }
   if (!isAdmin(acc)) return c === 'help' ? 'Commands: /list (who is playing here). The rest are for admins.' : `Only admins can use /${c}.`;
   // an admin plays in whichever mode they like, in any world
-  if (['gamemode', 'gm', 'creative', 'survival'].includes(c)) {
-    const want = c === 'creative' || c === 'survival' ? c : /^(c|1|creative)$/i.test(name || '') ? 'creative' : /^(s|0|survival)$/i.test(name || '') ? 'survival' : null;
-    if (!want) return 'Say /gamemode creative or /gamemode survival (or just /creative, /survival).';
+  if (['gamemode', 'gm', 'creative', 'survival', 'spectator', 'spectate'].includes(c)) {
+    const want = c === 'creative' || c === 'survival' ? c : c === 'spectator' || c === 'spectate' ? 'spectator'
+      : /^(c|1|creative)$/i.test(name || '') ? 'creative' : /^(s|0|survival)$/i.test(name || '') ? 'survival' : /^(sp|3|spectator|spectate)$/i.test(name || '') ? 'spectator' : null;
+    if (!want) return 'Say /gamemode creative, survival or spectator (or just /creative, /survival, /spectator).';
     send(ws, { t: 'admin', a: 'mode', mode: want });
-    return `You are in ${want} mode.`;
+    return want === 'spectator' ? 'You are spectating: nobody sees you, and you pass through blocks. /creative brings you back.' : `You are in ${want} mode.`;
   }
   // to a spot: /tp x y z, or /tp x z for the ground there
   if (c === 'tp' && isNum(name) && rest.length && rest.every(isNum) && rest.length <= 2) {
@@ -690,6 +691,8 @@ wss.on('connection', (ws) => {
       if (a) a.seen = ws.at;
       return;
     }
+    // (an admin who came in unseen has stopped spectating: they count among the players again)
+    if (m.t === 'spec' && ws.account && !m.v) { ws.spec = false; return; }
     if (m.t === 'cmd' && ws.account && typeof m.text === 'string') {
       try { send(ws, { t: 'cmd', msg: await command(ws, m.text.slice(0, 200)) }); } catch (err) { send(ws, { t: 'cmd', msg: 'That did not work: ' + err.message }); }
       return;

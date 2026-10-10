@@ -1200,7 +1200,7 @@ class Mob {
     if (res.z) this.vel.z = 0;
 
     // Keep out of the player
-    if (p && !p.dead) {
+    if (p && !p.dead && !p.spectator) {
       const ox = this.pos.x - p.pos.x, oz = this.pos.z - p.pos.z;
       const min = this.hw + p.hw;
       if (Math.abs(ox) < min && Math.abs(oz) < min && this.pos.y < p.pos.y + p.h && this.pos.y + this.h > p.pos.y) {
@@ -1866,7 +1866,7 @@ class XpOrb {
     this.age += dt;
     const dx = p.pos.x - this.pos.x, dy = p.pos.y + 0.9 - this.pos.y, dz = p.pos.z - this.pos.z;
     const d = Math.hypot(dx, dy, dz) || 1;
-    const drawn = !p.dead && this.age > this.wait && d < 7.25;
+    const drawn = !p.dead && !p.spectator && this.age > this.wait && d < 7.25;
     if (drawn) {
       // drawn to the player, faster the closer it gets
       const pull = (1 - d / 7.25) * 70 * dt;

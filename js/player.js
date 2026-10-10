@@ -306,6 +306,16 @@ export class Player {
     this.rideSneak = true;   // (the sneak that may be held from before does not count)
     if (m.def.boat && G.adv) G.adv.did('boat');
   }
+  // Out of whatever solid thing you are inside (coming back from spectating): the nearest room above, or
+  // failing that below
+  unstick() {
+    const w = G.world, y0 = this.pos.y;
+    const free = (y) => !boxBlocked(w, this.pos.x, y, this.pos.z, this.hw, this.h);
+    if (free(y0)) return;
+    for (let y = Math.floor(y0) + 1; y < 127; y++) if (free(y)) { this.pos.y = y; return; }
+    for (let y = Math.floor(y0); y > 1; y--) if (free(y)) { this.pos.y = y; return; }
+  }
+
   dismount(why) {
     const m = this.riding;
     if (!m) return;

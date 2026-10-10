@@ -142,10 +142,11 @@ In any online world's chat (press **T**):
 - `/tp name`: go to them (or to where they were last seen), when you are in the same world and dimension. `/bring name`: fetch them to you.
 - Commands and their answers show only to whoever typed them, never in the chat.
 - `/creative`, `/survival` (or `/gamemode creative`): switch your own mode, in any world. The game menu has a button for the same thing.
+- `/spectator` (or `/spectate`, `/gamemode sp`): spectator mode, in any world. You fly, pass through blocks, touch nothing, and nobody sees you (other players, mobs); you stay on the list of players. `/creative` or `/survival` brings you back, out of any rock you were inside. The game menu has a button for this too. If you came into a world with **Spectate (nobody sees you)**, leaving spectator mode puts you on the list and tells the others you have joined.
 - `/time day`, `noon`, `sunset`, `night`, `midnight`, `sunrise`, or an hour such as `/time 15` or `/time 7:30`: set the time of day.
 - `/weather clear`, `cloudy`, `rain` or `thunder`, with a number of minutes if you like (`/weather rain 5`): change the weather.
 - `/tp x y z` goes to a spot, and `/tp x z` to the ground there.
-- `/time`, `/weather`, `/tp x y z`, `/creative` and `/survival` also work for an admin in a world that is not online (press **T**).
+- `/time`, `/weather`, `/tp x y z`, `/creative`, `/survival` and `/spectator` also work for an admin in a world that is not online (press **T**).
 - `/players`: who is online, and where. `/accounts`: every account. `/list`: who is in this world (anyone can use this).
 
 Admins see every online world on the server in their Multiplayer list (marked *Admin · made by …*) and can open any of them.

@@ -149,6 +149,7 @@ export class Avatar {
     this.burning = !!(f & 16);
     this.gold = !!(f & 32);
     this.shield = f & 64 ? 1 : f & 128 ? 2 : 0;   // a shield is up: in the main hand, or the off hand
+    this.ghost = !!(f & 256);   // spectating: there, and on the list, but not to be seen (or chased, or waited for)
     this.offId = s[11] | 0;
     this.seat = (s[12] | 0) / 100;   // riding: how high the seat is
     this.swim = !!s[13];
@@ -174,8 +175,8 @@ export class Avatar {
     this.hurtTime -= dt;
     if (this.dead) this.deathTime += dt;
     const show = !this.dead || this.deathTime < 1.2;
-    root.visible = show && !this.hidden;
-    this.tag.visible = show && !this.sneaking && !this.dead && !this.hidden;
+    root.visible = show && !this.hidden && !this.ghost;
+    this.tag.visible = show && !this.sneaking && !this.dead && !this.hidden && !this.ghost;
 
     this.phase += hs * dt * 4;
     const sw = Math.sin(this.phase) * Math.min(1, hs / 2) * 0.9;
@@ -434,7 +435,7 @@ export class Net {
   // Who mobs can see: on the host that is everyone, on a guest only this player
   targets() {
     const out = [G.player];
-    if (this.role === 'host') for (const a of this.players.values()) if (a.ready && !a.gone && !a.hidden) out.push(a);   // (nothing goes for someone spectating)
+    if (this.role === 'host') for (const a of this.players.values()) if (a.ready && !a.gone && !a.hidden && !a.ghost) out.push(a);   // (nothing goes for someone spectating)
     return out;
   }
 
@@ -469,9 +470,19 @@ export class Net {
     if (only !== null) this.sendTo(only, { k: 'roster', l }); else this.send({ k: 'roster', l });
   }
 
+  // Someone who came in unseen (an admin spectating) stops spectating: from now on they are here like anyone
+  // else. Whoever runs the world puts them on the list and says so; the server counts them among the players.
+  appear() {
+    if (!this.spec) return;
+    this.spec = false;
+    this.raw({ t: 'spec', v: 0 });
+    if (this.role === 'host') { this.sendRoster(); this.announce(`${this.name} joined the game`); }
+    else this.send({ k: 'show' });
+  }
+
   allAsleep() {
     if (this.role !== 'host') return false;
-    for (const a of this.players.values()) if (a.ready && !a.sleeping && !a.dead && !a.hidden) return false;
+    for (const a of this.players.values()) if (a.ready && !a.sleeping && !a.dead && !a.hidden && !a.ghost) return false;
     return true;
   }
 
@@ -480,7 +491,7 @@ export class Net {
     const held = p.inv.held;
     const gold = p.armor.some((a) => a && ITEMS[a.id] && ITEMS[a.id].material === 'golden');
     const flags = (p.dead ? 1 : 0) | (p.sneaking && !p.flying ? 2 : 0) | (G.sleeping ? 4 : 0) | (p.flying ? 8 : 0) | (p.burning > 0 ? 16 : 0) | (gold ? 32 : 0)
-      | (p.shieldUp ? (p.shieldHand === 1 ? 64 : 128) : 0);
+      | (p.shieldUp ? (p.shieldHand === 1 ? 64 : 128) : 0) | (p.spectator ? 256 : 0);
     return [r2(p.pos.x), r2(p.pos.y), r2(p.pos.z), r2(p.yaw), r2(p.pitch), held ? held.id : 0, flags, this.swings, Math.ceil(p.health), p.creative ? 1 : 0,
       p.armor.map((a) => (a ? a.id : 0)), p.off[0] ? p.off[0].id : 0, p.riding ? Math.round(p.riding.def.seat * 100) : 0, p.swimming ? 1 : 0];
   }
@@ -644,6 +655,14 @@ export class Net {
         break;
       }
       case 'p': if (a) a.applyState(d.s); break;
+      case 'show':
+        // (someone who was spectating unseen has stepped into the world)
+        if (!a || !a.hidden) return;
+        a.hidden = false;
+        { const info = this.peerInfo.get(from); if (info) info.spec = false; }
+        this.sendRoster();
+        this.announce(`${a.name} joined the game`);
+        break;
       case 'bs':
         if (!Array.isArray(d.l)) return;
         this.applyBlocks(d.l, from);
@@ -665,7 +684,7 @@ export class Net {
         break;
       case 'pick': {
         const it = this.itemIndex.get(d.n);
-        if (!a || a.hidden || !it || it.removed || it.age < it.pickupDelay - 0.3) return;
+        if (!a || a.hidden || a.ghost || !it || it.removed || it.age < it.pickupDelay - 0.3) return;
         if (Math.hypot(a.pos.x - it.pos.x, a.pos.z - it.pos.z) > 5) return;
         const give = Math.min(it.count, Math.max(0, d.r | 0));
         if (!give) return;

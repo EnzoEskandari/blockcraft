@@ -216,6 +216,7 @@ export class UI {
     on('b-pause-options', () => this.openScreen('options'));
     on('b-pause-adv', () => this.openScreen('adv'));
     on('b-pause-mode', () => { G.game.toggleMode(); this.closeAll(); requestLock(); });
+    on('b-pause-spec', () => { G.game.toggleSpectator(); this.closeAll(); requestLock(); });
     on('b-adv-close', () => this.back());
     on('b-quit', () => G.game.quitToTitle());
     on('b-respawn', () => G.game.respawn());
@@ -999,7 +1000,9 @@ export class UI {
     // admins can change mode in any world
     const admin = !!(G.account && G.account.admin);
     $('b-pause-mode').hidden = !admin;
+    $('b-pause-spec').hidden = !admin;
     if (admin && G.player) $('b-pause-mode').textContent = G.player.creative ? 'Switch to Survival Mode' : 'Switch to Creative Mode';
+    if (admin && G.player) $('b-pause-spec').textContent = G.player.spectator ? 'Stop Spectating (Creative Mode)' : 'Switch to Spectator Mode';
     if (!online) return;
     $('mp-info-head').textContent = 'Online world · friends join with this code';
     $('mp-code-show').textContent = meta.online;
@@ -1008,7 +1011,7 @@ export class UI {
     for (const a of net.players.values()) if (a.id !== 0 && !a.hidden) names.push(a.name);
     if (net.role === 'client') names.push(`${net.name} (you)`);
     const shown = names.filter(Boolean);
-    $('mp-players').textContent = (net.spec ? 'You are spectating: nobody can see you, and you cannot touch anything. ' : '')
+    $('mp-players').textContent = (net.spec ? 'You are spectating: nobody can see you, and you cannot touch anything. ' : G.player && G.player.spectator ? 'Spectator mode: nobody can see you (you are still on the list of players), and you cannot touch anything. ' : '')
       + (shown.length > 1 ? 'Playing: ' + shown.join(', ') : 'Nobody else is here right now.');
   }
 

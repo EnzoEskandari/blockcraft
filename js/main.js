@@ -783,17 +783,30 @@ export const Game = {
   },
 
   pressPlate,
-  // An admin switches between survival and creative in any world (it lasts until they leave the world)
+  // An admin switches between survival, creative and spectating in any world (it lasts until they leave the
+  // world). Spectating: flying, passing through blocks, touching nothing, and seen by nobody.
   setMode(mode) {
     const p = G.player, meta = G.worldMeta;
     if (!p || !meta) return;
-    mode = mode === 'creative' ? 'creative' : 'survival';
+    mode = mode === 'creative' || mode === 'spectator' ? mode : 'survival';
     S.modeFor = { world: meta.online || meta.id, mode };
-    p.mode = mode;
+    const was = !!p.spectator;
+    p.spectator = mode === 'spectator';
+    p.mode = mode === 'survival' ? 'survival' : 'creative';
+    if (p.spectator) {
+      if (p.riding) p.dismount();
+      p.flying = true; p.sprinting = p.sneaking = p.swimming = false;
+    } else if (was) {
+      // back in the world: out of any rock they were inside, and no harm from the drop if they were high up
+      p.unstick();
+      p.vel.x = p.vel.y = p.vel.z = 0; p.fallDist = 0; p.safeLanding = G.clock + 15;
+      // (someone who came in unseen is now here like anyone else)
+      if (G.net && G.net.spec) { G.spectate = false; G.net.appear(); }
+    }
     if (mode === 'survival') { p.flying = false; p.fallStart = p.pos.y; }
     if (G.screen === 'creative' || G.screen === 'inventory') G.ui.closeAll();
     G.ui.invChanged();
-    G.ui.toast(mode === 'creative' ? 'Creative mode' : 'Survival mode');
+    G.ui.toast(mode === 'spectator' ? 'Spectator mode: nobody sees you, and you pass through blocks' : mode === 'creative' ? 'Creative mode' : 'Survival mode', mode === 'spectator' ? 4 : undefined);
   },
   // An admin goes to a spot (no height given: the ground there)
   // First person, then from behind (third person), then from in front (second person), and round again
@@ -852,13 +865,18 @@ export const Game = {
       if (n.length === 3) Game.teleport(n[0], Math.max(1, Math.min(250, n[1])), n[2]); else Game.teleport(n[0], null, n[1]);
       return say(`Teleported to ${n.map(Math.floor).join(', ')}.`);
     }
-    if (['creative', 'survival'].includes(c)) return Game.setMode(c);
-    if (c === 'gamemode' || c === 'gm') return Game.setMode(/^(c|1|creative)$/i.test(args[0] || '') ? 'creative' : 'survival');
-    return say('In a world that is not online: /time, /weather, /tp x y z, /creative, /survival.');
+    if (['creative', 'survival', 'spectator', 'spectate'].includes(c)) return Game.setMode(c === 'spectate' ? 'spectator' : c);
+    if (c === 'gamemode' || c === 'gm') return Game.setMode(/^(c|1|creative)$/i.test(args[0] || '') ? 'creative' : /^(sp|3|spectator|spectate)$/i.test(args[0] || '') ? 'spectator' : 'survival');
+    return say('In a world that is not online: /time, /weather, /tp x y z, /creative, /survival, /spectator.');
   },
   // The pause menu's button: through the server in an online world (it checks who is asking)
   toggleMode() {
     const want = G.player.creative ? 'survival' : 'creative';
+    if (G.net && G.worldMeta.online) G.net.raw({ t: 'cmd', text: '/' + want }); else if (G.account && G.account.admin) Game.setMode(want);
+  },
+  // (and its other button: into spectating, and back out of it into creative)
+  toggleSpectator() {
+    const want = G.player.spectator ? 'creative' : 'spectator';
     if (G.net && G.worldMeta.online) G.net.raw({ t: 'cmd', text: '/' + want }); else if (G.account && G.account.admin) Game.setMode(want);
   },
   toggleDoor(x, y, z) {
@@ -1527,7 +1545,7 @@ function startRemoteWorld(snap, onlineId, dim = 'overworld', me = null) {
   G.world = w;
   const p = new Player();
   p.mode = G.worldMeta.mode;
-  if (S.modeFor && S.modeFor.world === (G.worldMeta.online || G.worldMeta.id)) p.mode = S.modeFor.mode; else S.modeFor = null;
+  if (S.modeFor && S.modeFor.world === (G.worldMeta.online || G.worldMeta.id)) { p.mode = S.modeFor.mode === 'survival' ? 'survival' : 'creative'; p.spectator = S.modeFor.mode === 'spectator'; if (p.spectator) p.flying = true; } else S.modeFor = null;
   // spectating: unseen, unharmed, flying, and touching nothing (their items stay as they were)
   if (G.net && G.net.spec && G.worldMeta.online) { p.mode = 'creative'; p.spectator = true; p.flying = true; }
   G.player = p;
@@ -1602,7 +1620,7 @@ function startWorld(meta, data, opts = {}) {
   G.world = w;
   const p = new Player();
   p.mode = meta.mode;
-  if (S.modeFor && S.modeFor.world === (G.worldMeta.online || G.worldMeta.id)) p.mode = S.modeFor.mode; else S.modeFor = null;
+  if (S.modeFor && S.modeFor.world === (G.worldMeta.online || G.worldMeta.id)) { p.mode = S.modeFor.mode === 'survival' ? 'survival' : 'creative'; p.spectator = S.modeFor.mode === 'spectator'; if (p.spectator) p.flying = true; } else S.modeFor = null;
   // spectating: unseen, unharmed, flying, and touching nothing (their items stay as they were)
   if (G.net && G.net.spec && G.worldMeta.online) { p.mode = 'creative'; p.spectator = true; p.flying = true; }
   G.player = p;
