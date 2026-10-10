@@ -118,6 +118,30 @@ const LOOT = {
       ['golden_axe', 1, 1, 4], ['diamond_sword', 1, 1, 2], ['diamond_chestplate', 1, 1, 2], ['obsidian', 2, 6, 6], ['magma_cream', 2, 6, 6], ['cinder_rod', 1, 3, 3],
       ['shade_pearl', 1, 2, 4], ['arrow', 5, 17, 6], ['gilded_blackstone', 2, 6, 5], ['string', 3, 8, 5]],
   },
+  // (2.0) the reworked fortress, and the bastions: a hall's chest is good, the stable's has tack, the treasure room's is the best there is
+  nether_fortress: {
+    rolls: [4, 7], wear: [0, 0.25], sure: [['gold_ingot', 2, 5]],
+    items: [['diamond', 1, 3, 6], ['iron_ingot', 2, 6, 5], ['gold_ingot', 2, 5, 12], ['golden_sword', 1, 1, 4], ['golden_chestplate', 1, 1, 4], ['flint_and_steel', 1, 1, 4],
+      ['nether_wart', 3, 8, 6], ['obsidian', 2, 5, 3], ['cinder_rod', 1, 3, 5], ['magma_cream', 1, 3, 4], ['saddle', 1, 1, 5], ['iron_horse_armor', 1, 1, 3], ['golden_horse_armor', 1, 1, 3],
+      ['diamond_horse_armor', 1, 1, 1], ['nether_quartz', 3, 9, 5], ['enchanted_book', 1, 1, 3]],
+  },
+  bastion_hall: {
+    rolls: [5, 9], wear: [0, 0.25], sure: [['gold_ingot', 3, 8]],
+    items: [['gold_ingot', 3, 9, 14], ['gold_nugget', 6, 17, 10], ['gold_block', 1, 2, 5], ['diamond', 1, 3, 6], ['golden_helmet', 1, 1, 4], ['golden_boots', 1, 1, 4], ['golden_leggings', 1, 1, 4],
+      ['golden_axe', 1, 1, 4], ['iron_sword', 1, 1, 4], ['diamond_sword', 1, 1, 2], ['diamond_pickaxe', 1, 1, 2], ['obsidian', 3, 7, 6], ['crying_obsidian', 1, 4, 5], ['magma_cream', 2, 6, 5],
+      ['cinder_rod', 1, 3, 3], ['shade_pearl', 1, 3, 5], ['arrow', 8, 20, 6], ['gilded_blackstone', 2, 6, 4], ['string', 3, 8, 4], ['golden_apple', 1, 1, 3], ['enchanted_book', 1, 1, 4], ['saddle', 1, 1, 3]],
+  },
+  bastion_stable: {
+    rolls: [5, 8], wear: [0, 0.25], sure: [['saddle', 1, 1], ['leather', 2, 5]],
+    items: [['saddle', 1, 1, 8], ['leather_horse_armor', 1, 1, 6], ['iron_horse_armor', 1, 1, 6], ['golden_horse_armor', 1, 1, 8], ['diamond_horse_armor', 1, 1, 3], ['hay_bale', 2, 6, 8],
+      ['apple', 2, 6, 6], ['wheat', 4, 12, 6], ['gold_ingot', 2, 7, 10], ['gold_nugget', 5, 14, 8], ['diamond', 1, 2, 4], ['golden_apple', 1, 1, 3], ['string', 2, 6, 4], ['porkchop', 2, 5, 5], ['leather', 2, 6, 6]],
+  },
+  bastion_treasure: {
+    rolls: [7, 11], wear: [0, 0.1], sure: [['diamond', 3, 6], ['gold_block', 2, 4], ['golden_apple', 1, 2]],
+    items: [['diamond', 2, 6, 12], ['gold_block', 1, 4, 10], ['gold_ingot', 6, 16, 10], ['emerald', 2, 8, 5], ['diamond_sword', 1, 1, 6], ['diamond_pickaxe', 1, 1, 6], ['diamond_axe', 1, 1, 4],
+      ['diamond_helmet', 1, 1, 5], ['diamond_chestplate', 1, 1, 5], ['diamond_leggings', 1, 1, 5], ['diamond_boots', 1, 1, 5], ['diamond_horse_armor', 1, 1, 5], ['saddle', 1, 1, 4],
+      ['enchanted_book', 1, 1, 14], ['golden_apple', 1, 2, 8], ['crying_obsidian', 3, 8, 6], ['shade_pearl', 2, 6, 6], ['experience_bottle', 3, 8, 6], ['iron_block', 1, 3, 5], ['cinder_rod', 2, 5, 4]],
+  },
   end_city: {
     rolls: [4, 8], wear: [0, 0.15], sure: [['diamond', 1, 3]],
     items: [['diamond', 2, 7, 10], ['iron_ingot', 4, 8, 10], ['gold_ingot', 2, 7, 15], ['emerald', 2, 6, 3], ['diamond_sword', 1, 1, 3], ['diamond_pickaxe', 1, 1, 3],
@@ -169,6 +193,7 @@ const BOOK_LOOT = {
   blacksmith: [0.15, 5, 15, 0], outpost: [0.2, 5, 15, 2], igloo: [0.3, 10, 25, 4], ruined_portal: [0.5, 10, 25, 3], mansion: [0.4, 15, 30, 6],
   pyramid: [0.4, 15, 30, 10], jungle_temple: [0.4, 15, 30, 10], shipwreck_supply: [0.2, 5, 15, 0], shipwreck_treasure: [0.5, 15, 30, 6],
   stronghold_corridor: [0.4, 15, 30, 5], stronghold_library: [0, 0, 0, 30], fortress: [0.3, 10, 25, 3], bastion: [0.6, 20, 30, 8], end_city: [1, 20, 30, 6],
+  nether_fortress: [0.4, 15, 30, 4], bastion_hall: [0.6, 20, 30, 6], bastion_stable: [0.3, 10, 25, 3], bastion_treasure: [1, 25, 30, 10],
   dungeon: [0.4, 10, 25, 8], mineshaft: [0.4, 10, 25, 6], buried_treasure: [1, 25, 30, 10], outpost_top: [0.5, 10, 25, 5],
 };
 
@@ -1320,6 +1345,301 @@ function buildBastion(ctx, part) {
   ctx.set(x + 3, y + 1, z + 3, B.magma_block);
 }
 
+// ---------------------------------------------------------------- the Nether, from 2.0
+// Fills a box: `pick` is a block, or a function giving the block for each place (undefined: leave it)
+function fill(ctx, x0, y0, z0, x1, y1, z1, pick) {
+  for (let zz = z0; zz <= z1; zz++) for (let xx = x0; xx <= x1; xx++) {
+    if (!ctx.inside(xx, zz)) continue;
+    for (let yy = y0; yy <= y1; yy++) { const id = typeof pick === 'function' ? pick(xx, yy, zz) : pick; if (id !== undefined) ctx.set(xx, yy, zz, id); }
+  }
+}
+// A column carried down from just under `y` to the rock (or into the lava sea)
+function footing(ctx, x, y, z, stone) {
+  if (!ctx.inside(x, z)) return;
+  for (let yy = y - 1; yy > NETHER_LAVA - 6; yy--) {
+    const cur = ctx.get(x, yy, z);
+    if (cur !== 0 && cur !== B.lava && yy < y - 2) break;
+    ctx.set(x, yy, z, stone(ctx, x, yy, z));
+  }
+}
+
+// ---- the fortress: a maze of dark brick on a grid of cells thirteen across. A straight run is an open
+// bridge on pillars; a turning, a meeting of ways or a dead end is a roofed room: a crossing, a platform
+// with a cinder spawner, a garden of nether wart, a treasury or a lava well.
+const FORT_S = 13;
+const fortBrick = (ctx, x, y, z) => { const h = ctx.h(x, y, z, 61); return h < 0.1 ? B.cracked_nether_bricks : h < 0.14 ? B.red_nether_bricks : B.nether_bricks; };
+
+function planNetherFortress(world, plan, x, z, c, rng) {
+  if (near(plan, world, 'fortress', x, z, 110)) return false;   // (one of the old kind is already here)
+  const y = 58 + Math.floor(rng() * 12), N = 3;
+  const cells = new Map(), K = (i, j) => i + ',' + j;
+  const start = { i: 0, j: 0, links: [] };
+  cells.set(K(0, 0), start);
+  const stack = [start];
+  while (stack.length && cells.size < 24) {
+    const cur = stack[stack.length - 1];
+    const open = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([di, dj]) => Math.abs(cur.i + di) <= N && Math.abs(cur.j + dj) <= N && !cells.has(K(cur.i + di, cur.j + dj)));
+    if (!open.length) { stack.pop(); continue; }
+    // (it likes to run straight on: that is what makes the long bridges)
+    const from = cur.links[0];
+    let pick = open[Math.floor(rng() * open.length)];
+    if (from && rng() < 0.6) { const on = open.find(([di, dj]) => di === -from[0] && dj === -from[1]); if (on) pick = on; }
+    const next = { i: cur.i + pick[0], j: cur.j + pick[1], links: [[-pick[0], -pick[1]]] };
+    cur.links.push(pick);
+    cells.set(K(next.i, next.j), next);
+    if (rng() < 0.22) stack.pop();   // (now and then it goes back and branches from further up)
+    stack.push(next);
+  }
+  const list = [...cells.values()];
+  const ends = ['spawner', 'treasury', 'garden', 'spawner', 'well', 'treasury', 'garden', 'crossing'];
+  let e = 0;
+  for (const cl of list) {
+    const straight = cl.links.length === 2 && cl.links[0][0] === -cl.links[1][0] && cl.links[0][1] === -cl.links[1][1];
+    cl.kind = straight ? 'bridge' : cl.links.length === 1 ? ends[e++ % ends.length] : 'crossing';
+  }
+  // (whatever its shape, it has a spawner and a treasury)
+  for (const want of ['spawner', 'treasury', 'garden']) {
+    if (list.some((cl) => cl.kind === want)) continue;
+    const spare = list.find((cl) => cl.kind === 'crossing' && cl !== start) || list.find((cl) => cl.kind === 'bridge');
+    if (spare) spare.kind = want;
+  }
+  for (const cl of list) {
+    const cx = x + cl.i * FORT_S, cz = z + cl.j * FORT_S;
+    plan.add({ minX: cx - 6, maxX: cx + 6, minZ: cz - 6, maxZ: cz + 6, x: cx, z: cz, y, kind: cl.kind, links: cl.links, build: buildFortCell });
+  }
+  plan.fortress = { minX: plan.minX, maxX: plan.maxX, minZ: plan.minZ, maxZ: plan.maxZ, y };
+  return true;
+}
+
+function buildFortCell(ctx, part) {
+  const { x, z, y, kind, links } = part;
+  const has = (di, dj) => links.some(([a, b]) => a === di && b === dj);
+  const N = (xx, yy, zz) => ctx.set(xx, yy, zz, fortBrick(ctx, xx, yy, zz));
+  const F = B.nether_brick_fence;
+  if (kind === 'bridge') {
+    // an open bridge: a deck five wide between low walls with fence posts, on pillars and arches
+    const along = links[0][0] !== 0;
+    for (let a = -6; a <= 6; a++) for (let c = -3; c <= 3; c++) {
+      const xx = x + (along ? a : c), zz = z + (along ? c : a);
+      if (!ctx.inside(xx, zz)) continue;
+      const edge = Math.abs(c) === 3;
+      N(xx, y, zz);
+      for (let k = 1; k <= 6; k++) ctx.set(xx, y + k, zz, edge && k === 1 ? fortBrick(ctx, xx, y + k, zz) : edge && k === 2 && (a & 1) === 0 ? F : 0);
+      // (the arch under it, thickest at the pillars)
+      const d = Math.min(Math.abs(a - 3), Math.abs(a + 3));
+      if (d <= 1) N(xx, y - 1, zz);
+      if (d === 0) { N(xx, y - 2, zz); if (edge || c === 0) footing(ctx, xx, y - 2, zz, fortBrick); }
+    }
+    return;
+  }
+  // a room: walls five out from the middle, with a way through on each side that leads somewhere
+  const open = kind === 'spawner';
+  for (let dz = -6; dz <= 6; dz++) for (let dx = -6; dx <= 6; dx++) {
+    const xx = x + dx, zz = z + dz;
+    if (!ctx.inside(xx, zz)) continue;
+    const ax = Math.abs(dx), az = Math.abs(dz), m = Math.max(ax, az);
+    const side = ax >= az ? [Math.sign(dx), 0] : [0, Math.sign(dz)], across = ax >= az ? az : ax, way = ax !== az && has(side[0], side[1]);
+    if (m === 6) {
+      // (the last step to the edge of the cell: a short passage, only where the way goes on)
+      if (!way || across > 3) continue;
+      N(xx, y, zz);
+      for (let k = 1; k <= 5; k++) ctx.set(xx, y + k, zz, across === 3 && k <= (open ? 1 : 5) ? fortBrick(ctx, xx, y + k, zz) : 0);
+      if (!open) N(xx, y + 6, zz);
+      continue;
+    }
+    N(xx, y, zz);
+    for (let k = 1; k <= 6; k++) {
+      let id = 0;
+      if (m === 5) {
+        const door = way && across <= 2 && k <= 4;
+        if (door) id = 0;
+        else if (open) id = k === 1 ? fortBrick(ctx, xx, y + k, zz) : k === 2 && ((dx + dz) & 1) === 0 ? F : 0;
+        else id = k >= 2 && k <= 3 && ax !== az && across % 3 === 1 ? F : fortBrick(ctx, xx, y + k, zz);   // (barred windows)
+      }
+      ctx.set(xx, y + k, zz, id);
+    }
+    if (!open) N(xx, y + 7, zz);
+    if (m === 5 && ax === az) footing(ctx, xx, y, zz, fortBrick);
+  }
+  footing(ctx, x, y, z, fortBrick);
+  if (kind === 'spawner') {
+    // a raised platform under the open roof of the cavern, the spawner on a dais of steps
+    fill(ctx, x - 2, y + 1, z - 2, x + 2, y + 1, z + 2, (xx, yy, zz) => (Math.max(Math.abs(xx - x), Math.abs(zz - z)) === 2 ? B.nether_brick_slab : fortBrick(ctx, xx, yy, zz)));
+    ctx.set(x, y + 2, z, B.spawner, 0);
+  } else if (kind === 'garden') {
+    // beds of soul sand thick with nether wart, either side of a path
+    fill(ctx, x - 4, y, z - 4, x + 4, y, z + 4, (xx, yy, zz) => (Math.abs(xx - x) >= 2 ? B.soul_sand : undefined));
+    fill(ctx, x - 4, y + 1, z - 4, x + 4, y + 1, z + 4, (xx, yy, zz) => (Math.abs(xx - x) >= 2 && ctx.h(xx, yy, zz, 62) < 0.8 ? B.nether_wart : undefined));
+  } else if (kind === 'treasury') {
+    fill(ctx, x - 1, y, z - 1, x + 1, y, z + 1, B.red_nether_bricks);
+    ctx.set(x, y + 1, z, B.gold_block);
+    ctx.chest(x - 4, y + 1, z - 4, 'nether_fortress', 2);
+    ctx.chest(x + 4, y + 1, z + 4, 'nether_fortress', 0);
+    ctx.chest(x + 4, y + 1, z - 4, 'nether_fortress', 2);
+  } else if (kind === 'well') {
+    // a well of lava with a low rim
+    fill(ctx, x - 2, y - 1, z - 2, x + 2, y - 1, z + 2, (xx, yy, zz) => fortBrick(ctx, xx, yy, zz));
+    fill(ctx, x - 2, y + 1, z - 2, x + 2, y + 1, z + 2, (xx, yy, zz) => (Math.max(Math.abs(xx - x), Math.abs(zz - z)) === 2 ? B.nether_brick_slab : undefined));
+    fill(ctx, x - 1, y, z - 1, x + 1, y, z + 1, B.lava);
+  } else {
+    // a crossing: a post hanging from the roof, and sometimes something left in a corner
+    ctx.set(x, y + 6, z, F); ctx.set(x, y + 5, z, F);
+    if (ctx.h(x, y, z, 63) < 0.35) ctx.chest(x + 4, y + 1, z - 4, 'nether_fortress', 2);
+  }
+}
+
+// ---- bastions: the snoutlings' strongholds of black brick, in four kinds. All keep gold; the treasure
+// room keeps the best of it.
+const bastStone = (ctx, x, y, z) => {
+  const h = ctx.h(x, y, z, 71);
+  return h < 0.13 ? B.cracked_polished_blackstone_bricks : h < 0.24 ? B.blackstone : h < 0.27 ? B.gilded_blackstone : h < 0.32 ? B.basalt : B.polished_blackstone_bricks;
+};
+// A hollow hall: floor and walls of bastion stone, a roof if asked, battlements if not
+function hall(ctx, x0, y0, z0, x1, y1, z1, roof = true) {
+  fill(ctx, x0, y0, z0, x1, y1, z1, (x, y, z) => {
+    const wall = x === x0 || x === x1 || z === z0 || z === z1;
+    if (y === y0) return bastStone(ctx, x, y, z);
+    if (y === y1) return roof ? bastStone(ctx, x, y, z) : wall && ((x + z) & 1) === 0 ? bastStone(ctx, x, y, z) : 0;
+    return wall ? bastStone(ctx, x, y, z) : 0;
+  });
+  for (let xx = x0; xx <= x1; xx++) for (let zz = z0; zz <= z1; zz++) if ((xx === x0 || xx === x1 || zz === z0 || zz === z1) && ((xx - x0) % 3 === 0 || (zz - z0) % 3 === 0)) footing(ctx, xx, y0, zz, bastStone);
+}
+// A doorway cut through a wall, and the rock cleared in front of it so there is a way up to it
+function gate(ctx, x, y, z, dx, dz, wide = 1, high = 4) {
+  for (let w = -wide; w <= wide; w++) {
+    for (let k = 1; k <= high; k++) ctx.set(x + (dz ? w : 0), y + k, z + (dx ? w : 0), 0);
+    for (let out = 1; out <= 5; out++) { for (let k = 1; k <= high; k++) ctx.set(x + dx * out + (dz ? w : 0), y + k, z + dz * out + (dx ? w : 0), 0); if (ctx.get(x + dx * out + (dz ? w : 0), y, z + dz * out + (dx ? w : 0)) <= 0) ctx.set(x + dx * out + (dz ? w : 0), y, z + dz * out + (dx ? w : 0), B.blackstone); }
+  }
+}
+// A flight of half steps up along x from (x, y, z), climbing `rise` blocks
+function steps(ctx, x, y, z, dir, rise, width = 2) {
+  for (let i = 0; i < rise * 2; i++) for (let w = 0; w < width; w++) {
+    const xx = x + dir * i, top = y + (i >> 1);
+    for (let yy = y + 1; yy <= top; yy++) ctx.set(xx, yy, z + w, bastStone(ctx, xx, yy, z + w));
+    ctx.set(xx, top + 1, z + w, i & 1 ? bastStone(ctx, xx, top + 1, z + w) : B.blackstone_slab);
+    for (let k = 2; k <= 4; k++) ctx.set(xx, top + k, z + w, 0);
+  }
+}
+const goldPile = (ctx, x, y, z) => { for (const [dx, dz] of [[0, 0], [1, 0], [0, 1], [-1, 0], [0, -1]]) ctx.set(x + dx, y, z + dz, B.gold_block); ctx.set(x, y + 1, z, B.gold_block); };
+
+// The treasure room: a keep with a pool of lava for a floor, and in the middle of it a tower holding
+// the hoard, reached by the gallery round the walls
+function buildBastionTreasure(ctx, part) {
+  const { x, z, y } = part, R = 10, H = 16;
+  hall(ctx, x - R, y, z - R, x + R, y + H, z + R, false);
+  // the pool, and a walk along the walls
+  fill(ctx, x - R + 3, y - 1, z - R + 3, x + R - 3, y - 1, z + R - 3, (xx, yy, zz) => bastStone(ctx, xx, yy, zz));
+  fill(ctx, x - R + 3, y, z - R + 3, x + R - 3, y, z + R - 3, B.lava);
+  // the tower in the middle, and the hoard on it
+  fill(ctx, x - 2, y, z - 2, x + 2, y + 6, z + 2, (xx, yy, zz) => (yy === y + 3 && Math.max(Math.abs(xx - x), Math.abs(zz - z)) === 2 ? B.chiseled_polished_blackstone : bastStone(ctx, xx, yy, zz)));
+  fill(ctx, x - 3, y + 7, z - 3, x + 3, y + 7, z + 3, (xx, yy, zz) => bastStone(ctx, xx, yy, zz));
+  goldPile(ctx, x, y + 8, z);
+  ctx.chest(x - 2, y + 8, z - 2, 'bastion_treasure', 0);
+  ctx.chest(x + 2, y + 8, z + 2, 'bastion_treasure', 2);
+  ctx.set(x + 2, y + 8, z - 2, B.gold_block); ctx.set(x - 2, y + 8, z + 2, B.gold_block);
+  // a gallery round the walls at the height of the hoard, a bridge out to it, and steps up
+  fill(ctx, x - R + 1, y + 7, z - R + 1, x + R - 1, y + 7, z + R - 1, (xx, yy, zz) => (Math.max(Math.abs(xx - x), Math.abs(zz - z)) >= R - 2 ? bastStone(ctx, xx, yy, zz) : undefined));
+  fill(ctx, x - 1, y + 7, z - R + 3, x + 1, y + 7, z - 4, (xx, yy, zz) => bastStone(ctx, xx, yy, zz));
+  steps(ctx, x - R + 3, y, z + R - 2, 1, 7, 2);
+  // gold let into the walls, light from lava behind bars high up
+  for (const [dx, dz] of [[R, 0], [-R, 0], [0, R], [0, -R]]) { ctx.set(x + dx, y + 11, z + dz, B.gold_block); ctx.set(x + dx, y + 10, z + dz, B.chiseled_polished_blackstone); ctx.set(x + dx, y + 12, z + dz, B.chiseled_polished_blackstone); }
+  gate(ctx, x, y, z - R, 0, -1, 1, 4);
+}
+// The bridge: a great causeway between two gate towers, with the gold at the middle of the span
+function buildBastionBridge(ctx, part) {
+  const { x, z, y } = part, L = 22;
+  // the deck, its parapets, and the arches under it
+  fill(ctx, x - L, y - 3, z - 4, x + L, y + 8, z + 4, (xx, yy, zz) => {
+    const c = Math.abs(zz - z), a = xx - x, t = Math.abs(((a + L) % 11) - 5);   // (0 at each pier)
+    if (yy > y) return c === 4 && yy === y + 1 ? bastStone(ctx, xx, yy, zz) : c === 4 && yy === y + 2 && (a & 3) === 0 ? B.chiseled_polished_blackstone : 0;
+    if (yy === y) return bastStone(ctx, xx, yy, zz);
+    return y - yy <= (t <= 1 ? 3 : t === 2 ? 2 : t === 3 ? 1 : 0) ? bastStone(ctx, xx, yy, zz) : undefined;
+  });
+  for (let a = -L; a <= L; a++) if (Math.abs(((a + L) % 11) - 5) === 0) for (let c = -4; c <= 4; c++) footing(ctx, x + a, y - 3, z + c, bastStone);
+  // the towers at each end, a room above the gate
+  for (const s of [-1, 1]) {
+    const tx = x + s * (L + 7);
+    hall(ctx, tx - 7, y, z - 5, tx + 7, y + 13, z + 5, false);
+    fill(ctx, tx - 7, y + 6, z - 5, tx + 7, y + 6, z + 5, (xx, yy, zz) => bastStone(ctx, xx, yy, zz));
+    gate(ctx, tx - s * 7, y, z, -s, 0, 2, 4);
+    gate(ctx, tx + s * 7, y, z, s, 0, 2, 4);
+    steps(ctx, tx - 6 * s, y, z + 3, s, 6, 2);
+    ctx.chest(tx, y + 7, z - 4, 'bastion_hall', 2);
+    ctx.set(tx + s * 3, y + 7, z - 4, B.gold_block);
+    fill(ctx, tx - 7, y + 9, z - 5, tx + 7, y + 10, z + 5, (xx, yy, zz) => ((xx === tx - 7 || xx === tx + 7 || zz === z - 5 || zz === z + 5) && (xx + zz) % 3 === 0 ? B.nether_brick_fence : undefined));
+  }
+  // the middle of the span: the hoard under a snout of gold set in the parapet
+  goldPile(ctx, x, y + 1, z);
+  ctx.chest(x - 2, y + 1, z + 3, 'bastion_hall', 2);
+  ctx.chest(x + 2, y + 1, z - 3, 'bastion_hall', 0);
+  for (const c of [-4, 4]) { fill(ctx, x - 1, y + 1, z + c, x + 1, y + 4, z + c, (xx, yy, zz) => (yy === y + 3 && xx !== x ? B.gold_block : yy === y + 2 && xx === x ? B.gold_block : B.chiseled_polished_blackstone)); }
+}
+// The stables: a long hall with a way down the middle and pens of tuskers either side, a loft over one end
+function buildBastionStable(ctx, part) {
+  const { x, z, y } = part, L = 16, W = 8, H = 9;
+  hall(ctx, x - L, y, z - W, x + L, y + H, z + W, true);
+  // pens: low walls with a gap, three a side
+  for (const s of [-1, 1]) for (let k = -1; k <= 1; k++) {
+    const px = x + k * 10, front = z + s * 2;
+    fill(ctx, px - 4, y + 1, front, px + 4, y + 2, front, (xx, yy) => (Math.abs(xx - px) <= 1 ? 0 : yy === y + 1 ? B.polished_blackstone_bricks : B.nether_brick_fence));
+    for (const e of [-5, 5]) fill(ctx, px + e, y + 1, Math.min(front, z + s * (W - 1)), px + e, y + 2, Math.max(front, z + s * (W - 1)), (xx, yy) => (yy === y + 1 ? B.polished_blackstone_bricks : B.nether_brick_fence));
+    ctx.set(px - 3, y + 1, z + s * (W - 1), B.hay_bale); ctx.set(px - 3, y + 2, z + s * (W - 1), B.hay_bale); ctx.set(px - 2, y + 1, z + s * (W - 1), B.hay_bale);
+  }
+  // the loft, with the tack and the takings
+  fill(ctx, x + L - 8, y + 5, z - W + 1, x + L - 1, y + 5, z + W - 1, (xx, yy, zz) => bastStone(ctx, xx, yy, zz));
+  steps(ctx, x + L - 18, y, z - 1, 1, 5, 2);
+  fill(ctx, x + L - 9, y + 6, z - 1, x + L - 8, y + 8, z, 0);
+  ctx.chest(x + L - 2, y + 6, z - W + 2, 'bastion_stable', 3);
+  ctx.chest(x + L - 2, y + 6, z + W - 2, 'bastion_stable', 3);
+  ctx.chest(x - L + 2, y + 1, z, 'bastion_hall', 1);
+  goldPile(ctx, x + L - 4, y + 6, z);
+  // light: lava behind bars in the end walls, shroomlights in the roof
+  for (let k = -1; k <= 1; k++) { ctx.set(x + k * 10, y + H, z, B.shroomlight); }
+  gate(ctx, x - L, y, z, -1, 0, 2, 4);
+  gate(ctx, x, y, z - W, 0, -1, 1, 4);
+}
+// The housing: four blocks of rooms, two floors high, round a yard with a fire of gold in the middle
+function buildBastionHousing(ctx, part) {
+  const { x, z, y } = part, R = 16;
+  // the yard, walled, open to the roof of the cavern
+  hall(ctx, x - R, y, z - R, x + R, y + 6, z + R, false);
+  for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    const bx = x + sx * 10, bz = z + sz * 10;
+    hall(ctx, bx - 6, y, bz - 6, bx + 6, y + 11, bz + 6, true);
+    fill(ctx, bx - 6, y + 5, bz - 6, bx + 6, y + 5, bz + 6, (xx, yy, zz) => bastStone(ctx, xx, yy, zz));
+    // a door to the yard below, windows above, steps inside
+    gate(ctx, bx - sx * 6, y, bz, -sx, 0, 1, 3);
+    for (let k = 2; k <= 3; k++) { ctx.set(bx - sx * 6, y + 6 + k, bz - 1, B.nether_brick_fence); ctx.set(bx - sx * 6, y + 6 + k, bz + 1, B.nether_brick_fence); ctx.set(bx, y + 6 + k, bz - sz * 6, B.nether_brick_fence); }
+    steps(ctx, bx - 5, y, bz + sz * 4 - (sz > 0 ? 1 : 0), 1, 5, 2);
+    // what they keep: a chest downstairs in two of them, upstairs in the others
+    const up = sx === sz;
+    ctx.chest(bx + sx * 4, y + (up ? 6 : 1), bz - sz * 4, 'bastion_hall', sx > 0 ? 1 : 3);
+    ctx.set(bx + sx * 4, y + (up ? 1 : 6), bz - sz * 4, B.gold_block);
+    ctx.set(bx, y + 11, bz, B.shroomlight);
+  }
+  // the middle of the yard: gold on a plinth, lava round it
+  fill(ctx, x - 2, y, z - 2, x + 2, y, z + 2, (xx, yy, zz) => (Math.max(Math.abs(xx - x), Math.abs(zz - z)) === 2 ? B.chiseled_polished_blackstone : B.lava));
+  fill(ctx, x, y, z, x, y + 2, z, B.polished_blackstone_bricks);
+  goldPile(ctx, x, y + 3, z);
+  gate(ctx, x, y, z - R, 0, -1, 2, 4);
+  gate(ctx, x, y, z + R, 0, 1, 2, 4);
+}
+const BASTIONS = {
+  treasure: { r: 11, build: buildBastionTreasure, mobs: [['snoutling_brute', 0, 8, -1], ['snoutling_brute', 1, 8, 1], ['snoutling', -8, 8, 0], ['snoutling', 8, 8, -2], ['snoutling', -8, 1, -8], ['snoutling', 8, 1, 8], ['snoutling', 0, 1, -8]] },
+  bridge: { r: 37, build: buildBastionBridge, mobs: [['snoutling_brute', 1, 1, 0], ['snoutling', -8, 1, 1], ['snoutling', 9, 1, -1], ['snoutling', -29, 1, 0], ['snoutling', 29, 1, 0], ['snoutling', -29, 7, -2], ['snoutling', 29, 7, -2]] },
+  stable: { r: 17, build: buildBastionStable, mobs: [['tusker', -10, 1, 5], ['tusker', 0, 1, 5], ['tusker', 10, 1, -5], ['tusker', -10, 1, -5], ['snoutling', 0, 1, 0], ['snoutling', -6, 1, 0], ['snoutling', 6, 1, 0], ['snoutling_brute', 12, 6, 0]] },
+  housing: { r: 17, build: buildBastionHousing, mobs: [['snoutling', -10, 1, -10], ['snoutling', 10, 1, -10], ['snoutling', -10, 6, 10], ['snoutling', 10, 6, 10], ['snoutling', 3, 1, 3], ['snoutling', -3, 1, -3], ['snoutling_brute', 0, 1, 5], ['tusker', 4, 1, -5]] },
+};
+function planNetherBastion(world, plan, x, z, c, rng) {
+  if (near(plan, world, 'nether_fortress', x, z, 110) || near(plan, world, 'fortress', x, z, 100) || near(plan, world, 'bastion', x, z, 60)) return false;
+  const kind = ['treasure', 'bridge', 'stable', 'housing'][Math.floor(rng() * 4)], V = BASTIONS[kind];
+  const y = kind === 'bridge' ? 46 + Math.floor(rng() * 10) : 36 + Math.floor(rng() * 12);
+  plan.kind = kind;
+  plan.add({ minX: x - V.r - 6, maxX: x + V.r + 6, minZ: z - V.r - 6, maxZ: z + V.r + 6, x, z, y, build: V.build });
+  V.mobs.forEach(([type, dx, dy, dz], i) => plan.mobs.push({ type, x: x + dx + 0.5, y: y + dy, z: z + dz + 0.5, key: `${plan.key}:${type[0]}${i}` }));
+  return true;
+}
+
 // ---------------------------------------------------------------- the End
 // An end city tower of violetstone on an outer island, with a treasure room and clampers on the walls
 function buildEndCity(ctx, part) {
@@ -1507,14 +1827,15 @@ const TYPES = [
     } },
 ];
 TYPES.push(
-  { name: 'fortress', dim: 'nether', spacing: 13, sep: 4, chance: 0.75, radius: 46, ok: () => true,
+  // (the first kinds of fortress and bastion: from 2.0 they stand only where some of their land had already been seen)
+  { name: 'fortress', dim: 'nether', until: 5, spacing: 13, sep: 4, chance: 0.75, radius: 46, ok: () => true,
     plan: (world, plan, x, z, c, rng) => {
       const y = 62 + Math.floor(rng() * 10);
       plan.add({ minX: x - 45, maxX: x + 45, minZ: z - 45, maxZ: z + 45, x, z, y, build: buildFortress });
       plan.fortress = { minX: x - 45, maxX: x + 45, minZ: z - 45, maxZ: z + 45, y };
       return true;
     } },
-  { name: 'bastion', dim: 'nether', spacing: 15, sep: 4, chance: 0.6, radius: 11, ok: (c) => c.biome !== NB.BASALT,
+  { name: 'bastion', dim: 'nether', until: 5, spacing: 15, sep: 4, chance: 0.6, radius: 11, ok: (c) => c.biome !== NB.BASALT,
     plan: (world, plan, x, z, c, rng) => {
       if (near(plan, world, 'fortress', x, z, 90)) return false;
       const y = 40 + Math.floor(rng() * 16);
@@ -1559,6 +1880,12 @@ TYPES.push(
       plan.chest = { x, y: c.h - 2, z };
       return true;
     } },
+);
+// (new kinds go on the end: a kind's place in the list is part of how its spots are picked)
+TYPES.push(
+  // (2.0) the fortress and the bastions as they are now: only in land nobody had seen before
+  { name: 'nether_fortress', dim: 'nether', since: 5, spacing: 13, sep: 4, chance: 0.75, radius: 46, ok: () => true, plan: planNetherFortress },
+  { name: 'nether_bastion', dim: 'nether', since: 5, spacing: 14, sep: 4, chance: 0.7, radius: 44, ok: (c) => c.biome !== NB.BASALT, plan: planNetherBastion },
 );
 const dimOf = (T) => T.dim || 'overworld';
 const TYPE_BY_NAME = Object.fromEntries(TYPES.map((t, i) => [t.name, { ...t, index: i }]));
@@ -1619,7 +1946,15 @@ function regionPlan(world, T, rx, rz) {
   if (cache.has(key)) return cache.get(key);
   cache.set(key, null);
   let plan = null;
-  if (!world.mixed) {
+  if (T.until || T.since > NEW) {
+    // Kinds that changed after 1.8: the old kind stands only where part of its land had been seen before
+    // the change (so it is finished as it was begun), the new kind only where none of its land had been
+    plan = buildPlan(world, T, rx, rz, true);
+    if (plan) {
+      const g = world.genOver(plan.minX, plan.maxX, plan.minZ, plan.maxZ);
+      if (T.until ? g >= T.until : g < T.since) plan = null; else plan.gen = g;
+    }
+  } else if (!world.mixed) {
     plan = buildPlan(world, T, rx, rz, true);
     if (plan) plan.gen = NEW;
   } else {

@@ -6,6 +6,7 @@ import { G, store, load } from './game.js';
 import { validSkin, mySkin } from './skins.js';
 import { R, itemModel, tintModel } from './render.js';
 import { buildModel, holdInHand, lightAt, explosionFx, explosionDamage, spawnBlockParticles } from './entities.js';
+import { decideUse, applyUse } from './mounts.js';
 import { BLOCKS, B, ITEMS } from './blocks.js';
 import { packSlots, unpackSlots } from './inventory.js';
 import { cleanEnch } from './enchant.js';
@@ -149,6 +150,8 @@ export class Avatar {
     this.gold = !!(f & 32);
     this.shield = f & 64 ? 1 : f & 128 ? 2 : 0;   // a shield is up: in the main hand, or the off hand
     this.offId = s[11] | 0;
+    this.seat = (s[12] | 0) / 100;   // riding: how high the seat is
+    this.swim = !!s[13];
     if (s[7] !== this.swings) { if (!first) this.swingT = 0; this.swings = s[7]; }
     if (s[8] < this.hp) this.hurtTime = 0.35;
     this.hp = s[8];
@@ -176,13 +179,17 @@ export class Avatar {
 
     this.phase += hs * dt * 4;
     const sw = Math.sin(this.phase) * Math.min(1, hs / 2) * 0.9;
-    root.position.set(this.pos.x, this.pos.y + (this.sleeping ? 0.3 : 0), this.pos.z);
+    // (sitting on a mount, at its seat; stretched out, swimming)
+    const seat = this.seat || 0;
+    root.rotation.order = 'YXZ';
+    root.position.set(this.pos.x, this.pos.y + (this.sleeping ? 0.3 : seat ? seat - 0.62 : this.swim ? 0.55 : 0), this.pos.z);
     let d = this.yaw + Math.PI - root.rotation.y;
     d = Math.atan2(Math.sin(d), Math.cos(d));
     root.rotation.y += d * Math.min(1, dt * 12);
-    root.rotation.x = this.sleeping ? -Math.PI / 2 : 0;
+    const lean = this.sleeping ? -Math.PI / 2 : this.swim ? 1.3 : 0;
+    root.rotation.x = this.sleeping ? lean : root.rotation.x + (lean - root.rotation.x) * Math.min(1, dt * 8);
     root.rotation.z = this.dead ? Math.min(1, this.deathTime * 3) * Math.PI / 2 : 0;
-    P.leg0.rotation.x = sw; P.leg1.rotation.x = -sw;
+    P.leg0.rotation.x = seat ? -1.4 : sw; P.leg1.rotation.x = seat ? -1.4 : -sw;
     P.arm1.rotation.x = this.shield === 2 ? -0.75 : -sw * 0.8 - (this.offId ? 0.3 : 0);
     // the right arm swings and holds things
     if (this.swingT < 1) {
@@ -475,7 +482,7 @@ export class Net {
     const flags = (p.dead ? 1 : 0) | (p.sneaking && !p.flying ? 2 : 0) | (G.sleeping ? 4 : 0) | (p.flying ? 8 : 0) | (p.burning > 0 ? 16 : 0) | (gold ? 32 : 0)
       | (p.shieldUp ? (p.shieldHand === 1 ? 64 : 128) : 0);
     return [r2(p.pos.x), r2(p.pos.y), r2(p.pos.z), r2(p.yaw), r2(p.pitch), held ? held.id : 0, flags, this.swings, Math.ceil(p.health), p.creative ? 1 : 0,
-      p.armor.map((a) => (a ? a.id : 0)), p.off[0] ? p.off[0].id : 0];
+      p.armor.map((a) => (a ? a.id : 0)), p.off[0] ? p.off[0].id : 0, p.riding ? Math.round(p.riding.def.seat * 100) : 0, p.swimming ? 1 : 0];
   }
 
   chat(from, text) { G.ui.chatLine(from ? `<${from}> ${text}` : text, !from); }
@@ -675,6 +682,28 @@ export class Net {
         m.hurt(+d.d || 0, d.x, d.z, d.p ? 'remote' : false, d.kb ?? 1, a || null, f ? { fire: Math.min(8, +f.fire || 0), loot: Math.min(3, f.loot | 0), arrow: +f.arrow || 0, bolt: f.bolt ? 1 : 0, shot: f.shot | 0, fb: f.fb ? 1 : 0 } : null);
         break;
       }
+      case 'mu': {
+        const m = this.mobIndex.get(d.id);
+        if (m && !m.removed && m.def.mount) this.sendTo(from, { k: 'mur', id: d.id, r: decideUse(m, from, d.i | 0, !!d.s) });
+        break;
+      }
+      case 'mo': {
+        const m = this.mobIndex.get(d.id);
+        if (m && m.riderId === from) { m.riderId = null; m.vDirty = true; }
+        break;
+      }
+      case 'bo': {
+        if (!a || !w || ![d.x, d.y, d.z, d.yaw].every(Number.isFinite) || Math.hypot(d.x - a.pos.x, d.y - a.pos.y, d.z - a.pos.z) > 8) return;
+        const m = G.entities.spawnMob('boat', d.x, d.y, d.z);
+        m.yaw = d.yaw;
+        break;
+      }
+      case 'fbr': {
+        // (a guest hit a fireball back: the nearest one to where they say it was)
+        if (!a || ![d.x, d.y, d.z, d.dx, d.dy, d.dz].every(Number.isFinite)) return;
+        if (G.entities.reflectFireball) G.entities.reflectFireball(d.x, d.y, d.z, { x: d.dx, y: d.dy, z: d.dz });
+        break;
+      }
       case 'stare': {
         const m = this.mobIndex.get(d.id);
         if (!m || m.dead || m.angry) return;
@@ -755,7 +784,11 @@ export class Net {
         if (!w) return;
         for (const a of d.l) {
           const m = this.proxies.get(a[0]);
-          if (m && !m.removed) { m.applyNet(a); if (a[9] && m.def.villager) m.applyVillager(a[9]); }   // (a villager sent again has changed: a new level, a new job)
+          if (m && !m.removed) {
+            m.applyNet(a);
+            if (a[9] && m.def.villager) m.applyVillager(a[9]);   // (a villager sent again has changed: a new level, a new job)
+            if (a[9]) m.applyGear(a[9]);   // (and a mount: saddled, armoured, tamed, or someone has got on or off)
+          }
           else if (a[9]) this.proxies.set(a[0], G.entities.spawnProxy(a));
         }
         for (const id of d.g) {
@@ -773,6 +806,11 @@ export class Net {
           if (it) it.removed = true;
           this.itemProxies.delete(id);
         }
+        break;
+      }
+      case 'mur': {
+        const m = this.proxies.get(d.id);
+        if (m && p && d.r && typeof d.r === 'object') applyUse(p, m, d.r);
         break;
       }
       case 'hurt':

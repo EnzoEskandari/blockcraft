@@ -64,7 +64,43 @@ const TABLELANDS = {
 // shore, and sugar cane on the beach. (The view stands above the water: the lake bed is 8 blocks down.)
 const LAKESIDE = { seed: 2024, at: [2, -22], view: [0, 0, 12.5], pitch: -0.03, time: 0.42, rad: 4, build() {} };
 
+// On a bastion's great bridge in the Nether: the hoard of gold at the middle of the span, a gate tower at
+// each end, lamps along the parapets, and the lava sea a long way down. (The Nether has no ground level:
+// heights are counted from 64, and the deck is at 47.)
+const BASTION_BRIDGE = {
+  seed: 2024, dim: 'nether', at: [552, -328], view: [5, 0, -13.1], pitch: -0.1, time: 0.3, rad: 5, fog: [0.16, 0.03, 0.02],
+  build(put) {
+    // glowstone on the posts of the parapet, and braziers of it in the towers' windows
+    for (let a = -20; a <= 20; a += 4) for (const c of [-4, 4]) put(a, -14, c, 'glowstone');
+    for (const s of [-1, 1]) for (const c of [-3, 3]) { put(s * 23, -13, c, 'shroomlight'); put(s * 23, -8, c, 'glowstone'); }
+    // a few more blocks of the hoard, and a strider's saddle left on a chest
+    for (const [dx, dz] of [[2, 1], [-2, -1], [1, -2]]) put(dx, -16, dz, 'gold_block');
+  },
+};
+
 export const UPDATES = [
+  {
+    version: '2.0', name: 'Nether & Noise', date: '2026-10-09',
+    splashes: ['Saddle up!', 'Neigh!', 'Hee-haw!', 'Mind the lava!', 'Knock it back!', 'Row, row, row!', 'Black brick and gold!', 'Four new lands!', 'It moos now!', 'Two eyes each!',
+      'Swim for it!', 'Ride a strider!', 'What a hoard!', 'Baa!'],
+    scene: BASTION_BRIDGE,
+    notes: [
+      'The biggest update yet. Everything you have built and everywhere you have been stays exactly as it was: the new lands, bastions and fortresses are in parts of the Nether nobody has visited yet.',
+      'Horses and donkeys roam the plains, savannas and meadows. Get on one and hold on: it throws you off until it trusts you (feeding it apples, wheat or bread helps). Once it is tame, put a saddle on it and ride it where you like. Horses are quick and jump two blocks; each one has its own pace. Sneak to get off.',
+      'Saddles are made from three leather and an iron ingot, and turn up in chests. Horse armour (leather, iron, golden, diamond) protects a horse: leather armour can be made, the rest is found. Sneak and use an empty hand to take a saddle or armour off again.',
+      'Boats: five planks in a U. Set one down on water and get in. A boat is the fastest way over water by far, and it gives you the boat back when you break it.',
+      'Swimming: sprint with your head under water and you swim where you look, faster than paddling along the top. Getting through water on foot is slower than it was, by a little over half.',
+      'Striders can be saddled and ridden across lava, and they keep you out of it.',
+      'Bastions are new: strongholds of black brick held by snoutlings, in four kinds. The bridge, the stables (with tuskers in the pens and tack in the loft), the housing round its yard, and the treasure room, whose hoard stands on a tower in a pool of lava and is the best loot in the game.',
+      'Fortresses are rebuilt: a maze of bridges and roofed rooms that is different every time, with cinder spawners on open platforms, gardens of nether wart, treasuries and lava wells.',
+      'Four new lands in the Nether: the Obsidian Spires, the Fungal Caverns with mushrooms the size of trees, the burned-out Ashen Forest, and the Quartz Gardens where crystals grow from floor and roof.',
+      'New blocks: polished blackstone bricks (plain, cracked and chiseled), crying obsidian, red and cracked nether bricks, ash, charred and smouldering logs, quartz pillars.',
+      'A wailer\'s fireball can be knocked back properly now: swing or tap when it is close and in front of you (you no longer have to hit it dead centre), on a laptop or an iPad, in your own world or someone else\'s. Send it near the wailer and it flies straight at it.',
+      'Sounds: cows moo, sheep bleat, pigs grunt and squeal, chickens cluck, villagers hum, and each cries out in its own voice when hit. Stone, wood, earth, gravel, sand, snow, wool, glass and metal each sound like themselves when you walk on, hit or break them.',
+      'Sheep, villagers, witches and pillagers have two eyes again instead of one in the middle.',
+      'On iPad the button that appears beside a villager also works for animals and boats: Tame, Saddle, Feed, Ride, Get in, Get off.',
+    ],
+  },
   {
     // a small update: it keeps the A New Look picture
     version: '1.9.7', name: 'Points of View', date: '2026-10-08',

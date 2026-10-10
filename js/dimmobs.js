@@ -288,12 +288,29 @@ class Fireball {
       addCloud(x, y, z, false);
     }
   }
-  // Hitting a fireball sends it back where you are looking
+  // Hitting a fireball sends it back where you are looking; near enough to whoever shot it, and it is
+  // sent straight at them
   reflect(dir) {
-    this.vel = { x: dir.x * 14, y: dir.y * 14, z: dir.z * 14 };
+    const sp = 20;
+    if (this.owner === 'fx') {
+      // (a guest's copy: the real one is the host's, who is told)
+      this.vel = { x: dir.x * sp, y: dir.y * sp, z: dir.z * sp };
+      this.age = 0;
+      if (G.net) G.net.send({ k: 'fbr', x: this.pos.x, y: this.pos.y, z: this.pos.z, dx: dir.x, dy: dir.y, dz: dir.z });
+      sfx('attack', this.pos);
+      return;
+    }
+    const sh = this.shooter;
+    if (sh && !sh.dead && !sh.removed) {
+      const tx = sh.pos.x - this.pos.x, ty = sh.pos.y + sh.h / 2 - this.pos.y, tz = sh.pos.z - this.pos.z, d = Math.hypot(tx, ty, tz) || 1;
+      if ((tx * dir.x + ty * dir.y + tz * dir.z) / d > 0.9) dir = { x: tx / d, y: ty / d, z: tz / d };
+    }
+    this.vel = { x: dir.x * sp, y: dir.y * sp, z: dir.z * sp };
     this.owner = 'player';
     this.shooter = null;
+    this.age = 0;
     sfx('attack', this.pos);
+    if (G.net) G.net.projectile('fb', [this.pos.x, this.pos.y, this.pos.z, this.vel.x, this.vel.y, this.vel.z, this.kind]);
   }
   dispose() { R.scene.remove(this.mesh); this.mesh.geometry.dispose(); this.mesh.material.dispose(); }
 }
@@ -480,16 +497,33 @@ Entities.prototype.projectileFx = function (kind, a) {
   else if (kind === 'sk') this.projectiles.push(new WitherSkull(a[0], a[1], a[2], a[3], a[4], a[5], a[6], 'fx'));
 };
 
-// The fireball in front of the player, if any (to hit it back)
+// The fireball a swing would hit back: one the swing points at, or any that is close and in front of you
+// (it does not have to be hit dead centre). On a guest's screen these are copies of the host's.
 Entities.prototype.pickFireball = function (ox, oy, oz, dx, dy, dz, maxDist) {
   let best = null, bt = maxDist;
   for (const f of this.projectiles) {
-    if (!(f instanceof Fireball) || f.removed || f.owner !== 'mob' || f.kind === 'dragon') continue;
-    const r = f.hw + 0.4;
-    const t = rayBox(ox, oy, oz, dx, dy, dz, f.pos.x - r, f.pos.y - r, f.pos.z - r, f.pos.x + r, f.pos.y + r, f.pos.z + r);
+    if (!(f instanceof Fireball) || f.removed || f.owner === 'player' || f.kind === 'dragon' || f.sentBack) continue;
+    const r = f.hw + 0.7;
+    let t = rayBox(ox, oy, oz, dx, dy, dz, f.pos.x - r, f.pos.y - r, f.pos.z - r, f.pos.x + r, f.pos.y + r, f.pos.z + r);
+    if (t < 0) {
+      const vx = f.pos.x - ox, vy = f.pos.y - oy, vz = f.pos.z - oz, d = Math.hypot(vx, vy, vz) || 1;
+      if (d < 3.6 && (vx * dx + vy * dy + vz * dz) / d > 0.72) t = d;
+    }
     if (t >= 0 && t < bt) { bt = t; best = f; }
   }
+  if (best && best.owner === 'fx') best.sentBack = true;
   return best;
+};
+// A guest hit one back: the host's fireball nearest to where they saw it goes the way they sent it
+Entities.prototype.reflectFireball = function (x, y, z, dir) {
+  let best = null, bd = 5;
+  for (const f of this.projectiles) {
+    if (!(f instanceof Fireball) || f.removed || f.owner !== 'mob' || f.kind === 'dragon') continue;
+    const d = Math.hypot(f.pos.x - x, f.pos.y - y, f.pos.z - z);
+    if (d < bd) { bd = d; best = f; }
+  }
+  const n = Math.hypot(dir.x, dir.y, dir.z) || 1;
+  if (best) best.reflect({ x: dir.x / n, y: dir.y / n, z: dir.z / n });
 };
 
 // ---------------------------------------------------------------- behaviours
@@ -1031,7 +1065,7 @@ function floorNear(w, x, y, z) {
 
 export function inFortress(w, x, y, z) {
   for (const s of structuresNear(w, x, z, 90)) {
-    const f = s.type === 'fortress' && s.plan && s.plan.fortress;
+    const f = (s.type === 'fortress' || s.type === 'nether_fortress') && s.plan && s.plan.fortress;
     if (f && x >= f.minX && x <= f.maxX && z >= f.minZ && z <= f.maxZ && Math.abs(y - f.y) < 14) return true;
   }
   return false;
@@ -1061,6 +1095,10 @@ function spawnNether(E, w, p) {
     else if (biome === NB.WARPED) type = 'shade';
     else if (biome === NB.SOUL) type = r < 55 ? 'skeleton' : r < 85 ? 'wailer' : 'shade';
     else if (biome === NB.BASALT) type = r < 75 ? 'magma_slime' : 'wailer';
+    else if (biome === NB.OBSIDIAN) type = r < 40 ? 'magma_slime' : r < 72 ? 'charred_skeleton' : 'wailer';
+    else if (biome === NB.FUNGAL) type = r < 38 ? 'tusker' : r < 76 ? 'snoutling' : 'rotting_snoutling';
+    else if (biome === NB.ASH) type = r < 42 ? 'charred_skeleton' : r < 68 ? 'cinder' : r < 88 ? 'skeleton' : 'wailer';
+    else if (biome === NB.QUARTZ) type = r < 50 ? 'shade' : r < 75 ? 'wailer' : 'rotting_snoutling';
     else type = r < 45 ? 'rotting_snoutling' : r < 60 ? 'wailer' : r < 72 ? 'magma_slime' : r < 90 ? 'snoutling' : r < 97 ? 'shade' : 'rotting_tusker';
     let sy = y;
     if (type === 'wailer') {

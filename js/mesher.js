@@ -17,7 +17,7 @@ const topL = new Int16Array(RA);
 const OPAQUE = new Uint8Array(256), SKYPASS = new Uint8Array(256), ATTEN = new Uint8Array(256);
 const EMIT = new Uint8Array(256), RTYPE = new Uint8Array(256), CULLSAME = new Uint8Array(256);
 const TRANS = new Uint8Array(256), TINT = new Uint8Array(256), FACING = new Uint8Array(256), SOLID = new Uint8Array(256);
-const FACE = new Uint8Array(256 * 6), FRONT = new Uint8Array(256);
+const FACE = new Uint16Array(256 * 6), FRONT = new Uint16Array(256);   // (texture layers: there are more than 256 of them)
 // Blocks with a shape of their own: id -> for each way they can face, boxes [x0, y0, z0, x1, y1, z1, layers]
 const MODELS = [];
 
@@ -35,8 +35,8 @@ const GLOW = new Uint8Array(256);   // blocks that shine: 1 all over (glowstone,
 // Blocks that catch the light (see the blocks' shader): 16 glassy stone, 32 polished metal, gems and ice,
 // 48 ore, whose flecks sparkle
 const GLOSS = new Uint8Array(256);
-const GLASSY = ['obsidian', 'blackstone', 'gilded_blackstone', 'dragon_egg', 'coal_block'];
-const POLISHED = ['iron_block', 'gold_block', 'diamond_block', 'emerald_block', 'lapis_block', 'redstone_block', 'copper_block', 'quartz_block', 'ice', 'packed_ice', 'frosted_ice'];
+const GLASSY = ['obsidian', 'crying_obsidian', 'blackstone', 'gilded_blackstone', 'dragon_egg', 'coal_block', 'polished_blackstone_bricks', 'chiseled_polished_blackstone'];
+const POLISHED = ['iron_block', 'gold_block', 'diamond_block', 'emerald_block', 'lapis_block', 'redstone_block', 'copper_block', 'quartz_block', 'quartz_pillar', 'ice', 'packed_ice', 'frosted_ice'];
 const AO = [0.5, 0.68, 0.84, 1];
 // Leaves drawn solid (Textures: Fast): the sides where one leaf block meets another of its kind are left out
 let solidLeaves = false;
@@ -153,7 +153,7 @@ class MeshBuf {
   alloc(cap) {
     const old = this.pos ? this : null;
     this.cap = cap;
-    const pos = new Int16Array(cap * 3), tex = new Uint8Array(cap * 4), col = new Uint8Array(cap * 4);
+    const pos = new Int16Array(cap * 3), tex = new Uint16Array(cap * 4), col = new Uint8Array(cap * 4);
     const lig = new Uint8Array(cap * 2), idx = new Uint32Array(cap * 3);
     if (old) {
       pos.set(old.pos); tex.set(old.tex); col.set(old.col); lig.set(old.lig); idx.set(old.idx);

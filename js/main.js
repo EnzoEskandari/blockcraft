@@ -805,6 +805,7 @@ export const Game = {
   },
 
   teleport(x, y, z) {
+    if (G.player.riding) G.player.dismount();
     const p = G.player, w = G.world;
     if (!p || !Number.isFinite(x + z)) return;
     if (!Number.isFinite(y)) {
@@ -940,7 +941,7 @@ export const Game = {
       if (loot && type === 'chest') {
         c.slots = rollLoot(loot, hash3(w.seed, x, y, z) * 4294967296);
         w.lootChests.delete(key);
-        if (loot === 'bastion') G.adv.did('bastion_loot');
+        if (String(loot).startsWith('bastion')) G.adv.did('bastion_loot');
         if (loot === 'buried_treasure') G.adv.did('treasure');
         // a map found here leads to the nearest buried treasure (where there is none for miles, it is only paper)
         for (const sl of c.slots) if (sl && sl.id === ID.treasure_map) { sl.dmg = treasureFor(w, x, z); if (!sl.dmg) { sl.id = ID.paper; sl.count = 3; } }

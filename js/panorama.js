@@ -17,7 +17,7 @@ export function startPanorama() {
   if (P.world || !sc) return;
   RAD = sc.rad || 3;
   fairWeather();
-  const w = new World(sc.seed, 'overworld');
+  const w = new World(sc.seed, sc.dim || 'overworld');   // (a scene may be in the Nether)
   for (const [x, y, z, key] of sc.place || []) w.setBlockAnywhere(x, y, z, B[key]);
   // where the view is from: a set spot, or (for a scene that is built) the world's spawn, with the scene around it
   P.at = { x: sc.x, y: sc.y, z: sc.z };
@@ -78,7 +78,7 @@ export function panoramaFrame(dt) {
     }
   }
   if (!P.shown) return;
-  G.dim = 'overworld';
+  G.dim = sc.dim || 'overworld';
   P.yaw += dt * 0.045;
   const cam = R.camera;
   cam.position.set(P.at.x, P.at.y, P.at.z);

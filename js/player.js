@@ -13,6 +13,7 @@ import { hitParticles } from './entities.js';
 import { iconColors } from './textures.js';
 import { ench, bonusDamage, wears, protection, xpForLevel } from './enchant.js';
 import { Body } from './body.js';
+import { useMount, useLabel, leaveMount, placeBoat, rideMove, canSteer } from './mounts.js';
 
 const GRAVITY = 32;
 const JUMP_V = 9.0;
@@ -76,6 +77,9 @@ export class Player {
     this.outside = false;
     this.camInWater = this.camInLava = false;
     this.tradeMob = null;
+    this.useLabel = 'Trade';   // what the touch button for it says
+    this.riding = null;        // the horse, donkey, strider or boat you are on
+    this.swimming = false;     // sprinting under water: a proper stroke, quicker than paddling at the top
     this.fovKick = 0;
     this.frozen = true;
     this.lastJumpTap = 0;
@@ -186,7 +190,7 @@ export class Player {
   }
 
   get creative() { return this.mode === 'creative'; }
-  get eyeY() { return this.pos.y + 1.62 - (this.sneaking && !this.flying ? 0.12 : 0); }
+  get eyeY() { return this.riding ? this.pos.y + this.riding.def.seat + 0.95 : this.pos.y + 1.62 - (this.sneaking && !this.flying ? 0.12 : 0) - (this.swimming ? 0.5 : 0); }
 
   get offhand() { return this.off[0]; }
 
@@ -283,10 +287,62 @@ export class Player {
       this.onGround = true;
       return;
     }
-    if (!this.frozen) this.move(dt, input);
-    if (!this.frozen) this.portals(dt);
+    if (!this.frozen) { if (this.riding) this.ride(dt, input); else this.move(dt, input); }
+    if (!this.frozen && !this.riding) this.portals(dt);
     this.interact(dt, input);
     if (!this.creative) this.survival(dt);
+  }
+
+  // ------------------------------------------------------------ riding
+  mountUp(m) {
+    if (this.riding) this.dismount();
+    this.riding = m;
+    m.ridden = true;
+    this.pos.x = m.pos.x; this.pos.y = m.pos.y; this.pos.z = m.pos.z;
+    this.vel.x = this.vel.y = this.vel.z = 0;
+    // (you take up the room the two of you do)
+    this.hw = Math.max(0.3, Math.min(0.6, m.hw)); this.h = m.def.seat + 1.25;
+    this.fallDist = 0; this.sprinting = this.sneaking = this.swimming = false; this.flying = false;
+    this.rideSneak = true;   // (the sneak that may be held from before does not count)
+    if (m.def.boat && G.adv) G.adv.did('boat');
+  }
+  dismount(why) {
+    const m = this.riding;
+    if (!m) return;
+    this.riding = null;
+    this.hw = 0.3; this.h = 1.8;
+    leaveMount(m);
+    // down beside it, or on top of it if there is no room
+    const w = G.world, x = m.pos.x, y = m.pos.y, z = m.pos.z, side = m.hw + 0.5;
+    const spots = [[side, 0], [-side, 0], [0, side], [0, -side]].flatMap(([dx, dz]) => [[dx, 0, dz], [dx, 1, dz]]);
+    const free = spots.find(([dx, dy, dz]) => !boxBlocked(w, x + dx, y + dy, z + dz, 0.3, 1.8) && (m.def.ride.float || w.isSolid(Math.floor(x + dx), Math.floor(y + dy - 0.5), Math.floor(z + dz)) || dy === 0));
+    if (free) { this.pos.x = x + free[0]; this.pos.y = y + free[1] + 0.05; this.pos.z = z + free[2]; } else this.pos.y = y + m.h + 0.05;
+    this.vel.x = this.vel.y = this.vel.z = 0;
+    this.fallDist = 0;
+    if (why === 'buck') { this.vel.y = 5; this.hint('It threw you off! Try again: it trusts you a little more each time'); }
+  }
+  // On a mount: steering it if it will be steered, otherwise carried wherever it goes
+  ride(dt, input) {
+    const m = this.riding, w = G.world;
+    if (m.dead || m.removed || !G.entities.mobs.includes(m)) { this.dismount(); return; }
+    if (!input.sneak) this.rideSneak = false;
+    if (input.sneak && !this.rideSneak) { this.dismount(); return; }
+    if (input.swapHands && !this.dead) this.swapHands();
+    this.sprinting = this.sneaking = this.swimming = this.flying = false;
+    if (canSteer(m)) rideMove(this, dt, input);
+    else {
+      this.pos.x = m.pos.x; this.pos.y = m.pos.y; this.pos.z = m.pos.z;
+      this.vel.x = this.vel.y = this.vel.z = 0;
+      this.onGround = true; this.fallDist = 0;
+    }
+    const bx = Math.floor(this.pos.x), bz = Math.floor(this.pos.z), eye = w.getBlock(bx, Math.floor(this.eyeY), bz);
+    this.inWater = w.getBlock(bx, Math.floor(this.pos.y + m.def.seat + 0.2), bz) === B.water;
+    this.headInWater = eye === B.water;
+    // (a strider keeps you out of the lava it wades in)
+    this.inLava = m.type !== 'strider' && w.getBlock(bx, Math.floor(this.pos.y + 0.1), bz) === B.lava;
+    this.headInLava = eye === B.lava;
+    if (m.type === 'strider' && w.getBlock(bx, Math.floor(this.pos.y - 0.5), bz) === B.lava && G.adv) G.adv.did('strider');
+    this.fovKick += (0 - this.fovKick) * Math.min(1, dt * 8);
   }
 
   move(dt, input) {
@@ -313,12 +369,16 @@ export class Player {
     if (this.spectator) { this.flying = true; this.inWater = this.headInWater = this.inLava = this.headInLava = false; }
 
     this.sneaking = input.sneak && !this.flying && !this.inWater;
+    this.sneakWas = input.sneak;
     let fwd = input.moveZ, str = input.moveX;
     const len = Math.hypot(fwd, str);
     if (len > 1) { fwd /= len; str /= len; }
     const canSprint = this.food > 6 || this.creative;
     if ((input.sprint || input.sprintLatch) && fwd > 0.5 && !this.sneaking && canSprint && !this.eating) this.sprinting = true;
     if (fwd <= 0.1 || this.sneaking || !canSprint || this.eating || this.shieldUp) this.sprinting = false;
+    // Sprinting with your head under water is swimming: you go where you look, quicker than paddling
+    // along the top (and both are a good deal slower than a boat)
+    this.swimming = this.sprinting && this.headInWater && !this.flying;
 
     // (Swift Sneak leggings: sneaking gets closer to walking speed)
     const sneakSpeed = Math.min(WALK, SNEAK + WALK * 0.15 * ench(this.armor[2], 'swift_sneak'));
@@ -332,11 +392,17 @@ export class Player {
     if (inWeb && !this.flying) { speed *= inWeb; this.vel.y = Math.max(this.vel.y, -1.5); }
     if ((this.eating || this.shieldUp) && !this.flying) speed *= 0.35;
     // (Depth Strider boots: each level takes away a third of the water's drag)
-    if (this.inWater && !this.flying) { const drag = this.sprinting ? 0.8 : 0.55; speed *= drag + (1 - drag) * Math.min(3, ench(this.armor[3], 'depth_strider')) / 3; }
+    if (this.inWater && !this.flying) {
+      if (this.sprinting && !this.swimming) speed = WALK;   // (sprinting only counts for anything under water)
+      const drag = this.swimming ? 0.36 : 0.25;
+      speed *= drag + (1 - drag) * Math.min(3, ench(this.armor[3], 'depth_strider')) / 3;
+    }
     if (this.inLava && !this.flying) speed *= 0.35;
     const sy = Math.sin(this.yaw), cy = Math.cos(this.yaw);
-    const wx = (-sy * fwd + cy * str) * speed;
-    const wz = (-cy * fwd - sy * str) * speed;
+    // (a swimmer's speed is shared between along and up or down, by where they look)
+    const level = this.swimming ? Math.cos(this.pitch) : 1;
+    const wx = (-sy * fwd * level + cy * str) * speed;
+    const wz = (-cy * fwd * level - sy * str) * speed;
     const accel = this.flying ? 8 : this.onGround ? 18 : this.inWater ? 7 : 4.5;
     const k = Math.min(1, accel * dt);
     this.vel.x += (wx - this.vel.x) * k;
@@ -351,6 +417,11 @@ export class Player {
       this.vel.y -= 10 * dt;
       if (input.jump) this.vel.y = this.onGround ? JUMP_V * 0.7 : Math.min(this.vel.y + 30 * dt, 2.4);
       this.vel.y = Math.max(this.vel.y, -3);
+    } else if (this.swimming) {
+      // swimming: up and down with where you look (jump and sneak still nudge you)
+      const vy = Math.sin(this.pitch) * speed * fwd + (input.jump ? 1.6 : 0) - (input.sneak ? 1.6 : 0);
+      this.vel.y += (vy - this.vel.y) * Math.min(1, 6 * dt);
+      if (Math.random() < dt * 2.5) sfx('swim', null, { vol: 0.4 });
     } else if (this.inWater) {
       // Water: slow sinking, swim up while jump is held, jump normally off the bottom
       this.vel.y -= 14 * dt;
@@ -581,8 +652,8 @@ export class Player {
     // Attack mobs (left click); a fireball in front can be hit back
     if (input.attackPressed) {
       const r = this.pickRay(input);
-      const fb = G.entities.pickFireball && G.entities.pickFireball(r.ox, r.oy, r.oz, r.dx, r.dy, r.dz, 4);
-      if (fb && (!target || !target.mob)) { fb.reflect(this.lookDir()); this.swing(); }
+      const fb = G.entities.pickFireball && G.entities.pickFireball(r.ox, r.oy, r.oz, r.dx, r.dy, r.dz, 5.5);
+      if (fb && (!target || !target.mob)) { fb.reflect({ x: r.dx, y: r.dy, z: r.dz }); this.swing(); }
       else if (target && target.mob) this.attack(target.mob);
       else this.swing();
       this.mining = null;
@@ -626,11 +697,16 @@ export class Player {
 
     // Touch: a villager you are standing by and facing can be traded with from the Trade button (a tap
     // on a villager hits it, as it does anything else)
-    this.tradeMob = G.touchMode && !this.frozen ? this.villagerInReach() : null;
+    this.tradeMob = G.touchMode && !this.frozen ? (this.riding || this.villagerInReach()) : null;
+    this.useLabel = !this.tradeMob ? '' : this.riding ? 'Get off' : this.tradeMob.def.villager ? 'Trade' : useLabel(this, this.tradeMob);
 
     // Touch tap: hit a mob, otherwise use/place; with food in hand a tap starts eating
     if (input.tap && !this.frozen) {
-      if (this.eating && this.eating.auto) this.eating = null;
+      // (a fireball coming at you is knocked back by a tap on it, or anywhere near it)
+      const r = this.pickRay(input);
+      const fb = (!target || !target.mob) && G.entities.pickFireball && G.entities.pickFireball(r.ox, r.oy, r.oz, r.dx, r.dy, r.dz, 5.5);
+      if (fb) { fb.reflect({ x: r.dx, y: r.dy, z: r.dz }); this.swing(); }
+      else if (this.eating && this.eating.auto) this.eating = null;
       else if (target && target.mob) this.attack(target.mob);
       else if (isFood) {
         if (!this.use(target, true)) {
@@ -674,7 +750,7 @@ export class Player {
     const reach = (this.creative ? 6 : 5) - 1.5;
     let best = null, bd = reach;
     for (const m of G.entities.mobs) {
-      if (!m.def.villager || m.dead) continue;
+      if (!(m.def.villager || m.def.mount) || m.dead) continue;
       const dx = m.pos.x - ex, dy = m.pos.y + m.h * 0.6 - ey, dz = m.pos.z - ez;
       const dist = Math.hypot(dx, dy, dz);
       if (dist >= bd || dist < 0.01) continue;
@@ -688,7 +764,8 @@ export class Player {
   }
   trade() {
     const m = this.tradeMob;
-    if (m && !m.dead && !this.dead && !this.spectator) this.use({ mob: m }, true);
+    if (this.riding) this.dismount();
+    else if (m && !m.dead && !this.dead && !this.spectator) this.use({ mob: m }, true);
   }
 
   crumbs(id) {
@@ -820,6 +897,21 @@ export class Player {
     const it = held ? ITEMS[held.id] : null;
     const t = target && target.block;
     const mob = target && target.mob;
+    if (mob && mob.def.mount && !mob.dead) return useMount(this, mob);
+    // a boat is set down on water (or on the ground) where you point
+    if (held && held.id === ID.boat && !mob) {
+      const r = this.pickRay(this.lastInput || {});
+      const hit = raycast(G.world, r.ox, r.oy, r.oz, r.dx, r.dy, r.dz, 5.5, (id) => id === B.water || BLOCKS[id].solid);
+      if (!hit) return false;
+      const onWater = hit.id === B.water;
+      const x = r.ox + r.dx * hit.dist, z = r.oz + r.dz * hit.dist, y = onWater ? hit.y + 0.9 : hit.y + 1.02;
+      if (!onWater && hit.ny !== 1) return false;
+      if (boxBlocked(G.world, x, y + (onWater ? 0.15 : 0), z, 0.6, 0.5)) { this.hint('There is no room for a boat there'); return true; }
+      placeBoat(x, y, z, this.yaw + Math.PI);
+      if (!this.creative) { held.count--; if (held.count <= 0) this.inv.slots[this.inv.selected] = null; G.ui.invChanged(); }
+      swingHand();
+      return true;
+    }
     if (mob && mob.def.villager && !mob.dead) {
       if (mob.sleeping) { this.hint('This villager is asleep'); return true; }
       if (mob.prof === 'nitwit' || !mob.trades.length) { sfx('villager', mob.pos, { pitch: 0.7 }); this.hint('This villager has no work. Put a job block nearby, like a composter or a lectern'); return true; }
@@ -829,7 +921,7 @@ export class Player {
     }
     if (t && !this.sneaking) {
       const id = t.id;
-      if (BLOCKS[id].bed) { G.game.useBed(t.x, t.y, t.z); return true; }
+      if (BLOCKS[id].bed) { if (this.riding) this.dismount(); G.game.useBed(t.x, t.y, t.z); return true; }
       if (BLOCKS[id].door) { G.game.toggleDoor(t.x, t.y, t.z); swingHand(); return true; }
       if (BLOCKS[id].trapdoor) { G.game.toggleTrapdoor(t.x, t.y, t.z); swingHand(); return true; }
       if (BLOCKS[id].sign) { G.ui.openScreen('sign', { x: t.x, y: t.y, z: t.z }); return true; }
@@ -1319,6 +1411,7 @@ export class Player {
   }
 
   die(kind) {
+    if (this.riding) this.dismount();
     if (G.adv) G.adv.died();
     this.dead = true;
     this.health = 0;

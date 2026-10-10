@@ -1099,6 +1099,54 @@ function bleed(d) {
   for (let i = 0; i < d.length; i += 4) if (d[i + 3] === 0) { d[i] = r; d[i + 1] = g; d[i + 2] = b; }
 }
 
+// (2.0) bastion and fortress stone, and the ground and trees of the Nether's new lands
+Object.assign(PAINTERS, {
+  polished_blackstone_bricks: (p) => p.each((x, y) => {
+    const row = y >> 3, lx = (x + row * 8) & 15, ly = y & 7;
+    if (ly === 7 || lx === 15) return [18, 15, 20];
+    if (ly === 0 || lx === 0) return jit([70, 62, 74], 4, p.r);
+    return jit([48, 42, 52], 6, p.r);
+  }),
+  cracked_polished_blackstone_bricks: (p) => {
+    PAINTERS.polished_blackstone_bricks(p);
+    for (const [x0, y0] of [[3, 1], [11, 9], [6, 10]]) { let x = x0, y = y0; for (let k = 0; k < 5; k++) { p.set(x, y, [14, 11, 16]); x += p.r() < 0.5 ? 1 : 0; y += p.r() < 0.7 ? 1 : 0; } }
+  },
+  chiseled_polished_blackstone: (p) => p.each((x, y) => {
+    const d = Math.max(Math.abs(x - 7.5), Math.abs(y - 7.5));
+    if (d > 7) return [18, 15, 20];
+    if (d > 6) return jit([70, 62, 74], 4, p.r);
+    if (d > 4 && d < 5) return [22, 18, 24];
+    // (a snout carved in the middle)
+    if ((y === 6 && (x === 6 || x === 9)) || (y >= 9 && y <= 10 && x >= 6 && x <= 9)) return [20, 16, 22];
+    return jit([50, 44, 54], 5, p.r);
+  }),
+  crying_obsidian: (p) => {
+    const n = vnoise(p.r, 6);
+    p.each((x, y) => { const v = n(x, y); return v > 0.62 ? [58, 38, 88] : v > 0.42 ? [32, 22, 50] : [18, 14, 28]; });
+    // tears of light running down it
+    for (let k = 0; k < 7; k++) { const x = Math.floor(p.r() * 16), y = Math.floor(p.r() * 12), len = 2 + Math.floor(p.r() * 4); for (let i = 0; i < len; i++) p.set(x, (y + i) & 15, i === 0 ? [226, 170, 255] : [154, 76, 232]); }
+  },
+  red_nether_bricks: (p) => p.each((x, y) => {
+    const row = y >> 2, xx = (x + (row & 1) * 4) & 15;
+    if ((y & 3) === 3 || (xx & 7) === 7) return jit([40, 8, 10], 4, p.r);
+    return jit((row + (xx >> 3)) % 3 === 0 ? [128, 20, 24] : [104, 14, 18], 7, p.r);
+  }),
+  cracked_nether_bricks: (p) => {
+    PAINTERS.nether_bricks(p);
+    for (const [x0, y0] of [[2, 2], [10, 5], [5, 11], [13, 12]]) { let x = x0, y = y0; for (let k = 0; k < 4; k++) { p.set(x, y, [16, 6, 8]); x += p.r() < 0.6 ? 1 : 0; y += p.r() < 0.6 ? 1 : 0; } }
+  },
+  ash: (p) => { const n = vnoise(p.r, 5); p.each((x, y) => jit(n(x, y) > 0.55 ? [92, 88, 90] : [70, 66, 70], 9, p.r)); for (let k = 0; k < 10; k++) p.set(Math.floor(p.r() * 16), Math.floor(p.r() * 16), [40, 36, 40]); },
+  charred_log: (p) => bark(p, [44, 38, 38], [22, 18, 20]),
+  charred_log_top: (p) => logTop(p, [62, 52, 48], [40, 32, 30], [34, 28, 28]),
+  ember_log: (p) => {
+    bark(p, [44, 38, 38], [22, 18, 20]);
+    // cracks still glowing
+    for (let k = 0; k < 5; k++) { const x = Math.floor(p.r() * 16), y = Math.floor(p.r() * 12), len = 2 + Math.floor(p.r() * 3); for (let i = 0; i < len; i++) p.set(x, y + i, i === 1 ? [255, 214, 90] : [240, 110, 24]); }
+  },
+  quartz_pillar: (p) => p.each((x, y) => (x % 4 === 3 ? jit([196, 186, 176], 4, p.r) : x % 4 === 0 ? jit([246, 242, 234], 3, p.r) : jit([232, 226, 216], 4, p.r))),
+  quartz_pillar_top: (p) => p.each((x, y) => { const d = Math.max(Math.abs(x - 7.5), Math.abs(y - 7.5)); return d > 6 ? jit([206, 196, 186], 4, p.r) : jit([238, 232, 224], 4, p.r); }),
+});
+
 export function buildTextures() {
   let layer = 0;
   for (const [name, fn] of Object.entries(PAINTERS)) {
@@ -1164,6 +1212,17 @@ export function drawAscii(rows, pal, size = 16) {
 }
 
 const ART = {
+  saddle: [
+    '....OOOOOOO.....', '...OHHHHHHHOO...', '..OHLLHHHHHHhO..', '..OHHHHHHHHHhO..', '.OhHHHhhhHHHHhO.',
+    '.OhhO.OSO.OhhhO.', '.OO...OSO...OO..', '......OIO.......', '.....OI.IO......', '......OOO.......',
+  ],
+  horse_armor: [
+    '..........OOO...', '.........OHHLO..', '..OOOOOOOOHHHO..', '.OHLHHHHHHHHhO..', '.OHHHHHHHHHhO...',
+    '.OHHhHHHHhHhO...', '.OhhOOhhOOhhO...', '.OhO..OO..OhO...', '..O........O....',
+  ],
+  boat: [
+    '.O............O.', '.OHO........OHO.', '.OHHOOOOOOOOHHO.', '.OhHLLLLLLLLHhO.', '..OhHHHHHHHHhO..', '...OhhhhhhhhO...', '....OOOOOOOO....',
+  ],
   sword: [
     '................', '.............OOO', '............OLLO', '...........OLHO.',
     '..........OLHO..', '.........OLHO...', '........OLHO....', '.......OLHO.....',
@@ -1519,6 +1578,14 @@ const ITEM_ART = {
   salmon: ['fish', pal3([214, 92, 76], [160, 60, 52], [240, 150, 130], { E: [20, 20, 20], O: [96, 34, 30] })],
   cooked_salmon: ['fish', pal3([232, 142, 96], [186, 100, 62], [246, 186, 146], { E: [60, 40, 30], O: [120, 62, 34] })],
 };
+Object.assign(ITEM_ART, {
+  saddle: ['saddle', { O: [50, 28, 12], H: [150, 86, 44], h: [108, 58, 28], L: [196, 128, 76], S: [84, 46, 22], I: [200, 200, 206] }],
+  leather_horse_armor: ['horse_armor', pal3([150, 86, 44], [108, 58, 28], [196, 128, 76], { O: [50, 28, 12] })],
+  iron_horse_armor: ['horse_armor', pal3([214, 214, 214], [150, 150, 150], [250, 250, 250], { O: [70, 70, 74] })],
+  golden_horse_armor: ['horse_armor', pal3([250, 218, 70], [210, 150, 30], [255, 250, 180], { O: [120, 80, 10] })],
+  diamond_horse_armor: ['horse_armor', pal3([74, 226, 212], [30, 160, 150], [200, 255, 250], { O: [14, 80, 76] })],
+  boat: ['boat', pal3([176, 140, 86], [128, 96, 54], [206, 172, 116], { O: [70, 50, 26] })],
+});
 const TOOL_PAL = {
   wooden: [[150, 112, 60], [104, 76, 38], [190, 152, 96]],
   stone: [[128, 128, 128], [88, 88, 88], [170, 170, 170]],

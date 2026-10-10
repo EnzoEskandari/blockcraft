@@ -13,8 +13,9 @@ export const bidx = (x, y, z) => (y << 8) | (z << 4) | x;
 const CAVERN_TOP = 44;   // big caverns stay below this
 // The generator's version. It goes up whenever an update changes how new land is made (1: before Caves &
 // Ores, 2: Caves & Ores, 3: villages with job blocks, 4: Lands & Legends, with its new lands and
-// structures); worlds remember which version made each chunk.
-export const GEN = 4;
+// structures, 5: the Nether's new lands, bastions and fortresses); worlds remember which version made
+// each chunk.
+export const GEN = 5;
 
 // ---- the lands of 1.8: what grows where. [chance of a tree (or spike, or reef) on a column, the kinds]
 const TREES = {
@@ -271,8 +272,16 @@ export class World {
     return { h: Math.round(o.h + (n.h - o.h) * t), biome: t < 0.5 ? o.biome : n.biome };
   }
 
-  // Does this world hold land made by an older version of the game?
-  get mixed() { return this.gens.size > 0 || !!(this.legacy && this.legacy.size); }
+  // Does this world hold land from before 1.8 (generators 1 to 3), whose shape and structures follow the
+  // old rules? (Land marked as generator 4 is shaped the same as today's: only the Nether changed in 5.)
+  get mixed() {
+    if (this._mixedN !== this.gens.size) {
+      this._mixedN = this.gens.size;
+      this._mixed = false;
+      for (const v of this.gens.values()) if (v < 4) { this._mixed = true; break; }
+    }
+    return this._mixed || !!(this.legacy && this.legacy.size);
+  }
 
   // The land of 1.8: the same continents, mountains and climates as before, with each climate split into
   // several kinds of land, oceans told apart, mushroom islands far out to sea and badlands that rise in steps

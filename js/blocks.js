@@ -333,6 +333,19 @@ for (const [i, full, key, name] of [[226, 'acacia_planks', 'acacia_slab', 'Acaci
   const f = BLOCKS[B[full]];
   block(i, key, name, { render: RENDER.SLAB, tex: f.tex, opaque: false, atten: 1, slab: full, hardness: f.hardness, tool: f.tool, level: f.level, sound: f.sound, fuel: 7 });
 }
+// (2.0) what bastions and the reworked fortresses are built of, and the Nether's new lands
+const brickish = { hardness: 1.5, tool: 'pickaxe', level: 0 };
+block(228, 'polished_blackstone_bricks', 'Polished Blackstone Bricks', brickish);
+block(229, 'cracked_polished_blackstone_bricks', 'Cracked Polished Blackstone Bricks', brickish);
+block(230, 'chiseled_polished_blackstone', 'Chiseled Polished Blackstone', brickish);
+block(231, 'crying_obsidian', 'Crying Obsidian', { hardness: 50, tool: 'pickaxe', level: 3, light: 10 });
+block(232, 'red_nether_bricks', 'Red Nether Bricks', { hardness: 2, tool: 'pickaxe', level: 0 });
+block(233, 'cracked_nether_bricks', 'Cracked Nether Bricks', { hardness: 2, tool: 'pickaxe', level: 0 });
+block(234, 'ash', 'Ash', { hardness: 0.5, tool: 'shovel', sound: 'sand' });
+block(235, 'charred_log', 'Charred Log', { tex: { top: 'charred_log_top', bottom: 'charred_log_top', side: 'charred_log' }, hardness: 2, tool: 'axe', sound: 'wood', fuel: 20 });
+block(236, 'ember_log', 'Smouldering Log', { tex: { top: 'charred_log_top', bottom: 'charred_log_top', side: 'ember_log' }, light: 7, hardness: 2, tool: 'axe', sound: 'wood', fuel: 20 });
+block(237, 'quartz_pillar', 'Quartz Pillar', { tex: { top: 'quartz_pillar_top', bottom: 'quartz_pillar_top', side: 'quartz_pillar' }, hardness: 0.8, tool: 'pickaxe', level: 0 });
+
 export const JOB_BLOCKS = {};   // profession -> block id
 for (const b of BLOCKS) if (b && b.job) JOB_BLOCKS[b.job] = b.id;
 
@@ -371,6 +384,7 @@ function item(id, key, name, o = {}) {
     attackSpeed: o.attackSpeed || 4,
     armor: o.armor || null,    // { slot: 0 helmet | 1 chestplate | 2 leggings | 3 boots, points, toughness }
     hidden: !!o.hidden,
+    horseArmor: o.horseArmor || 0,   // the share of a blow this takes off a horse wearing it
   };
   ITEMS[id] = d;
   ID[key] = id;
@@ -445,6 +459,13 @@ item(366, 'clamper_shell', 'Clamper Shell');
 item(367, 'charred_skull', 'Charred Skull');
 item(368, 'copper_ingot', 'Copper Ingot');
 item(369, 'shield', 'Shield', { stack: 1, durability: 336 });
+// (2.0) riding: a saddle for a horse, a donkey or a strider; armour for a horse (how much of a blow it takes away); a boat
+item(370, 'saddle', 'Saddle', { stack: 1 });
+item(371, 'leather_horse_armor', 'Leather Horse Armour', { stack: 1, horseArmor: 0.12 });
+item(372, 'iron_horse_armor', 'Iron Horse Armour', { stack: 1, horseArmor: 0.2 });
+item(373, 'golden_horse_armor', 'Golden Horse Armour', { stack: 1, horseArmor: 0.28 });
+item(374, 'diamond_horse_armor', 'Diamond Horse Armour', { stack: 1, horseArmor: 0.44 });
+item(375, 'boat', 'Boat', { stack: 1 });
 
 export const TOOL_MATERIALS = [
   { key: 'wooden', name: 'Wooden', tier: 0, speed: 2, durability: 59, dmg: 0, ing: '#planks' },
@@ -555,6 +576,13 @@ const RECIPE_DEFS = [
   { in: ['crimson_stem'], out: ['crimson_planks', 4] },
   { in: ['warped_stem'], out: ['warped_planks', 4] },
   { shape: ['X X', ' X '], key: { X: 'iron_ingot' }, out: ['bucket', 1] },
+  { shape: ['P P', 'PPP'], key: { P: '#planks' }, out: ['boat', 1] },
+  { shape: ['LLL', 'LIL'], key: { L: 'leather', I: 'iron_ingot' }, out: ['saddle', 1] },
+  { shape: ['L L', 'LLL', 'L L'], key: { L: 'leather' }, out: ['leather_horse_armor', 1] },
+  { shape: ['BB', 'BB'], key: { B: 'blackstone' }, out: ['polished_blackstone_bricks', 4] },
+  { shape: ['B', 'B'], key: { B: 'blackstone_slab' }, out: ['chiseled_polished_blackstone', 1] },
+  { shape: ['NW', 'WN'], key: { N: 'nether_brick', W: 'nether_wart' }, out: ['red_nether_bricks', 1] },
+  { shape: ['Q', 'Q'], key: { Q: 'quartz_block' }, out: ['quartz_pillar', 2] },
   { in: ['cinder_rod'], out: ['cinder_powder', 2] },
   { in: ['shade_pearl', 'cinder_powder'], out: ['shade_eye', 1] },
   { shape: ['##', '##'], key: { '#': 'nether_brick' }, out: ['nether_bricks', 1] },
@@ -714,6 +742,7 @@ const SMELT_DEFS = {
   copper_ore: 'copper_ingot', cobbled_deepslate: 'deepslate', cod: 'cooked_cod', salmon: 'cooked_salmon',
   deepslate_coal_ore: 'coal', deepslate_iron_ore: 'iron_ingot', deepslate_gold_ore: 'gold_ingot', deepslate_diamond_ore: 'diamond',
   deepslate_redstone_ore: 'redstone', deepslate_lapis_ore: 'lapis_lazuli', deepslate_emerald_ore: 'emerald', deepslate_copper_ore: 'copper_ingot',
+  polished_blackstone_bricks: 'cracked_polished_blackstone_bricks', nether_bricks: 'cracked_nether_bricks', charred_log: 'charcoal', ember_log: 'charcoal',
 };
 
 // Mining a block drops it only with a good enough pickaxe (stone needs wood, iron ore stone,

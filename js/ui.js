@@ -1273,6 +1273,7 @@ export class UI {
     // the Trade button, on touch screens, while a villager is in reach
     const trade = !!p.tradeMob && !p.dead;
     if (c.trade !== trade) { c.trade = trade; $('t-trade').hidden = !trade; }
+    if (trade && c.tradeLabel !== p.useLabel) { c.tradeLabel = p.useLabel; $('t-trade').textContent = p.useLabel; }
     const survival = !p.creative;
     if (c.survival !== survival) { c.survival = survival; $('stats').style.visibility = $('xp-bar').style.visibility = survival ? 'visible' : 'hidden'; }
     const xpKey = p.xpLevel + ':' + Math.round(p.xp / xpForLevel(p.xpLevel) * 200);

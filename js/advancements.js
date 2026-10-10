@@ -16,6 +16,7 @@ const MONSTERS = ['zombie', 'husk', 'drowned', 'zombie_villager', 'skeleton', 's
   'wailer', 'cinder', 'magma_slime', 'snoutling', 'snoutling_brute', 'rotting_snoutling', 'tusker', 'rotting_tusker', 'charred_skeleton', 'shademite', 'clamper', 'void_dragon'];
 const FOODS = () => ITEMS.filter((it) => it && it.food).map((it) => it.key);
 const NETHER_BIOMES = [20, 21, 22, 23, 24];
+const NEW_NETHER_BIOMES = [40, 41, 42, 43];   // (2.0)
 
 // key, tab, title, what to do, icon (an item), experience; `has`: holding any of these items does it;
 // `wear`: wearing armour of this material; `all`: a list to work through (shown as 3 / 9)
@@ -49,6 +50,8 @@ export const ADV = [
   { key: 'blight', tab: 'nether', title: 'Withered Away', desc: 'Destroy the Wither.', icon: 'blight_star', xp: 100, hard: true },
   { key: 'beacon', tab: 'nether', title: 'A Light for Miles', desc: 'Stand by a beacon that is lit: one set on nine blocks of iron, gold, diamond or emerald.', icon: 'beacon', xp: 100, hard: true },
   { key: 'shortcut', tab: 'nether', title: 'A Shortcut Through Fire', desc: 'Use the Nether to travel 7,000 blocks in the Overworld.', icon: 'obsidian', xp: 100, hard: true },
+  { key: 'strider', tab: 'nether', title: 'Hot Foot', desc: 'Ride a saddled strider out over the lava.', icon: 'saddle', xp: 50 },
+  { key: 'new_nether_lands', tab: 'nether', title: 'Further In', desc: 'Visit the Obsidian Spires, the Fungal Caverns, the Ashen Forest and the Quartz Gardens.', icon: 'crying_obsidian', xp: 100, hard: true, all: NEW_NETHER_BIOMES, names: (b) => DIM_BIOME_NAMES[b] },
   { key: 'nether_lands', tab: 'nether', title: 'Hot Spots', desc: 'Visit every kind of land in the Nether.', icon: 'crimson_nylium', xp: 100, hard: true, all: NETHER_BIOMES, names: (b) => DIM_BIOME_NAMES[b] },
   // ---- the End
   { key: 'end_in', tab: 'end', title: 'The End', desc: 'Or the beginning? Enter the End.', icon: 'end_stone', xp: 25 },
@@ -64,6 +67,8 @@ export const ADV = [
   { key: 'trade', tab: 'adventure', title: 'A Fair Trade', desc: 'Trade with a villager.', icon: 'emerald', xp: 10 },
   { key: 'high_trade', tab: 'adventure', title: 'Top of the Market', desc: 'Trade with a villager at the very top of the world.', icon: 'emerald_block', xp: 50, hard: true },
   { key: 'sleep', tab: 'adventure', title: 'Good Night', desc: 'Sleep in a bed.', icon: 'bed_foot', xp: 10 },
+  { key: 'tame', tab: 'adventure', title: 'Easy Now', desc: 'Tame a horse or a donkey by staying on until it stops throwing you.', icon: 'saddle', xp: 25 },
+  { key: 'boat', tab: 'adventure', title: 'Cast Off', desc: 'Get into a boat.', icon: 'boat', xp: 10 },
   { key: 'arrow', tab: 'adventure', title: 'Straight and True', desc: 'Hit something with an arrow.', icon: 'bow', xp: 10 },
   { key: 'sniper', tab: 'adventure', title: 'From a Long Way Off', desc: 'Kill a Skeleton with an arrow from 50 blocks away.', icon: 'arrow', xp: 50, hard: true },
   { key: 'crossbow', tab: 'adventure', title: 'Thunk', desc: 'Shoot a crossbow.', icon: 'crossbow', xp: 10 },
@@ -214,7 +219,7 @@ export class Advancements {
     if (chunk) {
       const biome = chunk.biomes[((bz & 15) << 4) | (bx & 15)];
       if (G.dim === 'overworld') this.part('lands', biome);
-      else if (G.dim === 'nether') this.part('nether_lands', biome);
+      else if (G.dim === 'nether') { this.part('nether_lands', biome); this.part('new_nether_lands', biome); }
     }
     if (G.dim === 'end' && w.flags && w.flags.dragonKilled && this.dragonSeen) this.grant('dragon');
     if (G.dim === 'end' && G.boss) this.dragonSeen = true;   // (you were there for the fight)
@@ -223,6 +228,7 @@ export class Advancements {
         const pl = s.plan;
         if (p.pos.x < pl.minX || p.pos.x > pl.maxX || p.pos.z < pl.minZ || p.pos.z > pl.maxZ) continue;
         if (s.type === 'fortress' || s.type === 'bastion' || s.type === 'end_city') this.grant(s.type);
+        else if (s.type === 'nether_fortress' || s.type === 'nether_bastion') this.grant(s.type.slice(7));
       }
     }
   }

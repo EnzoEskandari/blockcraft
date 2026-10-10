@@ -163,8 +163,9 @@ const BONE = [196, 196, 190];
 const SP_DARK = [54, 46, 42], SP_DARK2 = [38, 32, 30];
 const MOSS = [94, 132, 70], MOSS2 = [116, 122, 108];
 
+// (two eyes, set apart: on a narrow face they sit at its edges, or they would meet in the middle and look like one)
 const eyes = (whiteLeft) => (g, x, y, w) => {
-  const e = Math.max(1, Math.floor(w / 8));
+  const e = w >= 8 ? Math.floor(w / 8) : 0;
   px(g, x + e, y + 2, whiteLeft ? [240, 240, 240] : [20, 20, 20]); px(g, x + e + 1, y + 2, whiteLeft ? [20, 20, 20] : [240, 240, 240]);
   px(g, x + w - e - 2, y + 2, [20, 20, 20]); px(g, x + w - e - 1, y + 2, [240, 240, 240]);
 };
@@ -450,7 +451,8 @@ const PROF_COLORS = {
 const shade = (c, f) => [c[0] * f, c[1] * f, c[2] * f];
 const longFace = (eye, brow, extra) => (g, x, y) => {
   rect(g, x + 1, y + 3, 6, 1, brow);
-  px(g, x + 2, y + 4, [236, 236, 236]); px(g, x + 3, y + 4, eye); px(g, x + 4, y + 4, eye); px(g, x + 5, y + 4, [236, 236, 236]);
+  // (an eye either side of the nose)
+  px(g, x + 1, y + 4, [236, 236, 236]); px(g, x + 2, y + 4, eye); px(g, x + 5, y + 4, eye); px(g, x + 6, y + 4, [236, 236, 236]);
   rect(g, x + 2, y + 8, 4, 1, [100, 64, 54]);
   if (extra) extra(g, x, y);
 };
@@ -563,6 +565,8 @@ Object.assign(MODELS, {
 
 // ---------------------------------------------------------------- mob types
 const drop = (key, min, max) => ({ key, min, max });
+// The look of something that can be saddled: its coat, whether it is saddled, and its armour
+export const gearKey = (g) => `${g.coat | 0}.${g.saddle ? 1 : 0}.${g.armor | 0}`;
 export const MOB_TYPES = {
   pig: { name: 'Pig', hp: 10, w: 0.9, h: 0.9, speed: 1.7, sound: 'pig', pitch: 1.1, drops: [drop('porkchop', 1, 3)], anim: 'quad' },
   cow: { name: 'Cow', hp: 10, w: 0.9, h: 1.4, speed: 1.5, sound: 'cow', pitch: 0.7, drops: [drop('beef', 1, 3), drop('leather', 0, 2)], anim: 'quad' },
@@ -626,6 +630,9 @@ class Mob {
     this.maxHp = this.hp;
     this.variant = type === 'sheep' ? (opts.variant ?? sheepVariant()) : type === 'villager' ? (opts.prof || 'nitwit') : 0;
     this.prof = type === 'villager' ? this.variant : null;
+    // (what a horse, donkey or strider wears and whether it is tame, and who is on it: see mounts.js)
+    if (def.gear) { this.gear = def.gear(opts.gear); this.variant = gearKey(this.gear); }
+    this.riderId = null;   // 'local', or a guest's number
     this.key = opts.key || null;
     this.home = opts.home || { x, y, z };
     this.persistent = !!def.persistent || !!opts.persistent;
@@ -711,10 +718,24 @@ class Mob {
     if (!c || c.kind !== 'trade' || c.data !== this) return;
     if (rebuild) G.ui.buildContainer('trade', this); else G.ui.refreshContainer();
   }
+  // A guest's copy hears from the host what it wears now and who is on it
+  applyGear(o) {
+    if (!this.gear || !o || !o.g || typeof o.g !== 'object') return;
+    Object.assign(this.gear, o.g);
+    this.riderNet = o.r ?? null;
+    const v = gearKey(this.gear);
+    if (v !== this.variant) { this.variant = v; this.swapModel(); }
+  }
+  // What it wears changed: it is drawn again, and guests are told
+  regear() {
+    this.variant = gearKey(this.gear);
+    this.swapModel();
+    this.vDirty = true;
+  }
   swapModel() {
     const old = this.model;
     if (old) { R.scene.remove(old.root); old.mat.dispose(); }
-    this.model = buildModel('villager', this.prof);
+    this.model = buildModel(this.type, this.gear ? gearKey(this.gear) : this.prof);
     this.model.root.rotation.order = 'YXZ';
     this.model.root.position.set(this.pos.x, this.pos.y, this.pos.z);
     this.model.root.rotation.y = this.yaw;
@@ -765,12 +786,13 @@ class Mob {
       this.invul = 0.5;
       this.hurtTime = 0.35;
       this.hp = Math.max(0, this.hp - amount);
-      sfx('mobhurt', this.pos, { pitch: this.def.pitch });
+      sfx('mobhurt', this.pos, { pitch: this.def.pitch, voice: this.def.sound });
       if (byPlayer) { G.lastHitMob = this; G.lastHitTime = G.clock; }
       G.net.send({ k: 'hit', id: this.netId, d: amount, x: fromX, z: fromZ, kb, p: byPlayer ? 1 : 0, ...(fx && (fx.fire || fx.loot || fx.arrow || fx.fb) ? { f: fx } : {}) });
       return true;
     }
     if (this.def.damageScale) { amount *= this.def.damageScale(this, fx); if (amount <= 0) return false; }
+    if (this.gear && this.gear.armor && ITEMS[this.gear.armor]) amount *= 1 - (ITEMS[this.gear.armor].horseArmor || 0);
     if (this.sleeping) wake(this);
     if (fx && fx.fire && !this.def.fireImmune) this.fire = Math.max(this.fire, fx.fire);
     // whoever hit it last gets its experience (and the luck of their Looting)
@@ -784,7 +806,7 @@ class Mob {
     this.vel.x += (dx / d) * 7 * kb * resist;
     this.vel.z += (dz / d) * 7 * kb * resist;
     if (!this.def.flies) this.vel.y = (4 + 1.5 * Math.min(1, kb)) * resist;
-    sfx('mobhurt', this.pos, { pitch: this.def.pitch });
+    sfx('mobhurt', this.pos, { pitch: this.def.pitch, voice: this.def.sound });
     if (byPlayer) {
       if (byPlayer !== 'remote') { G.lastHitMob = this; G.lastHitTime = G.clock; }
       this.provoked = true;
@@ -830,6 +852,9 @@ class Mob {
       this.removed = true;
     }
     if (this.rider) { this.rider.mount = null; this.rider = null; }
+    // what it wore falls with it, and whoever rode it is on foot again
+    if (this.gear) { if (this.gear.saddle) dropItem(ID.saddle, 1, this.pos.x, this.pos.y + 0.5, this.pos.z); if (this.gear.armor) dropItem(this.gear.armor, 1, this.pos.x, this.pos.y + 0.5, this.pos.z); }
+    if (this.def.unseat) this.def.unseat(this);
   }
 
   // Who this mob wants to chase or fight right now
@@ -890,6 +915,8 @@ class Mob {
     if (this.def.slime) o.s = this.size;
     if (this.baby) o.b = 1;
     if (this.trades) { o.u = this.trades.map((tr) => tr.uses); o.vx = this.vx; o.vs = this.vs; }
+    if (this.gear) o.g = this.gear;
+    if (this.riderId != null) o.r = this.riderId === 'local' ? 0 : this.riderId;
     o.m = this.maxHp;
     return o;
   }
@@ -946,6 +973,8 @@ class Mob {
   }
 
   update(dt) {
+    // (someone is riding it: it goes where they take it)
+    if ((this.riderId != null || this.ridden) && this.def.rideTick && this.def.rideTick(this, dt)) return;
     if (this.proxy) { this.proxyUpdate(dt); return; }
     const def = this.def, w = G.world, p = G.player;
     if (def.ai) { def.ai(this, dt); return; }   // flyers, bosses and other special mobs (dimmobs.js)
@@ -2121,6 +2150,7 @@ export class Entities {
     if (e.home) d.h = { x: r(e.home.x), y: r(e.home.y), z: r(e.home.z) };
     if (e.persistent) d.P = 1;
     if (e.trades) d.vst = e.villagerState();
+    if (e.gear) d.g = e.gear;
     return d;
   }
 
@@ -2149,7 +2179,7 @@ export class Entities {
     w.stored.delete(k);
     for (const d of st.m || []) {
       if (d.k && (w.deadMobs.has(d.k) || this.mobs.some((m) => m.key === d.k))) continue;
-      const m = this.spawnMob(d.t, d.x, d.y, d.z, { variant: d.v, prof: d.p, size: d.s, baby: !!d.b, key: d.k, home: d.h, persistent: !!d.P, vst: d.vst && typeof d.vst === 'object' ? d.vst : null });
+      const m = this.spawnMob(d.t, d.x, d.y, d.z, { variant: d.v, prof: d.p, size: d.s, baby: !!d.b, key: d.k, home: d.h, persistent: !!d.P, vst: d.vst && typeof d.vst === 'object' ? d.vst : null, gear: d.g && typeof d.g === 'object' ? d.g : null });
       if (d.hp) m.hp = Math.min(m.maxHp, d.hp);
       m.yaw = d.yaw || 0;
     }
@@ -2185,9 +2215,10 @@ export class Entities {
   // A guest's copy of one of the host's mobs
   spawnProxy(a) {
     const o = a[9];
-    const m = new Mob(o.t, a[1], a[2], a[3], { variant: o.v, prof: o.p, size: o.s, baby: !!o.b, vst: o.t === 'villager' ? { p: o.p, x: o.vx, s: o.vs, u: o.u } : null });
+    const m = new Mob(o.t, a[1], a[2], a[3], { variant: o.v, prof: o.p, size: o.s, baby: !!o.b, gear: o.g, vst: o.t === 'villager' ? { p: o.p, x: o.vx, s: o.vs, u: o.u } : null });
     m.proxy = true;
     m.netId = a[0];
+    m.riderNet = o.r ?? null;
     if (o.m) m.maxHp = o.m;
     m.applyNet(a);
     m.pos.x = a[1]; m.pos.y = a[2]; m.pos.z = a[3];
@@ -2225,7 +2256,7 @@ export class Entities {
   pickMob(ox, oy, oz, dx, dy, dz, maxDist) {
     let best = null, bt = maxDist;
     for (const m of this.mobs) {
-      if (m.dead) continue;
+      if (m.dead || m.ridden) continue;   // (not what you are sitting on)
       const t = rayBox(ox, oy, oz, dx, dy, dz, m.pos.x - m.hw, m.pos.y, m.pos.z - m.hw, m.pos.x + m.hw, m.pos.y + m.h, m.pos.z + m.hw);
       if (t >= 0 && t < bt) { bt = t; best = m; }
     }
@@ -2268,7 +2299,7 @@ export class Entities {
     }
     if (this.spawnTimer <= 0) {
       this.spawnTimer = 1;
-      if (!isClient()) { this.spawnHostiles(); this.despawn(); if (this.tickSpawners) this.tickSpawners(); this.tickGolems(1); }
+      if (!isClient()) { this.spawnHostiles(); this.despawn(); if (this.tickSpawners) this.tickSpawners(); this.tickGolems(1); if (this.tickHerds) this.tickHerds(); }
     }
   }
 
@@ -2323,7 +2354,8 @@ export class Entities {
     const baseX = (rand() * 12 | 0) + 2, baseZ = (rand() * 12 | 0) + 2;
     // (on the mushroom islands there are only mooshrooms)
     const shroom = chunk.biomes[(baseZ << 4) | baseX] === BIOME.MUSHROOM;
-    const type = shroom ? 'mooshroom' : PASSIVE[(rand() * PASSIVE.length) | 0];
+    // (on open grassland they are sometimes horses or donkeys: see mounts.js)
+    const type = shroom ? 'mooshroom' : (this.pickPassive && this.pickPassive(chunk.biomes[(baseZ << 4) | baseX])) || PASSIVE[(rand() * PASSIVE.length) | 0];
     const n = 2 + (rand() * 3 | 0);
     const variant = type === 'sheep' ? sheepVariant() : 0;
     for (let i = 0; i < n; i++) {
