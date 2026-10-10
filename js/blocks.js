@@ -48,6 +48,7 @@ function block(id, key, name, o = {}) {
     plate: !!o.plate,          // a pressure plate
     slow: o.slow || 0,         // movement multiplier while inside (cobweb)
     flammable: o.flammable || 0, // how readily fire burns this block away (0 = never)
+    sapling: o.sapling || null, // the kind of tree it grows into
   };
   BLOCKS[id] = d;
   B[key] = id;
@@ -61,11 +62,12 @@ const range = (key, a, b) => (r) => { const n = a + Math.floor(r() * (b - a + 1)
 const none = () => [];
 
 const plant = { render: RENDER.CROSS, solid: false, opaque: false, hardness: 0, sound: 'grass' };
-const leaves = (extra) => ({
+// (each tree's leaves drop that tree's own sapling)
+const leaves = (extra, sapling = 'oak_sapling') => ({
   opaque: false, cutout: true, hardness: 0.2, sound: 'grass', atten: 1, tool: 'hoe',
   drops: (r) => {
     const out = [];
-    if (r() < 0.05) out.push([ID.oak_sapling, 1]);
+    if (r() < 0.05) out.push([ID[sapling], 1]);
     if (extra && r() < 0.02) out.push([ID.apple, 1]);
     return out;
   },
@@ -88,8 +90,8 @@ block(12, 'oak_log', 'Oak Log', { tex: { top: 'oak_log_top', bottom: 'oak_log_to
 block(13, 'birch_log', 'Birch Log', { tex: { top: 'birch_log_top', bottom: 'birch_log_top', side: 'birch_log' }, hardness: 2, tool: 'axe', sound: 'wood', fuel: 15 });
 block(14, 'spruce_log', 'Spruce Log', { tex: { top: 'spruce_log_top', bottom: 'spruce_log_top', side: 'spruce_log' }, hardness: 2, tool: 'axe', sound: 'wood', fuel: 15 });
 block(15, 'oak_leaves', 'Oak Leaves', { ...leaves(true), tint: 2 });
-block(16, 'birch_leaves', 'Birch Leaves', leaves(false));
-block(17, 'spruce_leaves', 'Spruce Leaves', leaves(false));
+block(16, 'birch_leaves', 'Birch Leaves', leaves(false, 'birch_sapling'));
+block(17, 'spruce_leaves', 'Spruce Leaves', leaves(false, 'spruce_sapling'));
 block(18, 'glass', 'Glass', { opaque: false, cutout: true, cullSame: true, hardness: 0.3, sound: 'glass', drops: none });
 block(19, 'coal_ore', 'Coal Ore', { hardness: 3, tool: 'pickaxe', level: 0, drops: one('coal'), xp: [0, 2], fortune: true });
 block(20, 'iron_ore', 'Iron Ore', { hardness: 3, tool: 'pickaxe', level: 1 });
@@ -118,7 +120,7 @@ block(42, 'tall_grass', 'Grass', { ...plant, tint: 2, replaceable: true, drops: 
 block(43, 'dandelion', 'Dandelion', { ...plant, support: GROUND });
 block(44, 'poppy', 'Poppy', { ...plant, support: GROUND });
 block(45, 'dead_bush', 'Dead Bush', { ...plant, replaceable: true, drops: range('stick', 0, 2), support: () => [B.sand, B.red_sand, B.dirt, B.terracotta, B.podzol] });
-block(46, 'oak_sapling', 'Oak Sapling', { ...plant, support: GROUND });
+block(46, 'oak_sapling', 'Oak Sapling', { ...plant, support: GROUND, sapling: 'oak' });
 block(47, 'pumpkin', 'Pumpkin', { tex: { top: 'pumpkin_top', bottom: 'pumpkin_top', side: 'pumpkin_side' }, hardness: 1, tool: 'axe', sound: 'wood' });
 block(48, 'iron_block', 'Block of Iron', { hardness: 5, tool: 'pickaxe', level: 1, sound: 'metal' });
 block(49, 'gold_block', 'Block of Gold', { hardness: 3, tool: 'pickaxe', level: 2, sound: 'metal' });
@@ -157,10 +159,10 @@ block(80, 'bed_foot', 'Red Bed', { render: RENDER.BED, tex: { top: 'bed_foot_top
 block(81, 'bed_head', 'Red Bed', { render: RENDER.BED, tex: { top: 'bed_head_top', bottom: 'oak_planks', side: 'bed_side' }, solid: false, opaque: false, bed: true, facing: true, hardness: 0.2, sound: 'wool', noItem: true, drops: bedDrop });
 block(82, 'sugar_cane', 'Sugar Cane', { ...plant, support: () => [B.sand, B.red_sand, B.grass, B.dirt, B.podzol, B.sugar_cane] });
 block(83, 'jungle_log', 'Jungle Log', { tex: { top: 'jungle_log_top', bottom: 'jungle_log_top', side: 'jungle_log' }, hardness: 2, tool: 'axe', sound: 'wood', fuel: 15 });
-block(84, 'jungle_leaves', 'Jungle Leaves', { ...leaves(false), tint: 2 });
+block(84, 'jungle_leaves', 'Jungle Leaves', { ...leaves(false, 'jungle_sapling'), tint: 2 });
 block(85, 'jungle_planks', 'Jungle Planks', { hardness: 2, tool: 'axe', sound: 'wood', fuel: 15 });
 block(86, 'dark_oak_log', 'Dark Oak Log', { tex: { top: 'dark_oak_log_top', bottom: 'dark_oak_log_top', side: 'dark_oak_log' }, hardness: 2, tool: 'axe', sound: 'wood', fuel: 15 });
-block(87, 'dark_oak_leaves', 'Dark Oak Leaves', { ...leaves(true), tint: 2 });
+block(87, 'dark_oak_leaves', 'Dark Oak Leaves', { ...leaves(true, 'dark_oak_sapling'), tint: 2 });
 block(88, 'dark_oak_planks', 'Dark Oak Planks', { hardness: 2, tool: 'axe', sound: 'wood', fuel: 15 });
 block(89, 'netherrack', 'Netherrack', { hardness: 0.4, tool: 'pickaxe', level: 0 });
 block(90, 'terracotta', 'Terracotta', { hardness: 1.25, tool: 'pickaxe', level: 0 });
@@ -293,10 +295,10 @@ block(194, 'frosted_ice', 'Frosted Ice', { tex: 'ice', hardness: 0.5, tool: 'pic
 const SOIL = () => [B.grass, B.dirt, B.snowy_grass, B.podzol, B.mycelium];
 const capDrops = (r) => { const n = Math.floor(r() * 3) - 1; return n > 0 ? [[ID.red_mushroom, n]] : []; };
 block(195, 'acacia_log', 'Acacia Log', { tex: { top: 'acacia_log_top', bottom: 'acacia_log_top', side: 'acacia_log' }, hardness: 2, tool: 'axe', sound: 'wood', fuel: 15 });
-block(196, 'acacia_leaves', 'Acacia Leaves', { ...leaves(false), tex: 'oak_leaves', tint: 2 });
+block(196, 'acacia_leaves', 'Acacia Leaves', { ...leaves(false, 'acacia_sapling'), tex: 'oak_leaves', tint: 2 });
 block(197, 'acacia_planks', 'Acacia Planks', { hardness: 2, tool: 'axe', sound: 'wood', fuel: 15 });
 block(198, 'cherry_log', 'Cherry Log', { tex: { top: 'cherry_log_top', bottom: 'cherry_log_top', side: 'cherry_log' }, hardness: 2, tool: 'axe', sound: 'wood', fuel: 15 });
-block(199, 'cherry_leaves', 'Cherry Leaves', leaves(false));
+block(199, 'cherry_leaves', 'Cherry Leaves', leaves(false, 'cherry_sapling'));
 block(200, 'cherry_planks', 'Cherry Planks', { hardness: 2, tool: 'axe', sound: 'wood', fuel: 15 });
 block(201, 'red_sand', 'Red Sand', { hardness: 0.5, tool: 'shovel', sound: 'sand', gravity: true });
 block(202, 'red_terracotta', 'Red Terracotta', { hardness: 1.25, tool: 'pickaxe', level: 0 });
@@ -345,6 +347,13 @@ block(234, 'ash', 'Ash', { hardness: 0.5, tool: 'shovel', sound: 'sand' });
 block(235, 'charred_log', 'Charred Log', { tex: { top: 'charred_log_top', bottom: 'charred_log_top', side: 'charred_log' }, hardness: 2, tool: 'axe', sound: 'wood', fuel: 20 });
 block(236, 'ember_log', 'Smouldering Log', { tex: { top: 'charred_log_top', bottom: 'charred_log_top', side: 'ember_log' }, light: 7, hardness: 2, tool: 'axe', sound: 'wood', fuel: 20 });
 block(237, 'quartz_pillar', 'Quartz Pillar', { tex: { top: 'quartz_pillar_top', bottom: 'quartz_pillar_top', side: 'quartz_pillar' }, hardness: 0.8, tool: 'pickaxe', level: 0 });
+// (1.10.2) a sapling for every kind of tree: each grows into its own tree
+block(238, 'birch_sapling', 'Birch Sapling', { ...plant, support: GROUND, sapling: 'birch' });
+block(239, 'spruce_sapling', 'Spruce Sapling', { ...plant, support: () => [...GROUND(), B.podzol], sapling: 'spruce' });
+block(240, 'jungle_sapling', 'Jungle Sapling', { ...plant, support: GROUND, sapling: 'jungle' });
+block(241, 'dark_oak_sapling', 'Dark Oak Sapling', { ...plant, support: GROUND, sapling: 'dark_oak' });
+block(242, 'acacia_sapling', 'Acacia Sapling', { ...plant, support: GROUND, sapling: 'acacia' });
+block(243, 'cherry_sapling', 'Cherry Sapling', { ...plant, support: GROUND, sapling: 'cherry' });
 
 export const JOB_BLOCKS = {};   // profession -> block id
 for (const b of BLOCKS) if (b && b.job) JOB_BLOCKS[b.job] = b.id;
@@ -355,6 +364,7 @@ const FLAMMABLE = {
   oak_planks: 20, birch_planks: 20, spruce_planks: 20, jungle_planks: 20, dark_oak_planks: 20,
   oak_leaves: 60, birch_leaves: 60, spruce_leaves: 60, jungle_leaves: 60, dark_oak_leaves: 60,
   tall_grass: 100, dead_bush: 100, dandelion: 100, poppy: 100, oak_sapling: 100, hay_bale: 60,
+  birch_sapling: 100, spruce_sapling: 100, jungle_sapling: 100, dark_oak_sapling: 100, acacia_sapling: 100, cherry_sapling: 100,
   bookshelf: 30, oak_fence: 20, crafting_table: 5, tnt: 100, cactus: 0, sugar_cane: 60, oak_door: 5, oak_door_top: 5,
   bed_foot: 20, bed_head: 20, pumpkin: 5, cobweb: 60, nether_wart_block: 0, crimson_roots: 60, warped_roots: 60,
   oak_slab: 20, birch_slab: 20, spruce_slab: 20, jungle_slab: 20, dark_oak_slab: 20,

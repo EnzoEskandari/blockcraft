@@ -156,6 +156,16 @@ function logTop(p, inner, ring, barkC) {
     return jit(Math.floor(d) % 2 ? ring : inner, 5, p.r);
   });
 }
+// a sapling: a little stem (one dot wide, or two) with clumps of leaves on it
+function saplingTex(p, stem, shade, leaf, clumps, wide = 1, from = 10) {
+  p.clear();
+  for (let y = from; y < 16; y++) { p.set(7, y, stem); p.set(8, y, shade); if (wide > 1) p.set(6, y, stem); }
+  for (const [cx, cy, r] of clumps) {
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+      if (Math.hypot(x - cx, y - cy) < r && p.r() < 0.9) p.set(x, y, jit(leaf, 18, p.r));
+    }
+  }
+}
 function leavesTex(p, base) {
   p.each(() => {
     if (p.r() < 0.2) return [0, 0, 0, 0];
@@ -450,6 +460,23 @@ const PAINTERS = {
         if (Math.hypot(x - cx, y - cy) < r && p.r() < 0.9) p.set(x, y, jit([70, 140, 40], 18, p.r));
       }
     }
+  },
+  // (1.10.2) the other trees' saplings, each in its own tree's colours and shape
+  birch_sapling: (p) => saplingTex(p, [222, 222, 212], [150, 150, 142], [112, 150, 64], [[5, 6, 2.4], [10, 5, 2.4], [8, 2, 2], [8, 8, 2.2]]),
+  spruce_sapling: (p) => {
+    p.clear();
+    for (let y = 12; y < 16; y++) { p.set(7, y, [78, 52, 28]); p.set(8, y, [62, 40, 22]); }
+    for (let y = 1; y < 13; y++) {
+      const w = y < 3 ? 0 : 1 + ((y - 1) % 4) + (y > 8 ? 1 : 0);
+      for (let x = 7 - w; x <= 8 + w; x++) if (x >= 0 && x < 16) p.set(x, y, jit([48, 94, 60], 14, p.r));
+    }
+  },
+  jungle_sapling: (p) => saplingTex(p, [104, 80, 36], [84, 62, 26], [52, 150, 32], [[4, 5, 2.4], [11, 5, 2.4], [7, 2, 2], [8, 7, 2.6], [3, 9, 1.6], [12, 9, 1.6]]),
+  dark_oak_sapling: (p) => saplingTex(p, [64, 44, 22], [48, 32, 16], [46, 104, 32], [[5, 6, 3], [10, 6, 3], [8, 3, 2.6], [7, 9, 2.4]], 2),
+  acacia_sapling: (p) => saplingTex(p, [150, 92, 56], [118, 70, 42], [108, 138, 40], [[4, 5, 2.2], [11, 4, 2.2], [8, 3, 1.8], [7, 6, 1.6]], 1, 9),
+  cherry_sapling: (p) => {
+    saplingTex(p, [70, 44, 52], [54, 32, 40], [240, 158, 196], [[5, 6, 2.6], [10, 5, 2.6], [8, 2, 2.2], [7, 8, 2]]);
+    for (let k = 0; k < 8; k++) { const x = Math.floor(p.r() * 16), y = Math.floor(p.r() * 10); if (p.d[(y * 16 + x) * 4 + 3]) p.set(x, y, [255, 214, 232]); }
   },
   pumpkin_side: (p) => p.each((x, y) => {
     let c = x % 4 === 0 ? [190, 104, 18] : [224, 134, 28];

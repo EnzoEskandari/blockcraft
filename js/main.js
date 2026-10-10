@@ -662,12 +662,13 @@ function tickSaplings() {
     if (G.clock < t) continue;
     S.saplings.delete(key);
     const [x, y, z] = key.split(',').map(Number);
-    if (w.getBlock(x, y, z) !== B.oak_sapling) continue;
+    const kind = BLOCKS[w.getBlock(x, y, z)].sapling;
+    if (!kind) continue;
     let clear = true;
     for (let i = 1; i < 6; i++) if (w.getBlock(x, y + i, z) !== 0) clear = false;
     if (!clear) { S.saplings.set(key, G.clock + 60); continue; }
     w.setBlock(x, y, z, 0);
-    w.placeTree(null, Math.random() < 0.15 ? 'birch' : 'oak', x, y, z, Math.random());
+    w.placeTree(null, kind, x, y, z, Math.random());
   }
 }
 
@@ -733,7 +734,7 @@ export const Game = {
   // Saplings, crops and fire the world has to keep ticking
   trackBlock(x, y, z, id) {
     const key = `${x},${y},${z}`;
-    if (id === B.oak_sapling) S.saplings.set(key, G.clock + 60 + Math.random() * 120);
+    if (BLOCKS[id].sapling) S.saplings.set(key, G.clock + 60 + Math.random() * 120);
     if (id >= B.wheat_0 && id <= B.wheat_2) G.world.crops.set(key, 0);
     if (id === B.fire && !G.world.fires.has(key)) G.world.fires.set(key, { t: 0, age: 0 });
   },

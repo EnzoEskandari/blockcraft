@@ -81,6 +81,17 @@ const BASTION_BRIDGE = {
 export const UPDATES = [
   {
     // a small update: it keeps the Nether & Noise picture
+    version: '1.10.2', name: 'Seven Saplings', date: '2026-10-09',
+    splashes: ['Saddle up!', 'Neigh!', 'Hee-haw!', 'Mind the lava!', 'Knock it back!', 'Row, row, row!', 'Black brick and gold!', 'Four new lands!', 'It moos now!', 'Two eyes each!',
+      'Swim for it!', 'Ride a strider!', 'What a hoard!', 'Baa!', 'Plant a cherry tree!'],
+    scene: BASTION_BRIDGE,
+    notes: [
+      'Every tree has its own sapling now: birch, spruce, jungle, dark oak, acacia and cherry, as well as oak. Leaves drop the sapling of their own tree.',
+      'A sapling grows into its own kind of tree. Oak saplings you already have are still oak, and always grow oaks.',
+    ],
+  },
+  {
+    // a small update: it keeps the Nether & Noise picture
     version: '1.10.1', name: 'Rings & Swings', date: '2026-10-09',
     splashes: ['Saddle up!', 'Neigh!', 'Hee-haw!', 'Mind the lava!', 'Knock it back!', 'Row, row, row!', 'Black brick and gold!', 'Four new lands!', 'It moos now!', 'Two eyes each!',
       'Swim for it!', 'Ride a strider!', 'What a hoard!', 'Baa!'],

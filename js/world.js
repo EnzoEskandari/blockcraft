@@ -687,10 +687,10 @@ export class World {
         if (lx < 0 || lx >= CS || lz < 0 || lz >= CS) return;
         const i = (wy << 8) | (lz << 4) | lx;
         const cur = chunk.blocks[i];
-        if (force ? (cur === 0 || BLOCKS[cur].replaceable || BLOCKS[cur].cutout || cur === B.oak_sapling) : (cur === 0 || BLOCKS[cur].replaceable)) chunk.blocks[i] = id;
+        if (force ? (cur === 0 || BLOCKS[cur].replaceable || BLOCKS[cur].cutout || BLOCKS[cur].sapling) : (cur === 0 || BLOCKS[cur].replaceable)) chunk.blocks[i] = id;
       } else {
         const cur = this.getBlock(wx, wy, wz);
-        if (force ? (cur === 0 || BLOCKS[cur].replaceable || BLOCKS[cur].cutout || cur === B.oak_sapling) : (cur === 0 || BLOCKS[cur].replaceable)) this.setBlock(wx, wy, wz, id);
+        if (force ? (cur === 0 || BLOCKS[cur].replaceable || BLOCKS[cur].cutout || BLOCKS[cur].sapling) : (cur === 0 || BLOCKS[cur].replaceable)) this.setBlock(wx, wy, wz, id);
       }
     };
     const rr = (i) => hash3(this.seed, x + i * 17, y, z - i * 31);
