@@ -1099,7 +1099,7 @@ function bleed(d) {
   for (let i = 0; i < d.length; i += 4) if (d[i + 3] === 0) { d[i] = r; d[i + 1] = g; d[i + 2] = b; }
 }
 
-// (2.0) bastion and fortress stone, and the ground and trees of the Nether's new lands
+// (1.10) bastion and fortress stone, and the ground and trees of the Nether's new lands
 Object.assign(PAINTERS, {
   polished_blackstone_bricks: (p) => p.each((x, y) => {
     const row = y >> 3, lx = (x + row * 8) & 15, ly = y & 7;

@@ -7,7 +7,7 @@ import { CS, CH } from './constants.js';
 export const DIMS = ['overworld', 'nether', 'end'];
 
 // Nether biomes (numbered apart from the overworld ones)
-// (2.0 added four more, numbered clear of the overworld's: they are made only in land first seen with
+// (1.10 added four more, numbered clear of the overworld's: they are made only in land first seen with
 // generator 5 or later)
 export const NB = { WASTES: 20, CRIMSON: 21, WARPED: 22, SOUL: 23, BASALT: 24, END: 30, OBSIDIAN: 40, FUNGAL: 41, ASH: 42, QUARTZ: 43 };
 export const DIM_BIOME_NAMES = { 20: 'Nether Wastes', 21: 'Crimson Forest', 22: 'Warped Forest', 23: 'Soul Sand Valley', 24: 'Basalt Deltas', 30: 'The End',

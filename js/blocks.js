@@ -333,7 +333,7 @@ for (const [i, full, key, name] of [[226, 'acacia_planks', 'acacia_slab', 'Acaci
   const f = BLOCKS[B[full]];
   block(i, key, name, { render: RENDER.SLAB, tex: f.tex, opaque: false, atten: 1, slab: full, hardness: f.hardness, tool: f.tool, level: f.level, sound: f.sound, fuel: 7 });
 }
-// (2.0) what bastions and the reworked fortresses are built of, and the Nether's new lands
+// (1.10) what bastions and the reworked fortresses are built of, and the Nether's new lands
 const brickish = { hardness: 1.5, tool: 'pickaxe', level: 0 };
 block(228, 'polished_blackstone_bricks', 'Polished Blackstone Bricks', brickish);
 block(229, 'cracked_polished_blackstone_bricks', 'Cracked Polished Blackstone Bricks', brickish);
@@ -459,7 +459,7 @@ item(366, 'clamper_shell', 'Clamper Shell');
 item(367, 'charred_skull', 'Charred Skull');
 item(368, 'copper_ingot', 'Copper Ingot');
 item(369, 'shield', 'Shield', { stack: 1, durability: 336 });
-// (2.0) riding: a saddle for a horse, a donkey or a strider; armour for a horse (how much of a blow it takes away); a boat
+// (1.10) riding: a saddle for a horse, a donkey or a strider; armour for a horse (how much of a blow it takes away); a boat
 item(370, 'saddle', 'Saddle', { stack: 1 });
 item(371, 'leather_horse_armor', 'Leather Horse Armour', { stack: 1, horseArmor: 0.12 });
 item(372, 'iron_horse_armor', 'Iron Horse Armour', { stack: 1, horseArmor: 0.2 });

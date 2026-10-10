@@ -72,7 +72,7 @@ async function check(fx) {
       if (!(t > e.golem.left - 600 && t <= e.golem.left)) bad.push(`the village's wait for a golem is ${t}, expected about ${e.golem.left}`);
       if (!G.world.deadMobs.has(e.golem.key)) bad.push('the dead golem is no longer counted as dead');
     }
-    // a tamed, saddled horse is still there with its tack, and still tame (2.0 on)
+    // a tamed, saddled horse is still there with its tack, and still tame (1.10 on)
     if (e.horse) {
       const h = G.entities.mobs.find((m) => m.type === 'horse' && m.gear && m.gear.coat === e.horse.coat);
       if (!h) bad.push('the horse is gone');

@@ -118,7 +118,7 @@ const LOOT = {
       ['golden_axe', 1, 1, 4], ['diamond_sword', 1, 1, 2], ['diamond_chestplate', 1, 1, 2], ['obsidian', 2, 6, 6], ['magma_cream', 2, 6, 6], ['cinder_rod', 1, 3, 3],
       ['shade_pearl', 1, 2, 4], ['arrow', 5, 17, 6], ['gilded_blackstone', 2, 6, 5], ['string', 3, 8, 5]],
   },
-  // (2.0) the reworked fortress, and the bastions: a hall's chest is good, the stable's has tack, the treasure room's is the best there is
+  // (1.10) the reworked fortress, and the bastions: a hall's chest is good, the stable's has tack, the treasure room's is the best there is
   nether_fortress: {
     rolls: [4, 7], wear: [0, 0.25], sure: [['gold_ingot', 2, 5]],
     items: [['diamond', 1, 3, 6], ['iron_ingot', 2, 6, 5], ['gold_ingot', 2, 5, 12], ['golden_sword', 1, 1, 4], ['golden_chestplate', 1, 1, 4], ['flint_and_steel', 1, 1, 4],
@@ -1345,7 +1345,7 @@ function buildBastion(ctx, part) {
   ctx.set(x + 3, y + 1, z + 3, B.magma_block);
 }
 
-// ---------------------------------------------------------------- the Nether, from 2.0
+// ---------------------------------------------------------------- the Nether, from 1.10
 // Fills a box: `pick` is a block, or a function giving the block for each place (undefined: leave it)
 function fill(ctx, x0, y0, z0, x1, y1, z1, pick) {
   for (let zz = z0; zz <= z1; zz++) for (let xx = x0; xx <= x1; xx++) {
@@ -1827,7 +1827,7 @@ const TYPES = [
     } },
 ];
 TYPES.push(
-  // (the first kinds of fortress and bastion: from 2.0 they stand only where some of their land had already been seen)
+  // (the first kinds of fortress and bastion: from 1.10 they stand only where some of their land had already been seen)
   { name: 'fortress', dim: 'nether', until: 5, spacing: 13, sep: 4, chance: 0.75, radius: 46, ok: () => true,
     plan: (world, plan, x, z, c, rng) => {
       const y = 62 + Math.floor(rng() * 10);
@@ -1883,7 +1883,7 @@ TYPES.push(
 );
 // (new kinds go on the end: a kind's place in the list is part of how its spots are picked)
 TYPES.push(
-  // (2.0) the fortress and the bastions as they are now: only in land nobody had seen before
+  // (1.10) the fortress and the bastions as they are now: only in land nobody had seen before
   { name: 'nether_fortress', dim: 'nether', since: 5, spacing: 13, sep: 4, chance: 0.75, radius: 46, ok: () => true, plan: planNetherFortress },
   { name: 'nether_bastion', dim: 'nether', since: 5, spacing: 14, sep: 4, chance: 0.7, radius: 44, ok: (c) => c.biome !== NB.BASALT, plan: planNetherBastion },
 );

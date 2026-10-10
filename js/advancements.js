@@ -16,7 +16,7 @@ const MONSTERS = ['zombie', 'husk', 'drowned', 'zombie_villager', 'skeleton', 's
   'wailer', 'cinder', 'magma_slime', 'snoutling', 'snoutling_brute', 'rotting_snoutling', 'tusker', 'rotting_tusker', 'charred_skeleton', 'shademite', 'clamper', 'void_dragon'];
 const FOODS = () => ITEMS.filter((it) => it && it.food).map((it) => it.key);
 const NETHER_BIOMES = [20, 21, 22, 23, 24];
-const NEW_NETHER_BIOMES = [40, 41, 42, 43];   // (2.0)
+const NEW_NETHER_BIOMES = [40, 41, 42, 43];   // (1.10)
 
 // key, tab, title, what to do, icon (an item), experience; `has`: holding any of these items does it;
 // `wear`: wearing armour of this material; `all`: a list to work through (shown as 3 / 9)

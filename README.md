@@ -54,7 +54,7 @@ How it works:
 - Animals, villagers and dropped items are kept when you walk away.
 - Press **T** (or the **T** button on iPad) to chat.
 
-## Nether & Noise (2.0)
+## Nether & Noise (1.10)
 
 - **Explored land is untouched.** The generator version is 5 (`GEN` in `js/world.js`). A save from an older version has every chunk people had seen marked as generator 4, so only unseen parts of the Nether get the new lands and buildings. `netherBiome` gives the four new lands (numbered 40 to 43 in `NB`) only where `genAt` is 5 or more. The first kinds of fortress and bastion have `until: 5` in `TYPES` and stand only where part of their land had been seen; `nether_fortress` and `nether_bastion` have `since: 5` and stand only where none of it had. New kinds go on the **end** of `TYPES`: a kind's place in the list is part of how its spots are picked.
 - **Fortress**: `planNetherFortress` walks a maze over a 7 by 7 grid of 13-block cells; `buildFortCell` makes each a bridge (a straight run) or a room (crossing, spawner platform, wart garden, treasury, lava well). **Bastions**: `planNetherBastion` picks one of four builders (`BASTIONS`): treasure room, bridge, stables, housing. Loot tables `nether_fortress`, `bastion_hall`, `bastion_stable`, `bastion_treasure`.

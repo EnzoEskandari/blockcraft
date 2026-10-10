@@ -80,7 +80,7 @@ const BASTION_BRIDGE = {
 
 export const UPDATES = [
   {
-    version: '2.0', name: 'Nether & Noise', date: '2026-10-09',
+    version: '1.10', name: 'Nether & Noise', date: '2026-10-09',
     splashes: ['Saddle up!', 'Neigh!', 'Hee-haw!', 'Mind the lava!', 'Knock it back!', 'Row, row, row!', 'Black brick and gold!', 'Four new lands!', 'It moos now!', 'Two eyes each!',
       'Swim for it!', 'Ride a strider!', 'What a hoard!', 'Baa!'],
     scene: BASTION_BRIDGE,
