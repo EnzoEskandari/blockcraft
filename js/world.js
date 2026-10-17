@@ -1,6 +1,6 @@
 // Chunk storage and terrain generation.
 import { Simplex, mulberry32, hash3, fbm2, smoothstep } from './noise.js';
-import { B, BLOCKS } from './blocks.js';
+import { B, BLOCKS, RENDER } from './blocks.js';
 import { CS, CH, SEA, BIOME, BIOME_NAMES, FROZEN } from './constants.js';
 import { stampStructures, structurePartsNear } from './structures.js';
 import { generateNether, generateEnd, netherBiome, endColumn, placeDebris } from './dims.js';
@@ -52,6 +52,10 @@ const BANDS = ['terracotta', 'orange_terracotta', 'terracotta', 'terracotta', 'y
   'red_terracotta', 'terracotta', 'orange_terracotta', 'terracotta', 'terracotta', 'white_terracotta', 'red_terracotta', 'orange_terracotta'].map((k) => B[k]);
 
 const FULL = [0, 1], BOTTOM_HALF = [0, 0.5], TOP_HALF = [0.5, 1], TRAP_BOTTOM = [0, 0.1875], TRAP_TOP = [0.8125, 1];
+// Fences stand a block and a half tall to walk into (1.10.7): too high to jump without Jump Boost, and no
+// animal gets over one. The extra half is the bottom of the cell above, when nothing solid is there.
+const FENCE = new Uint8Array(256);
+for (const b of BLOCKS) if (b && b.render === RENDER.FENCE) FENCE[b.id] = 1;
 
 export class Chunk {
   constructor(cx, cz) {
@@ -168,7 +172,7 @@ export class World {
     if (!c) return FULL;
     const i = (y << 8) | ((z & 15) << 4) | (x & 15);
     const b = BLOCKS[c.blocks[i]];
-    if (!b.solid) return null;
+    if (!b.solid) return y > 0 && FENCE[c.blocks[i - 256]] ? BOTTOM_HALF : null;   // (the top of a fence below)
     const m = c.meta ? c.meta[i] : 0;
     if (b.door) return m & 4 ? null : FULL;
     if (b.slab) return m & 1 ? TOP_HALF : BOTTOM_HALF;

@@ -1,7 +1,7 @@
 // The player: movement, mining, placing, eating, combat, hunger and health.
 import * as THREE from 'three';
 import { G } from './game.js';
-import { BLOCKS, ITEMS, ID, B, canHarvest } from './blocks.js';
+import { BLOCKS, ITEMS, ID, B, RENDER, canHarvest } from './blocks.js';
 import { throwEye } from './dimmobs.js';
 import { treasureFor } from './structures.js';
 import { activateEndPortal } from './dims.js';
@@ -430,6 +430,7 @@ export class Player {
     this.vel.x += (wx - this.vel.x) * k;
     this.vel.z += (wz - this.vel.z) * k;
 
+    let vyMid = null;   // (falling or jumping: how fast it went on average over this frame)
     if (this.flying) {
       const vy = ((input.jump ? 1 : 0) - (input.sneak ? 1 : 0)) * speed * 0.75;
       this.vel.y += (vy - this.vel.y) * Math.min(1, 10 * dt);
@@ -455,15 +456,21 @@ export class Player {
       this.vel.y = Math.max(this.vel.y, -5);
       if (Math.random() < dt * 2 && Math.hypot(this.vel.x, this.vel.z) > 1) sfx('swim', null, { vol: 0.4 });
     } else {
+      // (moved by its average speed over the frame, so a jump goes just as high whatever the frame rate:
+      // at a low one it used to go higher, high enough to land on a fence)
+      const v0 = this.vel.y;
       this.vel.y = Math.max(this.vel.y - GRAVITY * dt, -78);
+      vyMid = (v0 + this.vel.y) / 2;
       if (input.jump && this.onGround) {
-        this.vel.y = this.jumpV();
+        const v = this.jumpV();
+        this.vel.y = v - GRAVITY * dt;
+        vyMid = v - GRAVITY * dt / 2;
         if (this.sprinting) { this.vel.x += -sy * 2; this.vel.z += -cy * 2; }
         this.exhaustion += this.sprinting ? 0.2 : 0.05;
       }
     }
 
-    let dx = this.vel.x * dt, dy = this.vel.y * dt, dz = this.vel.z * dt;
+    let dx = this.vel.x * dt, dy = (vyMid ?? this.vel.y) * dt, dz = this.vel.z * dt;
     // Sneaking keeps you from walking off edges
     if (this.sneaking && this.onGround) {
       const P = this.pos;
@@ -495,7 +502,8 @@ export class Player {
       const assist = input.jump || G.settings.autoJump || G.touchMode;
       if (wet && climb <= 2.2 && assist) this.vel.y = Math.max(this.vel.y, 8.2);
       else if (this.inWater && climb <= 5 && assist) this.vel.y = Math.max(this.vel.y, 4.2); // swim up the wall toward the exit
-      else if (!wet && this.onGround && climb <= 1.1 && G.settings.autoJump) this.vel.y = this.jumpV();
+      // (only as high as you can jump: a fence needs Jump Boost)
+      else if (!wet && this.onGround && climb <= (this.jumpV() ** 2) / (2 * GRAVITY) - 0.15 && G.settings.autoJump) this.vel.y = this.jumpV();
     }
 
     if (this.flying && this.onGround && !input.jump) this.flying = false;
@@ -567,9 +575,12 @@ export class Player {
     while (top < y0 + 6 && w.isSolid(bx, top, bz)) top++;
     if (top === y0) return Infinity;
     if (w.isSolid(bx, top + 1, bz)) return Infinity;
+    // (a fence is half a block taller than it looks: see World.solidSpan)
+    const fence = BLOCKS[w.getBlock(bx, top - 1, bz)].render === RENDER.FENCE ? 0.5 : 0;
+    if (fence && w.isSolid(bx, top + 2, bz)) return Infinity;
     const px = Math.floor(this.pos.x), pz = Math.floor(this.pos.z);
     for (let y = Math.floor(this.pos.y + this.h); y <= top + 1; y++) if (w.isSolid(px, y, pz)) return Infinity;
-    return top - this.pos.y;
+    return top + fence - this.pos.y;
   }
 
   stepSound(land) {

@@ -2,7 +2,7 @@
 // those with one visit it now and then, and at sunset everyone walks home to a bed (opening and shutting
 // doors on the way) and sleeps until morning. Only the game that runs the world decides this; guests see it.
 import { G } from './game.js';
-import { BLOCKS, B } from './blocks.js';
+import { BLOCKS, B, RENDER } from './blocks.js';
 import { sfx } from './audio.js';
 
 const rand = Math.random;
@@ -13,9 +13,12 @@ const key3 = (x, y, z) => `${x},${y},${z}`;
 export const bedtime = () => G.dim === 'overworld' && G.time >= 0.5;
 
 // ---------------------------------------------------------------- finding a way
+// (a fence is a block and a half tall to walk into: the cell above one is no way through, see World.solidSpan)
+const onFence = (w, x, y, z) => BLOCKS[w.getBlock(x, y - 1, z)].render === RENDER.FENCE;
 // Can a villager's body be in this cell? (it opens doors, so those count as open)
 function passable(w, x, y, z) {
   const id = w.getBlock(x, y, z);
+  if ((id === 0 || !BLOCKS[id].solid) && onFence(w, x, y, z)) return false;
   if (id === 0) return true;
   const b = BLOCKS[id];
   if (b.door) return true;

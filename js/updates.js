@@ -81,6 +81,19 @@ const BASTION_BRIDGE = {
 export const UPDATES = [
   {
     // a small update: it keeps the Nether & Noise picture
+    version: '1.10.7', name: 'Good Fences', date: '2026-10-17',
+    splashes: ['Saddle up!', 'Neigh!', 'Hee-haw!', 'Mind the lava!', 'Knock it back!', 'Row, row, row!', 'Black brick and gold!', 'Four new lands!', 'It moos now!', 'Two eyes each!',
+      'Swim for it!', 'Ride a strider!', 'What a hoard!', 'Baa!', 'Plant a cherry tree!', 'Tougher than diamond!', 'Mind the drop!', 'Hold your horses!', 'Tie it up!', 'Walkies!',
+      'Hatch a dragon!', 'Build it higher!', 'Speed II!', 'Wild horses!', 'Good fences!'],
+    scene: BASTION_BRIDGE,
+    notes: [
+      'Fences keep things in. They are a block and a half tall to walk into, as in Minecraft: too high to jump, so no animal or monster gets over one, and you need Jump Boost from a beacon to get over yourself. You can stand on top of a fence. A horse you ride can still jump a fence.',
+      'A jump goes just as high however fast the game is running. When the game was slow, jumps went higher than they should, high enough to land on a fence.',
+      'Villagers find their way round fences instead of trying to climb them.',
+    ],
+  },
+  {
+    // a small update: it keeps the Nether & Noise picture
     version: '1.10.6', name: 'Steady Now', date: '2026-10-16',
     splashes: ['Saddle up!', 'Neigh!', 'Hee-haw!', 'Mind the lava!', 'Knock it back!', 'Row, row, row!', 'Black brick and gold!', 'Four new lands!', 'It moos now!', 'Two eyes each!',
       'Swim for it!', 'Ride a strider!', 'What a hoard!', 'Baa!', 'Plant a cherry tree!', 'Tougher than diamond!', 'Mind the drop!', 'Hold your horses!', 'Tie it up!', 'Walkies!',
