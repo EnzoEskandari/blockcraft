@@ -1035,8 +1035,7 @@ class Mob {
     const def = this.def, w = G.world, p = G.player;
     if (def.ai) { def.ai(this, dt); return; }   // flyers, bosses and other special mobs (dimmobs.js)
     if (def.tick) def.tick(this, dt);
-    // (on a lead: see leads.js; when it is pulled tight the animal goes where the lead takes it)
-    const pull = def.leadTick && this.gear && this.gear.lead != null && !this.dead ? def.leadTick(this, dt) : null;
+    const yaw0 = this.yaw;   // (where it faced before it decided anything this frame: see the lead, below)
     this.age += dt;
     this.hurtTime -= dt;
     this.invul -= dt;
@@ -1192,7 +1191,14 @@ class Mob {
       this.fuse = Math.max(0, this.fuse - dt);
     }
 
-    if (pull) { mx = pull.mx; mz = pull.mz; speed = pull.speed; this.yaw = Math.atan2(mx, mz); }
+    // On a lead (leads.js): pulled tight, it goes where the lead takes it, turning smoothly; near the end of
+    // the lead it does not wander further off, it stands
+    const pull = def.leadTick && this.gear && this.gear.lead != null ? def.leadTick(this, dt, mx, mz, speed) : null;
+    if (pull) {
+      mx = pull.mx; mz = pull.mz; speed = pull.speed;
+      const d = speed ? Math.atan2(Math.sin(Math.atan2(mx, mz) - yaw0), Math.cos(Math.atan2(mx, mz) - yaw0)) : 0;
+      this.yaw = yaw0 + Math.max(-dt * 6, Math.min(dt * 6, d));
+    }
 
     // Villagers restock their trades each morning
     if (def.villager && (G.day || 0) !== this.restockDay && G.time < 0.1) {

@@ -81,6 +81,18 @@ const BASTION_BRIDGE = {
 export const UPDATES = [
   {
     // a small update: it keeps the Nether & Noise picture
+    version: '1.10.6', name: 'Steady Now', date: '2026-10-16',
+    splashes: ['Saddle up!', 'Neigh!', 'Hee-haw!', 'Mind the lava!', 'Knock it back!', 'Row, row, row!', 'Black brick and gold!', 'Four new lands!', 'It moos now!', 'Two eyes each!',
+      'Swim for it!', 'Ride a strider!', 'What a hoard!', 'Baa!', 'Plant a cherry tree!', 'Tougher than diamond!', 'Mind the drop!', 'Hold your horses!', 'Tie it up!', 'Walkies!',
+      'Hatch a dragon!', 'Build it higher!', 'Speed II!', 'Wild horses!'],
+    scene: BASTION_BRIDGE,
+    notes: [
+      'An animal tied to a fence post no longer shakes. At the end of its lead it used to be pulled in and let go again over and over; now the lead stays tight until it is well inside, it turns smoothly, and near the end of the lead it stands still instead of trying to wander off.',
+      'Wild horses and donkeys are much commoner. On grassland, savanna and meadows you have not been to yet, two groups of animals in five are horses and one in ten donkeys. On land you know, up to three herds a day can wander in (it was one), with three to five horses in each.',
+    ],
+  },
+  {
+    // a small update: it keeps the Nether & Noise picture
     version: '1.10.5', name: 'Eggs & Beacons', date: '2026-10-16',
     splashes: ['Saddle up!', 'Neigh!', 'Hee-haw!', 'Mind the lava!', 'Knock it back!', 'Row, row, row!', 'Black brick and gold!', 'Four new lands!', 'It moos now!', 'Two eyes each!',
       'Swim for it!', 'Ride a strider!', 'What a hoard!', 'Baa!', 'Plant a cherry tree!', 'Tougher than diamond!', 'Mind the drop!', 'Hold your horses!', 'Tie it up!', 'Walkies!',

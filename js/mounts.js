@@ -355,14 +355,15 @@ export function rideMove(p, dt, input) {
 
 // ---------------------------------------------------------------- where horses come from
 const OPEN = [BIOME.PLAINS, BIOME.SAVANNA, BIOME.MEADOW, BIOME.SUNFLOWER];
-// (land seen for the first time: now and then the animals placed there are horses or donkeys)
+// (land seen for the first time: often the animals placed there are horses or donkeys; 1.10.6 made them
+// commoner, two groups in five horses and one in ten donkeys, where it had been one in five and one in fifteen)
 Entities.prototype.pickPassive = function (biome) {
   if (!OPEN.includes(biome)) return null;
   const r = rand();
-  return r < 0.22 ? 'horse' : r < 0.29 ? 'donkey' : null;
+  return r < 0.4 ? 'horse' : r < 0.5 ? 'donkey' : null;
 };
-// Land people have already been to gets no new animals, so a herd wanders in from beyond what is in
-// sight: at most one each day, by day, on open grassland near a player, while there are few about
+// Land people have already been to gets no new animals, so herds wander in from beyond what is in sight:
+// up to three each day, by day, on open grassland near a player, while there are not many about
 Entities.prototype.tickHerds = function () {
   const w = G.world;
   if (!w || w.dim !== 'overworld' || !(G.daylight > 0.8)) return;
@@ -370,8 +371,10 @@ Entities.prototype.tickHerds = function () {
   if (this.herdCd > 0) return;
   this.herdCd = 20;
   const flags = w.flags || (w.flags = {});
-  if (flags.herdDay === (G.day || 0)) return;
-  if (this.mobs.filter((m) => m.type === 'horse' || m.type === 'donkey').length >= 3) return;
+  // (herdDay: the day the last herd came; herds: how many came that day)
+  if (flags.herdDay !== (G.day || 0)) flags.herds = 0;
+  else if ((flags.herds ?? 1) >= 3) return;
+  if (this.mobs.filter((m) => m.type === 'horse' || m.type === 'donkey').length >= 8) return;
   const ps = [G.player, ...(G.net ? [...G.net.players.values()] : [])].filter((q) => q && !q.dead && q.pos);
   const q = ps[Math.floor(rand() * ps.length)];
   if (!q) return;
@@ -379,7 +382,7 @@ Entities.prototype.tickHerds = function () {
   const x = Math.floor(q.pos.x + Math.cos(a) * d), z = Math.floor(q.pos.z + Math.sin(a) * d);
   const ch = w.getChunk(x >> 4, z >> 4);
   if (!ch || !ch.meshed || !OPEN.includes(ch.biomes[((z & 15) << 4) | (x & 15)])) return;
-  const type = rand() < 0.25 ? 'donkey' : 'horse', n = type === 'donkey' ? 1 + Math.floor(rand() * 2) : 2 + Math.floor(rand() * 2);
+  const type = rand() < 0.25 ? 'donkey' : 'horse', n = type === 'donkey' ? 2 + Math.floor(rand() * 2) : 3 + Math.floor(rand() * 3);
   let made = 0;
   for (let i = 0; i < n; i++) {
     const hx = x + Math.floor(rand() * 7) - 3, hz = z + Math.floor(rand() * 7) - 3;
@@ -390,5 +393,5 @@ Entities.prototype.tickHerds = function () {
     this.spawnMob(type, hx + 0.5, y, hz + 0.5);
     made++;
   }
-  if (made) flags.herdDay = G.day || 0;
+  if (made) { flags.herdDay = G.day || 0; flags.herds = (flags.herds || 0) + 1; }
 };

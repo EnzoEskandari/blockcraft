@@ -14,6 +14,9 @@ import { lightAt } from './entities.js';
 import { sfx } from './audio.js';
 
 const SLACK = 3;     // closer than this the lead hangs loose and the animal does as it likes
+// (the lead goes tight a little past that and slack again a little inside it, so an animal at the end of
+// its lead is not pulled in and let go again every frame: that made it shake)
+const TIGHT = SLACK + 0.4, LOOSE = SLACK - 0.6;
 const SNAP = 12;     // further than this (it is stuck, or you went through a portal) the lead comes off
 const ROPE = 4.2;    // how long the rope is, for how much it sags
 
@@ -42,8 +45,9 @@ function dropLead(m, why, at = m.pos) {
 }
 
 // ---------------------------------------------------------------- following (the host, each frame)
-// How an animal on a lead moves: null while the lead is slack, otherwise where to go and how fast
-export function leadPull(m, dt) {
+// How an animal on a lead moves, given what it meant to do (mx, mz, speed): null to let it, otherwise where
+// to go and how fast instead
+export function leadPull(m, dt, mx = 0, mz = 0, speed = 0) {
   const g = m.gear, l = g.lead;
   if (l === 'd') { dropLead(m); return null; }
   let ax, ay, az;
@@ -59,10 +63,15 @@ export function leadPull(m, dt) {
   }
   const dx = ax - m.pos.x, dz = az - m.pos.z, dy = ay - (m.pos.y + m.h * 0.8);
   const flat = Math.hypot(dx, dz);
-  if (Math.hypot(flat, dy) > SNAP) { dropLead(m, 'snap'); return null; }
-  if (flat < SLACK) return null;
-  // (the further it has fallen behind, the faster it comes: it keeps up with a galloping horse)
-  return { mx: dx / flat, mz: dz / flat, speed: Math.min(11, (flat - SLACK + 0.6) * 2.4) };
+  if (Math.hypot(flat, dy) > SNAP) { dropLead(m, 'snap'); m.leadTight = false; return null; }
+  m.leadTight = flat > (m.leadTight ? LOOSE : TIGHT);
+  if (m.leadTight) {
+    // (the further it has fallen behind, the faster it comes: it keeps up with a galloping horse)
+    return { mx: dx / flat, mz: dz / flat, speed: Math.min(11, Math.max(1.6, (flat - LOOSE) * 2.4)) };
+  }
+  // slack: it may wander, but not further away once it is near the end of the lead
+  if (speed && flat > LOOSE - 0.6 && mx * dx + mz * dz < 0) return { mx: 0, mz: 0, speed: 0 };
+  return null;
 }
 
 // ---------------------------------------------------------------- using a lead
