@@ -1564,6 +1564,12 @@ Object.assign(ART, {
     '....OHHHHhO.....', '....OHHHHhO.....', '...OHHHHHHhO....', '..OLLLLLLLLhO...',
     '..OHHHHHHHHhO...', '..OOOOOOOOOOO...',
   ],
+  // (a spawn egg: the shell and its spots take the creature's colours)
+  spawn_egg: [
+    '......OOOO......', '.....OLLBBO.....', '....OLBBSBBO....', '....OLBBBBbO....', '...OBBSSBBBbO...', '...OBBSSBBSbO...',
+    '...OBBBBBBBbO...', '..OBSBBBBSSBbO..', '..OBBBBBBSSBbO..', '..OBBBSBBBBbbO..', '..ObBBBBBBBbbO..', '...ObBBSBBbbO...',
+    '...OObbbbbbOO...', '.....OOOOOO.....',
+  ],
   lead: [
     '...OOOOO........', '..OHhHhHO.......', '.OhOOOOOhO......', '.OHO...OHO......', '.OhO...OhO......', '.OHO...OHO......',
     '.OhOOOOOhO......', '..OHhHhHOO......', '...OOOOhHO......', '.......OhHO.....', '........OhHO....', '.........OhHO...',
@@ -1754,6 +1760,9 @@ export function buildIcons() {
     } else if (it.armor) {
       const [H, h, L] = ARMOR_PAL[it.material] || TOOL_PAL[it.material];
       canvas = drawAscii(ART[ARMOR_SLOTS[it.armor.slot]], { O: OUT, H, h, L });
+    } else if (it.egg) {
+      const [b, sp] = it.eggColors;
+      canvas = drawAscii(ART.spawn_egg, { O: sh(b, 0.42), B: b, b: sh(b, 0.78), L: mix(b, [255, 255, 255], 0.45), S: sp });
     } else {
       const art = ITEM_ART[it.key];
       canvas = art ? drawAscii(ART[art[0]], art[1]) : drawAscii(ART.lump, pal3([255, 0, 255], [128, 0, 128], [255, 128, 255]));

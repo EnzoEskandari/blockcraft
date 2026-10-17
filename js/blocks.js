@@ -404,6 +404,8 @@ function item(id, key, name, o = {}) {
     hidden: !!o.hidden,
     horseArmor: o.horseArmor || 0,   // the share of a blow this takes off a horse wearing it
     fireproof: !!o.fireproof,        // dropped, it floats on lava instead of sinking out of reach
+    egg: o.egg || null,              // a spawn egg: the kind of creature it hatches
+    eggColors: o.eggColors || null,  // and the colours of its shell and spots
   };
   ITEMS[id] = d;
   ID[key] = id;
@@ -492,6 +494,29 @@ item(377, 'netherite_ingot', 'Netherite Ingot', { fireproof: true });
 item(378, 'netherite_upgrade', 'Netherite Upgrade Template', { fireproof: true });
 // (1.10.4) a lead, for leading a horse or a donkey, and tying it to a fence post
 item(388, 'lead', 'Lead');
+// (1.10.5) spawn eggs, in the creative inventory: one for every creature in the game, with its name and the
+// colours of the egg (shell, spots). Use one on a block and the creature hatches there; use one on a spawner and the spawner
+// makes that creature from then on. The numbers are kept forever, so new creatures go on the end.
+export const SPAWN_EGGS = [
+  ['pig', 'Pig', [240, 160, 156], [219, 99, 99]], ['cow', 'Cow', [68, 54, 38], [161, 161, 161]], ['sheep', 'Sheep', [231, 231, 231], [255, 181, 181]],
+  ['chicken', 'Chicken', [161, 161, 161], [255, 0, 0]], ['zombie', 'Zombie', [0, 175, 175], [121, 156, 101]], ['husk', 'Husk', [121, 117, 97], [230, 204, 148]],
+  ['drowned', 'Drowned', [143, 241, 215], [121, 156, 101]], ['zombie_villager', 'Zombie Villager', [86, 52, 40], [121, 156, 101]], ['skeleton', 'Skeleton', [193, 193, 193], [73, 73, 73]],
+  ['stray', 'Stray', [97, 118, 118], [221, 234, 234]], ['spider', 'Spider', [52, 45, 39], [163, 0, 0]], ['boomer', 'Boomer', [13, 163, 11], [20, 20, 20]],
+  ['witch', 'Witch', [52, 0, 0], [81, 161, 53]], ['slime', 'Slime', [81, 161, 53], [126, 191, 110]], ['shade', 'Shade', [22, 22, 22], [60, 60, 60]],
+  ['gloomwing', 'Gloomwing', [67, 81, 138], [136, 255, 0]], ['pillager', 'Pillager', [83, 47, 54], [149, 155, 155]], ['vindicator', 'Vindicator', [149, 155, 155], [39, 94, 97]],
+  ['iron_golem', 'Iron Golem', [218, 212, 200], [116, 164, 82]], ['villager', 'Villager', [86, 60, 47], [189, 139, 114]], ['wailer', 'Wailer', [249, 249, 249], [188, 188, 188]],
+  ['cinder', 'Cinder', [246, 178, 0], [255, 252, 0]], ['magma_slime', 'Magma Slime', [52, 0, 0], [252, 252, 0]], ['snoutling', 'Snoutling', [153, 90, 59], [249, 243, 164]],
+  ['snoutling_brute', 'Snoutling Brute', [89, 42, 16], [249, 243, 164]], ['rotting_snoutling', 'Rotting Snoutling', [234, 147, 147], [76, 112, 48]], ['tusker', 'Tusker', [198, 131, 105], [95, 103, 103]],
+  ['rotting_tusker', 'Rotting Tusker', [198, 131, 105], [230, 230, 230]], ['charred_skeleton', 'Charred Skeleton', [30, 30, 30], [71, 77, 77]], ['strider', 'Strider', [156, 52, 54], [77, 73, 77]],
+  ['shademite', 'Shademite', [22, 22, 22], [110, 110, 110]], ['clamper', 'Clamper', [148, 103, 148], [77, 56, 78]], ['void_dragon', 'Void Dragon', [28, 28, 28], [224, 121, 250]],
+  ['blight', 'Wither', [30, 30, 30], [80, 100, 100]], ['cave_spider', 'Cave Spider', [12, 66, 77], [163, 0, 0]], ['mooshroom', 'Mooshroom', [161, 16, 18], [183, 183, 183]],
+  ['horse', 'Horse', [192, 158, 124], [238, 229, 0]], ['donkey', 'Donkey', [83, 70, 62], [134, 118, 103]],
+];
+SPAWN_EGGS.forEach(([type, name, shell, spots], i) => item(389 + i, type + '_spawn_egg', name + ' Spawn Egg', { egg: type, eggColors: [shell, spots] }));
+// What a monster spawner makes, by its meta: the first six are the ones generated in the world (dungeons,
+// fortresses, strongholds, mineshafts); the rest come from spawn eggs. Only ever added to, at the end.
+const SPAWNER_FIRST = ['cinder', 'shademite', 'zombie', 'skeleton', 'spider', 'cave_spider'];
+export const SPAWNER_TYPES = [...SPAWNER_FIRST, ...SPAWN_EGGS.map((e) => e[0]).filter((t) => !SPAWNER_FIRST.includes(t))];
 
 export const TOOL_MATERIALS = [
   { key: 'wooden', name: 'Wooden', tier: 0, speed: 2, durability: 59, dmg: 0, ing: '#planks' },

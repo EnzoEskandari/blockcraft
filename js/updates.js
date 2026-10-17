@@ -81,6 +81,23 @@ const BASTION_BRIDGE = {
 export const UPDATES = [
   {
     // a small update: it keeps the Nether & Noise picture
+    version: '1.10.5', name: 'Eggs & Beacons', date: '2026-10-16',
+    splashes: ['Saddle up!', 'Neigh!', 'Hee-haw!', 'Mind the lava!', 'Knock it back!', 'Row, row, row!', 'Black brick and gold!', 'Four new lands!', 'It moos now!', 'Two eyes each!',
+      'Swim for it!', 'Ride a strider!', 'What a hoard!', 'Baa!', 'Plant a cherry tree!', 'Tougher than diamond!', 'Mind the drop!', 'Hold your horses!', 'Tie it up!', 'Walkies!',
+      'Hatch a dragon!', 'Build it higher!', 'Speed II!'],
+    scene: BASTION_BRIDGE,
+    notes: [
+      'Spawn eggs! The creative inventory has one for every creature in the game, each named after it and coloured like it: search for "spawn egg". Use one on a block and the creature hatches there.',
+      'Use a spawn egg on a monster spawner and it makes that creature from then on (anything but the Void Dragon and the Wither).',
+      'Hatched creatures stay where you put them. They count for no achievement, so the prizes still have to be won the hard way. A Void Dragon hatched outside the End circles the place it hatched.',
+      'Beacons are bigger and better. Build the pyramid under one in layers of iron, gold, diamond, emerald or netherite blocks: three by three, then five by five, seven by seven and nine by nine. Each layer makes it reach further: 32, 48, 64 and then 96 blocks.',
+      'Use a beacon to choose its powers, paying with an iron ingot, gold ingot, emerald, diamond or netherite ingot. Level 1 gives Speed or Haste, level 2 adds Resistance and Jump Boost, level 3 Strength, and a full pyramid adds Regeneration or makes the first power twice as strong.',
+      'Powers last a while after you leave a beacon\'s reach, longer from a bigger pyramid, and a beacon\'s powers work in Creative too. A lit beacon sends a beam of light up into the sky.',
+      'Beacons you already have keep giving Haste and Regeneration until you change them.',
+    ],
+  },
+  {
+    // a small update: it keeps the Nether & Noise picture
     version: '1.10.4', name: 'Leads & Looks', date: '2026-10-16',
     splashes: ['Saddle up!', 'Neigh!', 'Hee-haw!', 'Mind the lava!', 'Knock it back!', 'Row, row, row!', 'Black brick and gold!', 'Four new lands!', 'It moos now!', 'Two eyes each!',
       'Swim for it!', 'Ride a strider!', 'What a hoard!', 'Baa!', 'Plant a cherry tree!', 'Tougher than diamond!', 'Mind the drop!', 'Hold your horses!', 'Tie it up!', 'Walkies!'],

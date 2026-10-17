@@ -8,6 +8,7 @@ import { R, itemModel, tintModel } from './render.js';
 import { buildModel, holdInHand, lightAt, explosionFx, explosionDamage, spawnBlockParticles } from './entities.js';
 import { decideUse, applyUse } from './mounts.js';
 import { decideTie } from './leads.js';
+import { hatch } from './eggs.js';
 import { BLOCKS, B, ITEMS } from './blocks.js';
 import { packSlots, unpackSlots } from './inventory.js';
 import { cleanEnch } from './enchant.js';
@@ -708,6 +709,12 @@ export class Net {
         break;
       }
       case 'tie': decideTie(from, d.x | 0, d.y | 0, d.z | 0); break;   // (a guest at a fence post with their leads)
+      case 'egg': {
+        // (a guest used a spawn egg, near where they are, in a world in Creative)
+        if (!a || !w || ![d.x, d.y, d.z, d.yaw].every(Number.isFinite) || Math.hypot(d.x - a.pos.x, d.y - a.pos.y, d.z - a.pos.z) > 12) return;
+        hatch(String(d.t), d.x, d.y, d.z, d.yaw);
+        break;
+      }
       case 'mo': {
         const m = this.mobIndex.get(d.id);
         if (m && m.riderId === from) { m.riderId = null; m.vDirty = true; }
@@ -840,7 +847,7 @@ export class Net {
         else p.hurt(+d.d || 0, d.x ?? null, d.z ?? null, d.c, !!d.ax, d.m != null ? this.proxies.get(d.m) || null : null);
         break;
       // a mob this player killed: its experience, and the kill counts for their achievements
-      case 'xp': if (p) G.entities.gotKill({ t: String(d.t || ''), x: +d.x || 0, y: +d.y || 0, z: +d.z || 0, n: Math.min(2000, d.n | 0), a: +d.a || 0, b: d.b ? 1 : 0, s: d.s | 0, f: d.f ? 1 : 0 }); break;
+      case 'xp': if (p) G.entities.gotKill({ t: String(d.t || ''), x: +d.x || 0, y: +d.y || 0, z: +d.z || 0, n: Math.min(2000, d.n | 0), a: +d.a || 0, b: d.b ? 1 : 0, s: d.s | 0, f: d.f ? 1 : 0, e: d.e ? 1 : 0 }); break;
       case 'fx': if (p && !p.dead) p.addEffect(d.n, +d.t || 0); break;
       case 'got': {
         if (!p) return;

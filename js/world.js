@@ -212,7 +212,8 @@ export class World {
     if (!c) return false;
     const i = (y << 8) | ((z & 15) << 4) | (x & 15);
     const old = c.blocks[i];
-    if (old === id && (!c.meta || c.meta[i] === meta)) return false;
+    // (the same block with new meta counts as a change, even where the chunk has kept no meta yet)
+    if (old === id && (c.meta ? c.meta[i] === meta : !meta)) return false;
     c.blocks[i] = id;
     if (meta || c.meta) {
       if (!c.meta) c.meta = new Uint8Array(CS * CS * CH);

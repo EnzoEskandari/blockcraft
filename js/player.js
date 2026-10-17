@@ -15,9 +15,11 @@ import { ench, bonusDamage, wears, protection, xpForLevel } from './enchant.js';
 import { Body } from './body.js';
 import { useMount, useLabel, leaveMount, placeBoat, rideMove, canSteer } from './mounts.js';
 import { isFence, useFence } from './leads.js';
+import { useEgg } from './eggs.js';
 
 const GRAVITY = 32;
 const JUMP_V = 9.0;
+const GOOD_EFFECTS = new Set(['speed', 'haste', 'resistance', 'jump', 'strength', 'regen']);
 const WALK = 4.317, SPRINT = 5.612, SNEAK = 1.31, FLY = 10.9, FLY_SPRINT = 21.6;
 const EAT_TIME = 1.6;      // seconds of holding to finish eating (32 ticks)
 const HURT_TIME = 0.5;
@@ -93,6 +95,7 @@ export class Player {
     this.shieldCd = 0;        // an axe knocked it down: seconds until it can be raised again
     this.blockedAt = -9;
     this.effects = { poison: 0, slow: 0, wither: 0, levitation: 0 };
+    this.fxLv = {};
     this.poisonTick = 0;
     this.portalT = 0;
     this.portalCooldown = true;   // step out of a portal before it can take you anywhere
@@ -167,14 +170,21 @@ export class Player {
     return { pts, tough };
   }
 
-  addEffect(name, secs) {
-    if (this.creative || this.dead) return;
+  // (lv: an effect's level, 1 or 2; a stronger one takes over from a weaker one. A beacon's good effects
+  // work in Creative too.)
+  addEffect(name, secs, lv = 1) {
+    if (this.dead || (this.creative && !GOOD_EFFECTS.has(name))) return;
     if (G.clock - this.blockedAt < 0.2) return;   // it came with a hit the shield just stopped
     if (name === 'hunger') { this.hungerEffect = Math.max(this.hungerEffect, secs); return; }
     if (name === 'burn') { this.burning = Math.max(this.burning, secs * (1 - 0.15 * this.worn('fire_protection'))); return; }
-    this.effects[name] = Math.max(this.effects[name] || 0, secs);
+    const cur = this.effects[name] || 0, cl = this.fxLv[name] || 1;
+    if (cur <= 0 || lv > cl) { this.effects[name] = secs; this.fxLv[name] = lv; }
+    else if (lv === cl) this.effects[name] = Math.max(cur, secs);
     G.ui.invChanged();
   }
+  lv(name) { return this.effects[name] > 0 ? this.fxLv[name] || 1 : 0; }
+  // How hard you jump: Jump Boost adds half a block of height for each level
+  jumpV() { const l = this.lv('jump'); return l ? Math.sqrt(JUMP_V * JUMP_V + GRAVITY * l) : JUMP_V; }
 
   // Put on the armour piece in hand, swapping out whatever is worn in that slot
   equipHeld() {
@@ -395,6 +405,7 @@ export class Player {
     const sneakSpeed = Math.min(WALK, SNEAK + WALK * 0.15 * ench(this.armor[2], 'swift_sneak'));
     let speed = this.flying ? (this.sprinting ? FLY_SPRINT : FLY) : this.sneaking ? sneakSpeed : this.sprinting ? SPRINT : WALK;
     if (this.effects.slow > 0) speed *= 0.7;
+    if (this.effects.speed > 0 && !this.flying) speed *= 1 + 0.2 * this.lv('speed');
     // Soul Speed boots: quick over soul sand and soul soil
     const under = w.getBlock(bx, Math.floor(this.pos.y - 0.1), bz);
     const soul = ench(this.armor[3], 'soul_speed');
@@ -446,7 +457,7 @@ export class Player {
     } else {
       this.vel.y = Math.max(this.vel.y - GRAVITY * dt, -78);
       if (input.jump && this.onGround) {
-        this.vel.y = JUMP_V;
+        this.vel.y = this.jumpV();
         if (this.sprinting) { this.vel.x += -sy * 2; this.vel.z += -cy * 2; }
         this.exhaustion += this.sprinting ? 0.2 : 0.05;
       }
@@ -484,7 +495,7 @@ export class Player {
       const assist = input.jump || G.settings.autoJump || G.touchMode;
       if (wet && climb <= 2.2 && assist) this.vel.y = Math.max(this.vel.y, 8.2);
       else if (this.inWater && climb <= 5 && assist) this.vel.y = Math.max(this.vel.y, 4.2); // swim up the wall toward the exit
-      else if (!wet && this.onGround && climb <= 1.1 && G.settings.autoJump) this.vel.y = JUMP_V;
+      else if (!wet && this.onGround && climb <= 1.1 && G.settings.autoJump) this.vel.y = this.jumpV();
     }
 
     if (this.flying && this.onGround && !input.jump) this.flying = false;
@@ -494,8 +505,9 @@ export class Player {
     if (!this.onGround && fell > 0 && !this.flying && !this.inWater) this.fallDist += fell;
     if (this.inWater || this.inLava || this.flying || this.effects.levitation > 0) this.fallDist = 0;
     if (this.onGround && !wasGround) {
-      if (this.fallDist > 3 && !this.creative && !(G.clock < (this.safeLanding || 0))) {   // (no harm in the fall after a teleport)
-        this.hurt(Math.floor(this.fallDist - 3), null, null, 'fall');
+      const safe = 3 + this.lv('jump');   // (Jump Boost: a block further unhurt for each level)
+      if (this.fallDist > safe && !this.creative && !(G.clock < (this.safeLanding || 0))) {   // (no harm in the fall after a teleport)
+        this.hurt(Math.floor(this.fallDist - safe), null, null, 'fall');
         sfx('fall');
       }
       if (this.fallDist > 1) this.stepSound(true);
@@ -817,7 +829,7 @@ export class Player {
       if (eff) speed += eff * eff + 1;
     }
     if (toolOf(it) === 'sword' && def.cutout && def.atten) speed = 1.5;
-    if (this.effects.haste > 0) speed *= 1.3;   // (a beacon's doing)
+    if (this.effects.haste > 0) speed *= 1 + 0.3 * this.lv('haste');   // (a beacon's doing)
     if (this.headInWater && !ench(this.armor[0], 'aqua_affinity')) speed /= 5;
     if (!this.onGround && !this.flying && !this.inWater) speed /= 5;
     // without a good enough pickaxe, stone and ores take much longer (and drop nothing)
@@ -853,6 +865,7 @@ export class Player {
     // what the weapon's enchantments add (a weak swing gets less of it)
     const impale = ench(held, 'impaling');
     dmg += (bonusDamage(held, mob.def) + (impale && (mob.inWater || (mob.def && mob.def.aquatic)) ? 2.5 * impale : 0)) * strength;
+    dmg += 3 * this.lv('strength') * strength;   // (a beacon's Strength)
     const fire = ench(held, 'fire_aspect') * 4;
     this.swing();
     if (mob.isPlayer) {
@@ -942,6 +955,7 @@ export class Player {
       if (id === B.anvil) { G.ui.openScreen('anvil', {}); return true; }
       if (id === B.grindstone) { G.ui.openScreen('grind', {}); return true; }
       if (id === B.smithing_table) { G.ui.openScreen('smith', {}); return true; }
+      if (id === B.beacon) { G.ui.openScreen('beacon', { x: t.x, y: t.y, z: t.z }); return true; }
       if (id === B.furnace || id === B.furnace_lit) { G.ui.openScreen('furnace', G.game.container(t.x, t.y, t.z, 'furnace')); return true; }
       if (id === B.chest) { sfx('chest', t); G.ui.openScreen('chest', G.game.container(t.x, t.y, t.z, 'chest')); return true; }
       if (id === B.tnt && held && held.id === ID.flint_and_steel) {
@@ -954,6 +968,7 @@ export class Player {
       }
     }
     if (!held) return false;
+    if (it.egg) return useEgg(this, held, t);
     if (held.id === ID.flint_and_steel) return this.ignite(t);
     if (held.id === ID.bucket || held.id === ID.water_bucket || held.id === ID.lava_bucket) return this.useBucket(held);
     if (held.id === ID.shade_eye) {
@@ -1310,11 +1325,12 @@ export class Player {
       if (this.witherTick >= 2) { this.witherTick = 0; this.invul = 0; this.hurt(1, null, null, 'wither'); }
     }
     if (this.effects.slow > 0) this.effects.slow = Math.max(0, this.effects.slow - dt);
-    if (this.effects.haste > 0) this.effects.haste = Math.max(0, this.effects.haste - dt);
+    for (const k of ['haste', 'speed', 'jump', 'resistance', 'strength']) if (this.effects[k] > 0) this.effects[k] = Math.max(0, this.effects[k] - dt);
     if (this.effects.regen > 0) {
+      const lv = this.lv('regen');
       this.effects.regen = Math.max(0, this.effects.regen - dt);
       this.regenTick = (this.regenTick || 0) + dt;
-      if (this.regenTick >= 1.6) { this.regenTick = 0; if (this.health < 20 && !this.dead) { this.health = Math.min(20, this.health + 1); G.ui.invChanged(); } }
+      if (this.regenTick >= 1.6 / lv) { this.regenTick = 0; if (this.health < 20 && !this.dead) { this.health = Math.min(20, this.health + 1); G.ui.invChanged(); } }
     }
     if (this.effects.poison > 0) {
       this.effects.poison = Math.max(0, this.effects.poison - dt);
@@ -1395,6 +1411,8 @@ export class Player {
     }
     // the Protection enchantments take off up to four fifths of what is left (falls and fire included)
     if (kind !== 'void' && kind !== 'starve' && kind !== 'admin') amount *= 1 - protection(this.armor, kind);
+    // (Resistance, from a beacon: a fifth off for each level)
+    if (kind !== 'void' && kind !== 'admin') amount *= 1 - 0.2 * this.lv('resistance');
     // Thorns: whoever struck you may get hurt back
     if (by && by.hurt && !by.dead && (kind === 'mob')) {
       const th = this.worn('thorns');
@@ -1468,6 +1486,7 @@ export class Player {
     this.exhaustion = 0;
     this.hungerEffect = 0;
     this.effects = { poison: 0, slow: 0, wither: 0, levitation: 0 };
+    this.fxLv = {};
     this.burning = 0;
     this.shieldUp = this.blocking = false;
     this.air = 15;

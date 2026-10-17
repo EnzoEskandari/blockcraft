@@ -972,6 +972,7 @@ class Mob {
     if (this.trades) { o.u = this.trades.map((tr) => tr.uses); o.vx = this.vx; o.vs = this.vs; }
     if (this.gear) o.g = this.gear;
     if (this.riderId != null) o.r = this.riderId === 'local' ? 0 : this.riderId;
+    if (this.fromEgg) o.e = 1;   // (so a guest's game knows it counts for no achievement)
     o.m = this.maxHp;
     return o;
   }
@@ -2184,13 +2185,14 @@ export class Entities {
 
   // A mob was killed by a player: that player gets its experience (and it counts for their achievements)
   awardKill(by, mob, xp, fx) {
-    const info = { t: mob.type, x: Math.round(mob.pos.x * 10) / 10, y: Math.round(mob.pos.y * 10) / 10, z: Math.round(mob.pos.z * 10) / 10, n: xp, a: fx.arrow || 0, b: fx.bolt || 0, s: fx.shot || 0, f: fx.fb || 0 };
+    const info = { t: mob.type, x: Math.round(mob.pos.x * 10) / 10, y: Math.round(mob.pos.y * 10) / 10, z: Math.round(mob.pos.z * 10) / 10, n: xp, a: fx.arrow || 0, b: fx.bolt || 0, s: fx.shot || 0, f: fx.fb || 0, e: mob.fromEgg ? 1 : 0 };
     if (by === 'local') this.gotKill(info);
     else if (by && by.id != null && G.net) G.net.sendTo(by.id, { k: 'xp', ...info });
   }
   gotKill(info) {
     if (info.n) this.spawnXp(info.x, info.y + 0.4, info.z, info.n);
-    if (G.adv) G.adv.kill(info);
+    // (one that hatched from a spawn egg counts for no achievement)
+    if (G.adv && !info.e) G.adv.kill(info);
   }
   // a whole stack, enchantments and all
   dropStack(s, x, y, z, vx, vy, vz) { return this.dropItem(s.id, s.count, x, y, z, vx, vy, vz, s.dmg, s.e); }
@@ -2228,6 +2230,7 @@ export class Entities {
     if (e.persistent) d.P = 1;
     if (e.trades) d.vst = e.villagerState();
     if (e.gear) d.g = typeof e.gear.lead === 'number' ? { ...e.gear, lead: 'd' } : e.gear;   // (a guest's lead does not outlast the visit)
+    if (e.fromEgg) d.E = 1;
     return d;
   }
 
@@ -2258,6 +2261,7 @@ export class Entities {
       if (d.k && (w.deadMobs.has(d.k) || this.mobs.some((m) => m.key === d.k))) continue;
       const m = this.spawnMob(d.t, d.x, d.y, d.z, { variant: d.v, prof: d.p, size: d.s, baby: !!d.b, key: d.k, home: d.h, persistent: !!d.P, vst: d.vst && typeof d.vst === 'object' ? d.vst : null, gear: d.g && typeof d.g === 'object' ? d.g : null });
       if (d.hp) m.hp = Math.min(m.maxHp, d.hp);
+      if (d.E) m.fromEgg = true;
       m.yaw = d.yaw || 0;
     }
     for (const d of st.i || []) {
@@ -2296,6 +2300,7 @@ export class Entities {
     m.proxy = true;
     m.netId = a[0];
     m.riderNet = o.r ?? null;
+    m.fromEgg = !!o.e;
     if (o.m) m.maxHp = o.m;
     m.applyNet(a);
     m.pos.x = a[1]; m.pos.y = a[2]; m.pos.z = a[3];

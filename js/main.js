@@ -9,6 +9,7 @@ import { Advancements } from './advancements.js';
 import { initMesher, buildChunkMesh, computeLight, setSolidLeaves } from './mesher.js';
 import { R, initRenderer, setChunkMeshes, disposeChunkMeshes, updateSky, render, applyGraphics } from './render.js';
 import { drawLeads, clearLeads } from './leads.js';
+import { tickBeacons, clearBeacons } from './beacons.js';
 import { Player } from './player.js';
 import { Entities, spawnBlockParticles, explode, leafFall } from './entities.js';
 import { UI } from './ui.js';
@@ -100,36 +101,7 @@ function tickPlates() {
   }
 }
 
-// Beacons: one that stands on a three-by-three of iron, gold, diamond or emerald blocks under open sky
-// mends everyone within thirty blocks and quickens their digging. (Each player works out their own.)
-const MINERAL = new Set([B.iron_block, B.gold_block, B.diamond_block, B.emerald_block, B.netherite_block]);
-function tickBeacons(dt) {
-  S.beaconT = (S.beaconT || 0) - dt;
-  const w = G.world, p = G.player;
-  if (!w || !p || !w.beacons || !w.beacons.size) return;
-  const check = S.beaconT <= 0;
-  if (check) S.beaconT = 1;
-  for (const [key, st] of w.beacons) {
-    const [x, y, z] = key.split(',').map(Number);
-    if (check) {
-      if (!w.getChunk(x >> 4, z >> 4)) { st.on = false; continue; }
-      if (w.getBlock(x, y, z) !== B.beacon) { w.beacons.delete(key); continue; }
-      st.on = true;
-      for (let dx = -1; dx <= 1 && st.on; dx++) for (let dz = -1; dz <= 1; dz++) if (!MINERAL.has(w.getBlock(x + dx, y - 1, z + dz))) { st.on = false; break; }
-      if (st.on && !p.dead && Math.hypot(p.pos.x - x - 0.5, p.pos.z - z - 0.5) < 30) {
-        p.addEffect('regen', 4); p.addEffect('haste', 4);
-        G.adv.did('beacon');
-      }
-    }
-    // its light: a column of sparks climbing into the sky
-    if (st.on && Math.hypot(p.pos.x - x, p.pos.z - z) < 96) {
-      for (let i = 0; i < 3; i++) {
-        const h = Math.random() * 44;
-        G.entities.particles.spawn(x + 0.5 + (Math.random() - 0.5) * 0.3, y + 1 + h, z + 0.5 + (Math.random() - 0.5) * 0.3, 0, 5, 0, 0.75, 0.97, 1, 0.16, 1.1, 0);
-      }
-    }
-  }
-}
+// (beacons: see beacons.js)
 
 // Frosted ice (Frost Walker) melts back into water: "x,y,z" -> when
 function tickFrost() {
@@ -1586,6 +1558,7 @@ function teardown() {
   if (G.entities) G.entities.clear();
   if (G.player && G.player.body) G.player.body.dispose();
   clearLeads();
+  clearBeacons();
   G.world = null;
   S.urgent.clear();
   S.updates.length = 0;

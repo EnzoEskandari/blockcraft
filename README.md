@@ -54,6 +54,12 @@ How it works:
 - Animals, villagers and dropped items are kept when you walk away.
 - Press **T** (or the **T** button on iPad) to chat.
 
+## Eggs & Beacons (1.10.5)
+
+- **Spawn eggs** (`SPAWN_EGGS` in `js/blocks.js`, items 389 to 426, `js/eggs.js`): one per creature, creative only. `useEgg` hatches on the host (`hatch`; guests send `egg`), sets `persistent` and `fromEgg` (saved as `E`, sent to guests as `e`), and kills of hatched creatures skip `G.adv.kill`. On a spawner it sets the meta to the creature's place in `SPAWNER_TYPES` (the first six are the generated kinds; the list is only ever added to). A dragon outside the End circles `m.home` and opens no portal when it dies.
+- **Beacons** (`js/beacons.js`): `pyramidLevel` counts layers of `MINERAL` blocks (up to 4), `RANGE` is 32/48/64/96, and the powers are kept in the beacon's block meta (`encode`/`decode`: primary in bits 0-2, secondary in bits 3-4; 0 is a beacon from before, which gives Haste and Regeneration). The `beacon` screen in `js/ui.js` sets them with `placeBlock`, so they are saved and sent like any block change. Player effects have levels (`fxLv`, `addEffect(name, secs, lv)`, `lv(name)`), with Speed, Jump Boost (`jumpV`), Resistance and Strength new; good effects work in Creative.
+- `World.setBlock` now counts the same block with new meta as a change in a chunk that has kept no meta yet (it used to be ignored).
+
 ## Leads & Looks (1.10.4)
 
 - **Leads** (`js/leads.js`, item 388): where a horse's or donkey's lead goes is kept in its gear as `gear.lead`: `'p'` the host's own player, a guest's number, `[x, y, z]` a fence post, or `'d'` (a guest's lead when the world was saved: it falls off when the animal is next seen). The host decides (`decideLead` from `decideUse`, `decideTie` for posts; guests send `tie`), and `leadPull` steers the animal from `Mob.update` while the lead is taut. It snaps past 12 blocks, and drops when the post goes, the holder leaves or the animal dies. Every browser draws the ropes and knots itself (`drawLeads`).

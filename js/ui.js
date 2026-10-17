@@ -10,6 +10,7 @@ import { SEA, BIOME } from './constants.js';
 import { SLOTS, CHARACTERS, PRIZES, item, owns, hasPrize, prizesIn, codeOf, myLook, mySkin, wear, wearLook, randomLook, armColour, handColour } from './skins.js';
 import { skinDoll } from './entities.js';
 import { InventoryDoll } from './doll.js';
+import { POWERS, RANGE, PAYMENT, decode, encode, pyramidLevel, powersOf } from './beacons.js';
 import { paintHand, applyGraphics } from './render.js';
 import { sameItem, stack, craftableTimes, takeIngredients } from './inventory.js';
 import { isEnchanted, enchList, enchLine, ENCH, xpForLevel, enchantability, tableLevels, tableOffer, enchanted, anvil, grind, repairItem, countShelves } from './enchant.js';
@@ -26,8 +27,8 @@ const h = (tag, cls, text) => {
   return e;
 };
 
-const CONTAINERS = ['inventory', 'crafting', 'furnace', 'chest', 'trade', 'enchant', 'anvil', 'grind', 'smith'];
-const TEMP = ['enchant', 'anvil', 'grind', 'smith'];   // screens whose slots only hold things while they are open
+const CONTAINERS = ['inventory', 'crafting', 'furnace', 'chest', 'trade', 'enchant', 'anvil', 'grind', 'smith', 'beacon'];
+const TEMP = ['enchant', 'anvil', 'grind', 'smith', 'beacon'];   // screens whose slots only hold things while they are open
 const SPLASHES = ['Now on iPad!', 'Punch a tree!', 'Made of blocks!', 'Mind the Boomers!', '100% procedural!', 'Try the caves!', 'Smooth lighting!', 'Hold to mine!', 'Seeds are fun!'];
 
 // ---------------------------------------------------------------- pixel icons for the HUD
@@ -236,7 +237,7 @@ export class UI {
 
   // ---------------------------------------------------------------- screens
   section(name) {
-    const map = { inventory: 'container', crafting: 'container', furnace: 'container', chest: 'container', creative: 'container', trade: 'container', enchant: 'container', anvil: 'container', grind: 'container', smith: 'container' };
+    const map = { inventory: 'container', crafting: 'container', furnace: 'container', chest: 'container', creative: 'container', trade: 'container', enchant: 'container', anvil: 'container', grind: 'container', smith: 'container', beacon: 'container' };
     const id = 's-' + (map[name] || name);
     for (const s of document.querySelectorAll('.screen')) s.hidden = s.id !== id;
     const chat = name === 'chat';
@@ -1343,8 +1344,10 @@ export class UI {
     if (p.hungerEffect > 0) fx.push(['Hunger', p.hungerEffect]);
     if (p.effects.wither > 0) fx.push(['Wither', p.effects.wither]);
     if (p.effects.levitation > 0) fx.push(['Levitation', p.effects.levitation]);
-    if (p.effects.regen > 0) fx.push(['Regeneration', p.effects.regen]);
-    if (p.effects.haste > 0) fx.push(['Haste', p.effects.haste]);
+    // (good ones with their level: Speed II)
+    for (const [k, name] of [['regen', 'Regeneration'], ['haste', 'Haste'], ['speed', 'Speed'], ['jump', 'Jump Boost'], ['resistance', 'Resistance'], ['strength', 'Strength']]) {
+      if (p.effects[k] > 0) fx.push([name + (p.lv(k) > 1 ? ' II' : ''), p.effects[k]]);
+    }
     const fxKey = fx.map((e) => e[0] + Math.ceil(e[1])).join();
     if (c.fx !== fxKey) {
       c.fx = fxKey;
@@ -1546,7 +1549,7 @@ export class UI {
     const add = (parent, ref) => { const el = this.slot(ref); parent.appendChild(el); this.container.els.push(el); return el; };
     const grid = (cols, cls) => { const g = h('div', 'grid ' + (cls || '')); g.style.setProperty('--cols', cols); return g; };
 
-    const titles = { inventory: 'Crafting', crafting: 'Crafting', furnace: 'Furnace', chest: 'Chest', enchant: 'Enchant', anvil: 'Repair & Combine', grind: 'Grindstone', smith: 'Upgrade Gear' };
+    const titles = { inventory: 'Crafting', crafting: 'Crafting', furnace: 'Furnace', chest: 'Chest', enchant: 'Enchant', anvil: 'Repair & Combine', grind: 'Grindstone', smith: 'Upgrade Gear', beacon: 'Beacon' };
     const head = h('div', 'panel-head');
     head.appendChild(h('div', 'panel-title', titles[kind]));
     const close = h('button', 'close', '✕');
@@ -1682,6 +1685,69 @@ export class UI {
       const note = h('div', 'hint anvil-cost', '');
       panel.appendChild(note);
       this.container.note = note;
+    } else if (kind === 'beacon') {
+      // the powers it gives, chosen by the size of its pyramid, and an ingot or gem to pay for them
+      this.craft = null;
+      data.slots = [null];
+      const w = G.world, now = decode(w.getMeta(data.x, data.y, data.z));
+      data.level = pyramidLevel(w, data.x, data.y, data.z);
+      data.old = !now.p;   // (set up before 1.10.5: Haste and Regeneration)
+      data.was = now.p ? { ...now } : { p: 'haste', s: 'regen' };
+      data.pick = { ...data.was };
+      const L = data.level;
+      panel.appendChild(h('div', 'beacon-status', L < 1
+        ? 'Not lit. A beacon needs a base of iron, gold, diamond, emerald or netherite blocks: three by three under it, and a wider layer under that for each level, up to nine by nine.'
+        : `Pyramid level ${L} of 4: it reaches ${RANGE[L]} blocks.` + (L < 4 ? ` A ${2 * L + 3} by ${2 * L + 3} layer under the pyramid makes it level ${L + 1}, reaching ${RANGE[L + 1]}.` : ' As big as a pyramid gets.')));
+      const buttons = [];
+      const pow = (key, slot) => {
+        const P = POWERS[key];
+        const b = h('button', 'bpow');
+        b.type = 'button';
+        const img = document.createElement('img');
+        img.src = iconURL(ID[P.icon]); img.alt = '';
+        b.append(img, h('span', '', P.name));
+        b.title = P.does;
+        b._key = key; b._slot = slot;
+        b.addEventListener('click', () => {
+          if (b.disabled) return;
+          sfx('click');
+          if (slot === 'p') data.pick.p = key; else data.pick.s = key === 'regen' ? 'regen' : 'twice';
+          this.renderBeacon();
+        });
+        buttons.push(b);
+        return b;
+      };
+      const cols = h('div', 'beacon-cols');
+      const prim = h('div', 'beacon-col');
+      prim.appendChild(h('div', 'beacon-head', 'Primary Power'));
+      for (const lv of [1, 2, 3]) {
+        const row = h('div', 'beacon-line');
+        for (const k of Object.keys(POWERS)) if (POWERS[k].level === lv && k !== 'regen') row.appendChild(pow(k, 'p'));
+        prim.appendChild(row);
+      }
+      const sec = h('div', 'beacon-col');
+      sec.appendChild(h('div', 'beacon-head', 'Secondary Power'));
+      const row = h('div', 'beacon-line');
+      row.appendChild(pow('regen', 's'));
+      const twice = pow('speed', 's');
+      twice._twice = true;
+      row.appendChild(twice);
+      sec.appendChild(row);
+      sec.appendChild(h('div', 'beacon-small', 'Needs a level 4 pyramid'));
+      cols.append(prim, sec);
+      panel.appendChild(cols);
+      const pay = h('div', 'beacon-pay');
+      const slot = add(pay, { kind: 'normal', arr: data.slots, i: 0, max: 1, ok: (s) => PAYMENT.has(s.id) });
+      slot.classList.add('armor-slot');
+      slot.style.backgroundImage = `url(${this.ghost(ID.iron_ingot)})`;
+      const done = h('button', 'btn', 'Done');
+      done.type = 'button';
+      done.addEventListener('click', () => this.beaconDone());
+      pay.appendChild(done);
+      panel.appendChild(pay);
+      const note = h('div', 'beacon-note', '');
+      panel.appendChild(note);
+      this.container.beacon = { buttons, twice, done, note };
     } else if (kind === 'chest') {
       this.craft = null;
       const g = grid(9);
@@ -1717,6 +1783,7 @@ export class UI {
     this.renderRecipeBook();
     this.renderOffers();
     this.renderEnchant();
+    this.renderBeacon();
     if (this.container.note) {
       // what the anvil asks for, or what the grindstone gives
       const m = this.made(), p = G.player, n = this.container.note;
@@ -1740,6 +1807,45 @@ export class UI {
     }
     this.renderCursor();
     this.hudDirty = true;
+  }
+
+  // ---------------------------------------------------------------- beacons
+  renderBeacon() {
+    const c = this.container;
+    if (!c || !c.beacon) return;
+    const d = c.data, B2 = c.beacon, L = d.level, p = G.player, pick = d.pick;
+    for (const b of B2.buttons) {
+      const need = b._slot === 's' ? 4 : POWERS[b._key].level;
+      b.disabled = L < need;
+      b.classList.toggle('sel', b._slot === 'p' ? pick.p === b._key : (b._twice ? pick.s === 'twice' : pick.s === 'regen'));
+    }
+    // (the second choice is the first one twice over)
+    const t = B2.twice, P = POWERS[pick.p];
+    t.querySelector('img').src = iconURL(ID[P.icon]);
+    t.querySelector('span').textContent = P.name + ' II';
+    t.title = P.does;
+    const changed = pick.p !== d.was.p || (L >= 4 && pick.s !== d.was.s) || d.old;
+    const paid = p.creative || !!d.slots[0];
+    B2.done.disabled = L < 1 || !changed || !paid;
+    const gives = powersOf(encode(pick.p, L >= 4 ? pick.s : null), L).map(([k, lv]) => POWERS[k].name + (lv > 1 ? ' II' : '')).join(' and ');
+    B2.note.textContent = L < 1 ? ''
+      : d.old && pick.p === 'haste' && pick.s === 'regen' ? 'It gives Haste and Regeneration, as beacons always have. Pick powers and pay to change them.'
+        : !changed ? `It gives ${gives} to everyone within ${RANGE[L]} blocks.`
+          : !paid ? `Put in an iron ingot, a gold ingot, an emerald, a diamond or a netherite ingot to pay for ${gives}.`
+            : `Done gives ${gives} to everyone within ${RANGE[L]} blocks.`;
+  }
+
+  beaconDone() {
+    const c = this.container;
+    if (!c || !c.beacon || c.beacon.done.disabled) return;
+    const d = c.data, p = G.player;
+    const meta = encode(d.pick.p, d.level >= 4 ? d.pick.s : null);
+    G.game.placeBlock(d.x, d.y, d.z, B.beacon, meta);
+    if (!p.creative && d.slots[0]) { d.slots[0].count--; if (d.slots[0].count <= 0) d.slots[0] = null; }
+    sfx('levelup', null, { vol: 0.6 });
+    const gives = powersOf(meta, d.level).map(([k, lv]) => POWERS[k].name + (lv > 1 ? ' II' : '')).join(' and ');
+    this.back();
+    this.toast(`The beacon gives ${gives}`);
   }
 
   // ---------------------------------------------------------------- villager trades

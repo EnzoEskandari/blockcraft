@@ -84,6 +84,8 @@ async function check(fx) {
       if (!h || JSON.stringify(h.gear.lead) !== JSON.stringify(e.lead)) bad.push(`the horse is no longer tied to its post: ${h ? JSON.stringify(h.gear.lead) : 'no horse'}`);
       if (G.world.getBlock(...e.lead) !== B.oak_fence) bad.push('the fence post is gone');
     }
+    // a creature hatched from a spawn egg still knows it was (1.10.5 on)
+    if (e.eggMob && !G.entities.mobs.some((m) => m.type === e.eggMob && m.fromEgg)) bad.push(`the ${e.eggMob} from a spawn egg is gone, or forgot it hatched from one`);
     if (e.nether) { const [x, y, z] = e.nether; if (G.world.getBlock(x, y, z) !== B.gold_block) bad.push('the gold block in the Nether is gone'); }
     if (G.dim !== 'overworld') { G.game.travel('overworld', 'spawn'); await waitPlaying(G); }
     const [x, y, z] = e.pos;

@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { G } from './game.js';
 import { R, itemModel, tintModel } from './render.js';
-import { B, BLOCKS, ID } from './blocks.js';
+import { B, BLOCKS, ID, SPAWNER_TYPES } from './blocks.js';
 import { moveBox, raycast, rayBox, boxBlocked } from './physics.js';
 import { sfx } from './audio.js';
 import {
@@ -649,7 +649,15 @@ function nearestCrystal(m, r) {
 function dragonAI(m, dt) {
   m.age += dt; m.hurtTime -= dt; m.invul -= dt; m.attackCd -= dt;
   if (m.dead) { dragonDying(m, dt); return; }
-  const py = exitPortalY(G.world);
+  // (in the End it circles the exit portal; hatched from a spawn egg anywhere else, the place it hatched)
+  const away = G.world.dim !== 'end';
+  const ox = away ? Math.floor(m.home.x) : 0, oz = away ? Math.floor(m.home.z) : 0;
+  if (away && (m.roostT = (m.roostT || 0) - dt) <= 0) {
+    m.roostT = 5;
+    let y = 126; while (y > 1 && !G.world.isSolid(ox, y - 1, oz)) y--;
+    m.roostY = y;
+  }
+  const py = away ? m.roostY : exitPortalY(G.world);
   let target = null, bd = 160;
   for (const q of players()) {
     if (q.dead || q.mode !== 'survival') continue;
@@ -658,12 +666,12 @@ function dragonAI(m, dt) {
   }
   const s = m.state || (m.state = { phase: 'circle', t: 8, a: Math.atan2(m.pos.z, m.pos.x) });
   s.t -= dt;
-  let tx = 0, ty = py + 20, tz = 0, spd = 11;
+  let tx = ox, ty = py + 20, tz = oz, spd = 11;
   const circle = (t) => { s.phase = 'circle'; s.t = t; };
   switch (s.phase) {
     case 'circle':
       s.a += dt * 0.28;
-      tx = Math.cos(s.a) * 55; tz = Math.sin(s.a) * 55; ty = 82 + Math.sin(m.age * 0.5) * 6;
+      tx = ox + Math.cos(s.a) * (away ? 36 : 55); tz = oz + Math.sin(s.a) * (away ? 36 : 55); ty = (away ? py + 22 : 82) + Math.sin(m.age * 0.5) * 6;
       if (s.t <= 0) {
         const r = rand();
         if (target && r < 0.45) { s.phase = 'strafe'; s.t = 9; s.fired = false; }
@@ -690,7 +698,7 @@ function dragonAI(m, dt) {
       break;
     case 'land':
       ty = py + 4.2; spd = 8;
-      if (Math.hypot(m.pos.x, m.pos.z) < 2.5 && Math.abs(m.pos.y - ty) < 1.5) { s.phase = 'perch'; s.t = 14; s.hp0 = m.hp; s.breath = 2; }
+      if (Math.hypot(m.pos.x - ox, m.pos.z - oz) < 2.5 && Math.abs(m.pos.y - ty) < 1.5) { s.phase = 'perch'; s.t = 14; s.hp0 = m.hp; s.breath = 2; }
       if (s.t <= 0) circle(8);
       break;
     case 'perch':
@@ -711,7 +719,7 @@ function dragonAI(m, dt) {
   }
   const dx = tx - m.pos.x, dy = ty - m.pos.y, dz = tz - m.pos.z;
   const d = Math.hypot(dx, dy, dz) || 1;
-  if (s.phase === 'perch') { m.vel.x = m.vel.z = 0; m.vel.y = dy * 2; m.pos.x += (0.5 - m.pos.x) * dt; m.pos.z += (0.5 - m.pos.z) * dt; }
+  if (s.phase === 'perch') { m.vel.x = m.vel.z = 0; m.vel.y = dy * 2; m.pos.x += (ox + 0.5 - m.pos.x) * dt; m.pos.z += (oz + 0.5 - m.pos.z) * dt; }
   else {
     const k = Math.min(1, dt * (s.phase === 'charge' ? 2.5 : 1.2));
     m.vel.x += (dx / d * spd - m.vel.x) * k; m.vel.y += (dy / d * spd - m.vel.y) * k; m.vel.z += (dz / d * spd - m.vel.z) * k;
@@ -741,7 +749,7 @@ function dragonDying(m, dt) {
   if (m.dyingT > 5 && !m.finished) {
     m.finished = true;
     m.removed = true;
-    if (isHost()) finishDragon();
+    if (isHost() && G.world.dim === 'end' && !m.fromEgg) finishDragon();   // (one hatched from an egg opens no portal)
   }
 }
 
@@ -962,7 +970,7 @@ const anims = {
     if (!m.dead) {
       G.boss = { name: m.def.name, hp: Math.max(0, m.hp), max: m.maxHp, until: G.clock + 1 };
       const p = G.player;
-      if (G.adv && p && !p.dead && Math.hypot(p.pos.x - m.pos.x, p.pos.z - m.pos.z) < 40) G.adv.did('blight_wake');
+      if (G.adv && !m.fromEgg && p && !p.dead && Math.hypot(p.pos.x - m.pos.x, p.pos.z - m.pos.z) < 40) G.adv.did('blight_wake');
     }
   },
   dragon(m) {
@@ -1135,7 +1143,7 @@ Entities.prototype.spawnDim = function () {
 };
 
 // Monster spawners (cinders in fortresses, shademites in strongholds)
-const SPAWNER_TYPES = ['cinder', 'shademite', 'zombie', 'skeleton', 'spider', 'cave_spider'];
+// (what each makes is in SPAWNER_TYPES, in blocks.js)
 Entities.prototype.tickSpawners = function () {
   const w = G.world;
   if (!w.spawners || !w.spawners.size) return;
