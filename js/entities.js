@@ -323,6 +323,42 @@ function armorParts(ids) {
   return out;
 }
 
+// Depth painted into a part of a player (1.10.4, when players looked flat from outside): each side is a
+// little lighter at the top and darker low down and at its edges, the underneath is in shade, a joint is
+// darker where the part above meets it (`o.top`), and cloth has soft folds in it (`o.folds`)
+function relief(g, x, y, w, h, f, o, r) {
+  if (w < 1 || h < 1) return;
+  const img = g.getImageData(x, y, w, h), d = img.data;
+  // (soft lumps: random values on a four-by-four lattice over the side, blended between)
+  let folds = null;
+  if (o.folds) {
+    const n = Array.from({ length: 25 }, () => r());
+    folds = (u, v) => {
+      const fx = u / 4, fy = v / 4, x0 = Math.min(3, Math.floor(fx)), y0 = Math.min(3, Math.floor(fy)), tx = fx - x0, ty = fy - y0;
+      const a = n[y0 * 5 + x0], b = n[y0 * 5 + x0 + 1], c = n[y0 * 5 + x0 + 5], e = n[y0 * 5 + x0 + 6];
+      return a + (b - a) * tx + (c - a) * ty + (a - b - c + e) * tx * ty;
+    };
+  }
+  for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) {
+    let k;
+    if (f === 3) k = 0.8;
+    else if (f === 2) k = xx === 0 || yy === 0 || xx === w - 1 || yy === h - 1 ? 0.95 : 1.02;
+    else {
+      k = 1.07 - 0.2 * (h > 1 ? yy / (h - 1) : 0);
+      if (w > 2 && (xx === 0 || xx === w - 1)) k *= 0.88;
+      if (yy === 0 && o.top) k *= o.top;
+    }
+    if (folds && f !== 3) k *= 1 + (folds(xx * 16 / Math.max(w, 1), yy * 16 / Math.max(h, 1)) - 0.5) * 0.18;
+    // (hair falls in strands: each column a shade of its own)
+    if (o.strands) k *= 0.9 + 0.16 * (((xx * 7 + f * 3) % 5) / 4);
+    const i = (yy * w + xx) * 4;
+    d[i] *= k; d[i + 1] *= k; d[i + 2] *= k;
+  }
+  g.putImageData(img, x, y);
+}
+// (the depth each part of a player gets)
+const RELIEF = { head: {}, hairShell: { strands: 1 }, body: { top: 0.86, folds: 1 }, arm0: { folds: 1 }, arm1: { folds: 1 }, leg0: { top: 0.84, folds: 1 }, leg1: { top: 0.84, folds: 1 } };
+
 function modelTemplate(type, variant) {
   const key = type + ':' + (variant || 0);
   if (modelCache.has(key)) return modelCache.get(key);
@@ -330,7 +366,7 @@ function modelTemplate(type, variant) {
   const W = 64;
   let cx = 0, cy = 0, rowH = 0;
   for (const p of parts) {
-    const [w, h, d] = p.size.map((v) => Math.ceil(v));
+    const [w, h, d] = (p.texSize || p.size).map((v) => Math.ceil(v));
     const dims = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
     p.rects = dims.map(([fw, fh]) => {
       if (cx + fw > W) { cx = 0; cy += rowH; rowH = 0; }
@@ -349,7 +385,8 @@ function modelTemplate(type, variant) {
   for (const p of parts) {
     p.rects.forEach(([x, y, w, h], f) => {
       const nz = p.noise ?? 0.07;
-      for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) {
+      // (a `clear` part starts see-through: only what is painted on it shows, like the hair standing off a head)
+      if (!p.clear) for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) {
         const k = 1 + (r() - 0.5) * 2 * nz;
         px(g, x + xx, y + yy, [p.color[0] * k, p.color[1] * k, p.color[2] * k]);
       }
@@ -363,6 +400,7 @@ function modelTemplate(type, variant) {
       }
       const paint = p.paint && (p.paint[FACE_NAMES[f]] || (f !== 2 && f !== 3 && p.paint.all));
       if (paint) paint(g, x, y, w, h);
+      if (p.relief) relief(g, x, y, w, h, f, p.relief, r);
     });
   }
   const tex = new THREE.CanvasTexture(canvas);
@@ -403,6 +441,7 @@ export function skinDoll(key, behind = false) {
   });
   list.sort((a, b) => a.z - b.z);
   for (const { p, x, y } of list) {
+    if (p.layer) continue;   // (the layer standing off the body: the flat picture shows what is under it)
     const w = Math.round(p.size[0]), h = Math.round(p.size[1]);
     const X = Math.round(14 + x - w / 2), Y = Math.round(44 - (y + h / 2));
     rect(g, X, Y, w, h, p.color);
@@ -415,9 +454,21 @@ export function skinDoll(key, behind = false) {
   return c;
 }
 
+// Players are shaded by which way each side faces, as the blocks are: the top is brightest, the sides
+// facing east and west darkest, the underneath in shade. (Worked out from the side's direction in the
+// world, so it stays right however the player turns or leans.)
+function shadeSides(shader) {
+  shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying float vShade;').replace('#include <begin_vertex>', `#include <begin_vertex>
+  vec3 wn = normalize(mat3(modelMatrix) * normal);
+  vShade = wn.x * wn.x * 0.76 + wn.z * wn.z * 0.88 + wn.y * wn.y * (wn.y > 0.0 ? 1.0 : 0.62);`);
+  shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vShade;')
+    .replace('vec3 outgoingLight = reflectedLight.indirectDiffuse;', 'vec3 outgoingLight = reflectedLight.indirectDiffuse * vShade;');
+}
+
 export function buildModel(type, variant) {
   const t = modelTemplate(type, variant);
   const mat = new THREE.MeshBasicMaterial({ map: t.tex });
+  if (type === 'player') { mat.onBeforeCompile = shadeSides; mat.alphaTest = 0.5; }
   const root = new THREE.Group();
   const inner = new THREE.Group();
   inner.scale.setScalar(1 / 16);
@@ -533,11 +584,12 @@ Object.assign(MODELS, {
     const [shirt, worn] = String(v ?? 0).split('|');
     // (a look: see skins.js. A number is a player from before there were any, told apart by shirt colour.)
     const look = lookOf(shirt);
+    const deep = (parts) => parts.map((p) => ({ ...p, relief: RELIEF[p.name] || {} }));
     if (look) {
       const armour = worn ? worn.split(',').map(Number) : [];
-      return lookParts(look, { humanoid, rect, px }, !!(ITEMS[armour[0]] && ITEMS[armour[0]].armor)).concat(armorParts(armour));
+      return deep(lookParts(look, { humanoid, rect, px }, !!(ITEMS[armour[0]] && ITEMS[armour[0]].armor)).concat(armorParts(armour)));
     }
-    return humanoid([4, 12, 4], [198, 146, 112], shirts[(+shirt || 0) % shirts.length], [52, 58, 132], {
+    return deep(humanoid([4, 12, 4], [198, 146, 112], shirts[(+shirt || 0) % shirts.length], [52, 58, 132], {
       front: (g, x, y) => {
         rect(g, x, y, 8, 2, hair); px(g, x, y + 2, hair); px(g, x + 7, y + 2, hair);
         px(g, x + 1, y + 4, [240, 240, 240]); px(g, x + 2, y + 4, [60, 80, 160]); px(g, x + 5, y + 4, [60, 80, 160]); px(g, x + 6, y + 4, [240, 240, 240]);
@@ -547,7 +599,7 @@ Object.assign(MODELS, {
       back: (g, x, y, w, h) => rect(g, x, y, w, h - 2, hair),
       px: (g, x, y, w) => rect(g, x, y, w, 3, hair),
       nx: (g, x, y, w) => rect(g, x, y, w, 3, hair),
-    }).concat(armorParts(worn ? worn.split(',').map(Number) : []));
+    }).concat(armorParts(worn ? worn.split(',').map(Number) : [])));
   },
   iron_golem: () => [
     { name: 'head', size: [8, 10, 8], pos: [0, 33, -2], off: [0, 5, 0], color: [204, 198, 188], paint: { front: (g, x, y) => {
@@ -841,6 +893,8 @@ class Mob {
     }
     if (by) G.entities.awardKill(by, this, mobXp(this), fx);
     if (this.type === 'sheep') dropItem(55 + this.variant, 1, this.pos.x, this.pos.y + 0.5, this.pos.z);
+    // (an animal on a lead lets it fall)
+    if (this.gear && this.gear.lead != null) { this.gear.lead = null; this.vDirty = true; dropItem(ID.lead, 1, this.pos.x, this.pos.y + 0.8, this.pos.z); }
     if (this.def.slime) {
       if (this.size > 1) {
         const n = 2 + Math.floor(rand() * 3);
@@ -980,6 +1034,8 @@ class Mob {
     const def = this.def, w = G.world, p = G.player;
     if (def.ai) { def.ai(this, dt); return; }   // flyers, bosses and other special mobs (dimmobs.js)
     if (def.tick) def.tick(this, dt);
+    // (on a lead: see leads.js; when it is pulled tight the animal goes where the lead takes it)
+    const pull = def.leadTick && this.gear && this.gear.lead != null && !this.dead ? def.leadTick(this, dt) : null;
     this.age += dt;
     this.hurtTime -= dt;
     this.invul -= dt;
@@ -1134,6 +1190,8 @@ class Mob {
       if (speed) this.yaw = Math.atan2(mx, mz);
       this.fuse = Math.max(0, this.fuse - dt);
     }
+
+    if (pull) { mx = pull.mx; mz = pull.mz; speed = pull.speed; this.yaw = Math.atan2(mx, mz); }
 
     // Villagers restock their trades each morning
     if (def.villager && (G.day || 0) !== this.restockDay && G.time < 0.1) {
@@ -2169,7 +2227,7 @@ export class Entities {
     if (e.home) d.h = { x: r(e.home.x), y: r(e.home.y), z: r(e.home.z) };
     if (e.persistent) d.P = 1;
     if (e.trades) d.vst = e.villagerState();
-    if (e.gear) d.g = e.gear;
+    if (e.gear) d.g = typeof e.gear.lead === 'number' ? { ...e.gear, lead: 'd' } : e.gear;   // (a guest's lead does not outlast the visit)
     return d;
   }
 

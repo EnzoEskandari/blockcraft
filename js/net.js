@@ -7,6 +7,7 @@ import { validSkin, mySkin } from './skins.js';
 import { R, itemModel, tintModel } from './render.js';
 import { buildModel, holdInHand, lightAt, explosionFx, explosionDamage, spawnBlockParticles } from './entities.js';
 import { decideUse, applyUse } from './mounts.js';
+import { decideTie } from './leads.js';
 import { BLOCKS, B, ITEMS } from './blocks.js';
 import { packSlots, unpackSlots } from './inventory.js';
 import { cleanEnch } from './enchant.js';
@@ -706,6 +707,7 @@ export class Net {
         if (m && !m.removed && m.def.mount) this.sendTo(from, { k: 'mur', id: d.id, r: decideUse(m, from, d.i | 0, !!d.s) });
         break;
       }
+      case 'tie': decideTie(from, d.x | 0, d.y | 0, d.z | 0); break;   // (a guest at a fence post with their leads)
       case 'mo': {
         const m = this.mobIndex.get(d.id);
         if (m && m.riderId === from) { m.riderId = null; m.vDirty = true; }

@@ -14,6 +14,7 @@ import { iconColors } from './textures.js';
 import { ench, bonusDamage, wears, protection, xpForLevel } from './enchant.js';
 import { Body } from './body.js';
 import { useMount, useLabel, leaveMount, placeBoat, rideMove, canSteer } from './mounts.js';
+import { isFence, useFence } from './leads.js';
 
 const GRAVITY = 32;
 const JUMP_V = 9.0;
@@ -931,6 +932,7 @@ export class Player {
     }
     if (t && !this.sneaking) {
       const id = t.id;
+      if (isFence(id) && useFence(this, t.x, t.y, t.z)) { swingHand(); return true; }
       if (BLOCKS[id].bed) { if (this.riding) this.dismount(); G.game.useBed(t.x, t.y, t.z); return true; }
       if (BLOCKS[id].door) { G.game.toggleDoor(t.x, t.y, t.z); swingHand(); return true; }
       if (BLOCKS[id].trapdoor) { G.game.toggleTrapdoor(t.x, t.y, t.z); swingHand(); return true; }

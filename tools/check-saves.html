@@ -55,7 +55,7 @@ async function check(fx) {
     if (G.state !== 'playing') throw new Error('it did not finish loading');
     const p = G.player;
     if (G.dim !== e.dim) bad.push(`opened in ${G.dim}, expected ${e.dim}`);
-    for (const k of ['inv0', 'inv1', 'inv5']) if (e[k] && slot(p.inv.slots[+k.slice(3)]) !== e[k]) bad.push(`slot ${k.slice(3)} has ${slot(p.inv.slots[+k.slice(3)])}, expected ${e[k]}`);
+    for (const k of ['inv0', 'inv1', 'inv5', 'inv8']) if (e[k] && slot(p.inv.slots[+k.slice(3)]) !== e[k]) bad.push(`slot ${k.slice(3)} has ${slot(p.inv.slots[+k.slice(3)])}, expected ${e[k]}`);
     if (p.health !== e.health) bad.push(`health ${p.health}, expected ${e.health}`);
     if (e.off && slot(p.off[0]) !== e.off) bad.push(`the off hand holds ${slot(p.off[0])}, expected ${e.off}`);
     if (e.armor0 && slot(p.armor[0]) !== e.armor0) bad.push(`the helmet slot holds ${slot(p.armor[0])}, expected ${e.armor0}`);
@@ -77,6 +77,12 @@ async function check(fx) {
       const h = G.entities.mobs.find((m) => m.type === 'horse' && m.gear && m.gear.coat === e.horse.coat);
       if (!h) bad.push('the horse is gone');
       else if (!h.gear.tame || !h.gear.saddle || h.gear.armor !== e.horse.armor) bad.push(`the horse's tack changed: ${JSON.stringify(h.gear)}`);
+    }
+    // ...and a horse tied to a fence post is still tied to it (1.10.4 on)
+    if (e.lead) {
+      const h = G.entities.mobs.find((m) => m.type === 'horse' && m.gear && m.gear.coat === e.horse.coat);
+      if (!h || JSON.stringify(h.gear.lead) !== JSON.stringify(e.lead)) bad.push(`the horse is no longer tied to its post: ${h ? JSON.stringify(h.gear.lead) : 'no horse'}`);
+      if (G.world.getBlock(...e.lead) !== B.oak_fence) bad.push('the fence post is gone');
     }
     if (e.nether) { const [x, y, z] = e.nether; if (G.world.getBlock(x, y, z) !== B.gold_block) bad.push('the gold block in the Nether is gone'); }
     if (G.dim !== 'overworld') { G.game.travel('overworld', 'spawn'); await waitPlaying(G); }

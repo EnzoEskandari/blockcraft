@@ -180,6 +180,7 @@ export class World {
   // The part of a block you can point at, when it doesn't fill its cell: [x0, y0, z0, x1, y1, z1] within it
   pickBox(x, y, z, id) {
     const b = BLOCKS[id];
+    if (b.pick) return b.pick;
     if (b.height < 1) return [0, 0, 0, 1, b.height, 1];
     if (!b.slab && !b.trapdoor) return null;
     const m = this.getMeta(x, y, z);

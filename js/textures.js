@@ -839,7 +839,8 @@ Object.assign(PAINTERS, {
     for (let y = 1; y < 15; y++) { p.set(7, y, [246, 240, 232]); p.set(8, y, [214, 204, 196]); }
     for (let x = 6; x <= 9; x++) { p.set(x, 14, [160, 120, 170]); p.set(x, 15, [120, 86, 130]); }
   },
-  dragon_egg: (p) => { p.each(() => jit([22, 12, 28], 5, p.r)); for (let k = 0; k < 16; k++) p.set(Math.floor(p.r() * 16), Math.floor(p.r() * 16), [120, 40, 150]); },
+  // (dark, with a few dull purple flecks: in 1.10.4 the bright ones were toned down, the egg looked sparkly)
+  dragon_egg: (p) => { p.each(() => jit([22, 12, 28], 5, p.r)); for (let k = 0; k < 16; k++) p.set(Math.floor(p.r() * 16), Math.floor(p.r() * 16), jit([66, 34, 82], 6, p.r)); },
   spawner: (p) => p.each((x, y) => {
     if (x % 5 === 0 || y % 5 === 0 || x === 15 || y === 15) return jit([34, 42, 56], 6, p.r);
     return [0, 0, 0, 0];
@@ -1191,11 +1192,62 @@ Object.assign(PAINTERS, {
   quartz_pillar_top: (p) => p.each((x, y) => { const d = Math.max(Math.abs(x - 7.5), Math.abs(y - 7.5)); return d > 6 ? jit([206, 196, 186], 4, p.r) : jit([238, 232, 224], 4, p.r); }),
 });
 
+// ---------------------------------------------------------------- depth
+// Some tiles were painted nearly flat (wool, terracotta, the blocks of metal and gems, snow, the darker
+// planks) and looked dull. In 1.10.4 they were given some depth: the painting is left as it was and
+// only made a little lighter or darker here and there (never another colour), from a random stream of
+// its own so the rest of the picture comes out the same.
+const DEPTH = {};
+for (const [k] of WOOL_COLORS) DEPTH[k + '_wool'] = 'wool';
+for (const k of ['terracotta', 'orange_terracotta', 'blue_terracotta', 'white_terracotta', 'red_terracotta', 'yellow_terracotta', 'clay']) DEPTH[k] = 'clay';
+for (const k of ['iron_block', 'gold_block', 'diamond_block', 'coal_block', 'redstone_block', 'lapis_block', 'copper_block', 'emerald_block', 'netherite_block', 'quartz_block']) DEPTH[k] = 'metal';
+for (const k of ['oak_planks', 'birch_planks', 'spruce_planks', 'jungle_planks', 'dark_oak_planks', 'acacia_planks', 'cherry_planks', 'crimson_planks', 'warped_planks']) DEPTH[k] = 'boards';
+for (const k of ['snow', 'sandstone_top', 'sandstone_bottom']) DEPTH[k] = 'lumps';
+function addDepth(t, kind, name) {
+  const r = mulberry32(hashString(name + '#depth'));
+  const big = vnoise(r, 4), small = vnoise(r, 8);
+  const brush = [];
+  for (let x = 0; x < 16; x++) brush.push(r() - 0.5);
+  const specks = new Map();
+  if (kind === 'clay') for (let i = 0; i < 9; i++) specks.set(Math.floor(r() * 256), i < 6 ? 0.88 : 1.07);
+  const f = new Float32Array(256);
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+    let k = 1;
+    if (kind === 'wool') {
+      // little raised stitches two dots square, lit from the top left, on soft lumps of fibre
+      const sx = x + ((y >> 1) & 1);
+      k *= (sx & 1) === 0 && (y & 1) === 0 ? 1.05 : (sx & 1) === 1 && (y & 1) === 1 ? 0.94 : 1;
+      k *= 1 + (big(x, y) - 0.5) * 0.14 + (small(x, y) - 0.5) * 0.06;
+    } else if (kind === 'clay') {
+      k *= 1 + (big(x, y) - 0.5) * 0.16 + (small(x, y) - 0.5) * 0.06;
+      k *= specks.get(y * 16 + x) || 1;
+    } else if (kind === 'metal') {
+      // a sheen falling from the top left, and the faint lines of brushing
+      if (x > 0 && y > 0 && x < 15 && y < 15) k *= 1.09 - ((x + y) / 28) * 0.18 + brush[x] * 0.08 + (small(x, y) - 0.5) * 0.05;
+    } else if (kind === 'boards') {
+      // each board catches the light along its top edge and darkens towards the seam below it
+      const row = y & 3;
+      k *= row === 0 ? 1.08 : row === 2 ? 0.95 : 1;
+      k *= 1 + (big(x, y) - 0.5) * 0.08;
+    } else if (kind === 'lumps') {
+      k *= 1 + (big(x, y) - 0.5) * 0.1 + (small(x, y) - 0.5) * 0.05;
+    }
+    f[y * 16 + x] = k;
+  }
+  const d = t.d;
+  for (let i = 0; i < 256; i++) {
+    if (d[i * 4 + 3] < 128) continue;
+    // (on near-black tiles a share is added outright, or the change would not show)
+    for (let c = 0; c < 3; c++) d[i * 4 + c] = d[i * 4 + c] + (f[i] - 1) * (d[i * 4 + c] * 0.85 + 48);
+  }
+}
+
 export function buildTextures() {
   let layer = 0;
   for (const [name, fn] of Object.entries(PAINTERS)) {
     const t = new Tile(hashString(name));
     fn(t);
+    if (DEPTH[name]) addDepth(t, DEPTH[name], name);
     if (!name.startsWith('destroy_')) bleed(t.d);
     const c = document.createElement('canvas');
     c.width = c.height = 16;
@@ -1512,6 +1564,15 @@ Object.assign(ART, {
     '....OHHHHhO.....', '....OHHHHhO.....', '...OHHHHHHhO....', '..OLLLLLLLLhO...',
     '..OHHHHHHHHhO...', '..OOOOOOOOOOO...',
   ],
+  lead: [
+    '...OOOOO........', '..OHhHhHO.......', '.OhOOOOOhO......', '.OHO...OHO......', '.OhO...OhO......', '.OHO...OHO......',
+    '.OhOOOOOhO......', '..OHhHhHOO......', '...OOOOhHO......', '.......OhHO.....', '........OhHO....', '.........OhHO...',
+    '..........OhHO..', '...........OLO..', '............OO..',
+  ],
+  dragon_egg: [
+    '.....OOOOOO.....', '....OHLLHHHO....', '...OHLHHHHPHO...', '...OHHHHHHHhO...', '..OHHPHHHHHHhO..', '..OHHHHHHPHHhO..',
+    '..OHHHHHHHHHhO..', '..OHPHHHHHHhhO..', '..OhHHHHPHHhhO..', '...OhHHHHHhhO...', '...OOhhhhhhOO...', '.....OOOOOO.....',
+  ],
   beacon: [
     '................', '..OOOOOOOOOOOO..', '..OWWWWWWWWWWO..', '..OWLLWWWWWWWO..', '..OWLOOOOOOWWO..', '..OWWOCCCCOWWO..',
     '..OWWOCLLCOWWO..', '..OWWOCLLCOWWO..', '..OWWOCCCCOWWO..', '..OWWOOOOOOWWO..', '..OWWWWWWWWWWO..', '..OWBBBBBBBBWO..',
@@ -1535,6 +1596,7 @@ const BLOCK_ART_PAL = {
   sign: { O: [80, 58, 32], P: [176, 142, 88], K: [70, 52, 30], S: [137, 103, 55] },
   anvil: { O: [22, 22, 26], H: [74, 74, 80], h: [50, 50, 56], L: [110, 110, 118] },
   cauldron: { O: [20, 20, 24], H: [62, 62, 68], h: [42, 42, 48], L: [96, 96, 104] },
+  dragon_egg: { O: [10, 6, 14], H: [34, 20, 44], h: [20, 12, 28], L: [72, 48, 92], P: [64, 32, 82] },
   beacon: { O: [70, 110, 130], W: [206, 236, 244], C: [110, 226, 240], L: [240, 255, 255], B: [26, 20, 36] },
   brewing_stand: { O: [40, 34, 20], Y: [226, 190, 70], W: [200, 220, 232], P: [150, 40, 160], L: [232, 124, 242], G: [128, 128, 128] },
 };
@@ -1628,6 +1690,7 @@ const ITEM_ART = {
   cooked_salmon: ['fish', pal3([232, 142, 96], [186, 100, 62], [246, 186, 146], { E: [60, 40, 30], O: [120, 62, 34] })],
 };
 Object.assign(ITEM_ART, {
+  lead: ['lead', { O: [58, 38, 20], H: [176, 132, 80], h: [128, 92, 52], L: [222, 190, 140] }],
   saddle: ['saddle', { O: [50, 28, 12], H: [150, 86, 44], h: [108, 58, 28], L: [196, 128, 76], S: [84, 46, 22], I: [200, 200, 206] }],
   leather_horse_armor: ['horse_armor', pal3([150, 86, 44], [108, 58, 28], [196, 128, 76], { O: [50, 28, 12] })],
   iron_horse_armor: ['horse_armor', pal3([214, 214, 214], [150, 150, 150], [250, 250, 250], { O: [70, 70, 74] })],

@@ -33,10 +33,11 @@ const FENCE_LINK = new Uint8Array(256); // blocks a fence connects to
 const LEAFY = new Uint8Array(256), STILL = new Uint8Array(256);   // leaves stir in the wind; these plants do not
 const GLOW = new Uint8Array(256);   // blocks that shine: 1 all over (glowstone, a torch, fire), 2 on their front only (a lit furnace)
 // Blocks that catch the light (see the blocks' shader): 16 glassy stone, 32 polished metal, gems and ice,
-// 48 ore, whose flecks sparkle
+// 48 ore, whose flecks sparkle. Only obsidian does now (1.10.4: the rest looked too shiny); the shader
+// still knows the other kinds.
 const GLOSS = new Uint8Array(256);
-const GLASSY = ['obsidian', 'crying_obsidian', 'blackstone', 'gilded_blackstone', 'dragon_egg', 'coal_block', 'polished_blackstone_bricks', 'chiseled_polished_blackstone'];
-const POLISHED = ['iron_block', 'gold_block', 'diamond_block', 'emerald_block', 'lapis_block', 'redstone_block', 'copper_block', 'quartz_block', 'quartz_pillar', 'ice', 'packed_ice', 'frosted_ice', 'netherite_block'];
+const GLASSY = ['obsidian', 'crying_obsidian'];
+const POLISHED = [];
 const AO = [0.5, 0.68, 0.84, 1];
 // Leaves drawn solid (Textures: Fast): the sides where one leaf block meets another of its kind are left out
 let solidLeaves = false;
@@ -87,7 +88,7 @@ export function initMesher() {
     FENCE_LINK[i] = (b.opaque && b.solid) || b.render === RENDER.FENCE ? 1 : 0;
     LEAFY[i] = b.key.endsWith('_leaves') ? 1 : 0;
     GLOW[i] = b.light >= 12 && b.render !== RENDER.LIQUID && !b.boxes ? (b.facing ? 2 : 1) : 0;
-    GLOSS[i] = GLASSY.includes(b.key) ? 16 : POLISHED.includes(b.key) ? 32 : b.key.endsWith('_ore') ? 48 : 0;
+    GLOSS[i] = GLASSY.includes(b.key) ? 16 : POLISHED.includes(b.key) ? 32 : 0;
     STILL[i] = ['sugar_cane', 'bamboo', 'fire', 'cobweb', 'red_mushroom', 'dead_bush', 'nether_wart', 'crimson_fungus', 'warped_fungus'].includes(b.key) ? 1 : 0;
     if (b.boxes) {
       const own = [b.faces[0], b.faces[1], b.faces[2], b.faces[3], b.facing ? b.front : b.faces[4], b.faces[5]];

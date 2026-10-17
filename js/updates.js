@@ -81,6 +81,23 @@ const BASTION_BRIDGE = {
 export const UPDATES = [
   {
     // a small update: it keeps the Nether & Noise picture
+    version: '1.10.4', name: 'Leads & Looks', date: '2026-10-16',
+    splashes: ['Saddle up!', 'Neigh!', 'Hee-haw!', 'Mind the lava!', 'Knock it back!', 'Row, row, row!', 'Black brick and gold!', 'Four new lands!', 'It moos now!', 'Two eyes each!',
+      'Swim for it!', 'Ride a strider!', 'What a hoard!', 'Baa!', 'Plant a cherry tree!', 'Tougher than diamond!', 'Mind the drop!', 'Hold your horses!', 'Tie it up!', 'Walkies!'],
+    scene: BASTION_BRIDGE,
+    notes: [
+      'Leads! Craft two from four string and a slimeball. Use one on a horse or a donkey and it follows you wherever you go, even while you ride another horse. Get too far ahead, or leave it stuck behind something, and the lead comes off and drops.',
+      'While you are leading animals, use a fence post to tie them to it: a knot of rope goes round the post. Use the post again to lead them away, or use an animal to take its lead off and get the lead back. Breaking the post lets them go.',
+      'Players look better from outside. Hair stands out from the head and falls in strands, tops have a hem, sleeves have cuffs, there are shoes on your feet, and every side is shaded by the way it faces, with soft folds in clothes.',
+      'The inventory shows your character next to your armour, wearing what you wear and holding what you hold. It turns to look at the pointer.',
+      'The Options screen is sorted into Graphics, Controls, and Game & Sound. The hotbar has darker wells, and the outline round the block you point at fits slabs, trapdoors, the enchanting table and anything else smaller than a block.',
+      'The dragon egg is shaped like an egg now, a bit smaller than a block, and it no longer sparkles.',
+      'Only obsidian catches the light now. Ore, blocks of metal and gems, blackstone and ice are no longer shiny.',
+      'Wool, terracotta, clay, snow, sandstone, planks and the blocks of metal and gems have more depth: stitches in wool, mottling in clay, a brushed sheen on metal, edges on each board. Their colours have not changed.',
+    ],
+  },
+  {
+    // a small update: it keeps the Nether & Noise picture
     version: '1.10.3', name: 'Ancient Debris', date: '2026-10-09',
     splashes: ['Saddle up!', 'Neigh!', 'Hee-haw!', 'Mind the lava!', 'Knock it back!', 'Row, row, row!', 'Black brick and gold!', 'Four new lands!', 'It moos now!', 'Two eyes each!',
       'Swim for it!', 'Ride a strider!', 'What a hoard!', 'Baa!', 'Plant a cherry tree!', 'Tougher than diamond!', 'Mind the drop!'],

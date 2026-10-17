@@ -8,6 +8,7 @@ import { ench } from './enchant.js';
 import { Advancements } from './advancements.js';
 import { initMesher, buildChunkMesh, computeLight, setSolidLeaves } from './mesher.js';
 import { R, initRenderer, setChunkMeshes, disposeChunkMeshes, updateSky, render, applyGraphics } from './render.js';
+import { drawLeads, clearLeads } from './leads.js';
 import { Player } from './player.js';
 import { Entities, spawnBlockParticles, explode, leafFall } from './entities.js';
 import { UI } from './ui.js';
@@ -1584,6 +1585,7 @@ function teardown() {
   if (G.world) for (const c of G.world.chunks.values()) disposeChunkMeshes(c);
   if (G.entities) G.entities.clear();
   if (G.player && G.player.body) G.player.body.dispose();
+  clearLeads();
   G.world = null;
   S.urgent.clear();
   S.updates.length = 0;
@@ -1843,6 +1845,7 @@ function frame(dt) {
   }
   updateSky(G.time, paused ? 0 : dt, G.player.camInWater, G.player.camInLava);
   G.ui.update(dt);
+  drawLeads();
   render();
   endFrame();
   S.saveTimer += dt;

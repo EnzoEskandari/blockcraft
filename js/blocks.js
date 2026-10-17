@@ -42,6 +42,7 @@ function block(id, key, name, o = {}) {
     sign: o.sign || 0,         // 1 standing on a post, 2 flat on a wall
     boxes: o.boxes || null,    // a shape of its own: boxes [x0, y0, z0, x1, y1, z1, texture?] in sixteenths of a block
     height: o.height || 1,     // how tall it is to stand on (the enchanting table is three quarters of a block)
+    pick: o.pick || null,      // the part you can point at, [x0, y0, z0, x1, y1, z1] in blocks, when it is not the whole width
     job: o.job || null,        // the profession a villager without work takes up at this block
     xp: o.xp || null,          // [least, most] experience for mining it
     fortune: !!o.fortune,      // the Fortune enchantment makes it drop more
@@ -220,7 +221,9 @@ block(135, 'end_gateway', 'End Gateway', { render: RENDER.END_PORTAL, tex: 'end_
 block(136, 'violetstone', 'Violetstone', { hardness: 1.5, tool: 'pickaxe', level: 0 });
 block(137, 'violetstone_pillar', 'Violetstone Pillar', { tex: { top: 'violetstone_pillar_top', bottom: 'violetstone_pillar_top', side: 'violetstone_pillar' }, hardness: 1.5, tool: 'pickaxe', level: 0 });
 block(138, 'end_rod', 'End Rod', { render: RENDER.TORCH, solid: false, opaque: false, light: 14, hardness: 0, sound: 'glass' });
-block(139, 'dragon_egg', 'Dragon Egg', { light: 1, hardness: 3, stack: 1 });
+// (an egg standing on its end, smaller than a block: ten sixteenths across and twelve high)
+block(139, 'dragon_egg', 'Dragon Egg', { render: RENDER.MODEL, art: 'dragon_egg', opaque: false, light: 1, hardness: 3, stack: 1, height: 0.75, pick: [0.1875, 0, 0.1875, 0.8125, 0.75, 0.8125],
+  boxes: [[5, 0, 5, 11, 1, 11], [4, 1, 4, 12, 2, 12], [3, 2, 3, 13, 6, 13], [4, 6, 4, 12, 8, 12], [5, 8, 5, 11, 10, 11], [6, 10, 6, 10, 12, 10]] });
 block(140, 'spawner', 'Monster Spawner', { opaque: false, cutout: true, hardness: 5, tool: 'pickaxe', level: 0, sound: 'metal', drops: none, xp: [15, 43] });
 
 // Caves & Ores: deepslate deep underground (with its own ores), copper, and the stones of cave walls
@@ -487,6 +490,8 @@ item(375, 'boat', 'Boat', { stack: 1 });
 item(376, 'netherite_scrap', 'Netherite Scrap', { fireproof: true });
 item(377, 'netherite_ingot', 'Netherite Ingot', { fireproof: true });
 item(378, 'netherite_upgrade', 'Netherite Upgrade Template', { fireproof: true });
+// (1.10.4) a lead, for leading a horse or a donkey, and tying it to a fence post
+item(388, 'lead', 'Lead');
 
 export const TOOL_MATERIALS = [
   { key: 'wooden', name: 'Wooden', tier: 0, speed: 2, durability: 59, dmg: 0, ing: '#planks' },
@@ -631,6 +636,7 @@ const RECIPE_DEFS = [
   { shape: ['X X', ' X '], key: { X: 'iron_ingot' }, out: ['bucket', 1] },
   { shape: ['P P', 'PPP'], key: { P: '#planks' }, out: ['boat', 1] },
   { shape: ['LLL', 'LIL'], key: { L: 'leather', I: 'iron_ingot' }, out: ['saddle', 1] },
+  { shape: ['SS ', 'SB ', '  S'], key: { S: 'string', B: 'slime_ball' }, out: ['lead', 2] },
   { shape: ['L L', 'LLL', 'L L'], key: { L: 'leather' }, out: ['leather_horse_armor', 1] },
   { shape: ['BB', 'BB'], key: { B: 'blackstone' }, out: ['polished_blackstone_bricks', 4] },
   { shape: ['B', 'B'], key: { B: 'blackstone_slab' }, out: ['chiseled_polished_blackstone', 1] },

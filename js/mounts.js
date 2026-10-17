@@ -7,6 +7,7 @@ import { moveBox, boxBlocked } from './physics.js';
 import { sfx } from './audio.js';
 import { MOB_TYPES, MODELS, Entities, quadLegs, rect, px } from './entities.js';
 import { BIOME } from './constants.js';
+import { decideLead, leadPull, validLead, heldByMe, canLead } from './leads.js';
 
 const rand = Math.random;
 const drop = (key, min, max) => ({ key, min, max });
@@ -76,6 +77,7 @@ const gearFor = (wild) => (saved) => {
     tame: wild ? !!g.tame : true, saddle: !!g.saddle, armor: ITEMS[g.armor] && ITEMS[g.armor].horseArmor ? g.armor : 0,
     spd: g.spd >= 0.7 && g.spd <= 1.4 ? g.spd : Math.round((0.85 + rand() * 0.35) * 100) / 100,   // (some are quicker than others)
     temper: Math.max(0, Math.min(100, g.temper | 0)),
+    lead: validLead(g.lead),   // (where its lead goes, if it is on one: see leads.js)
   };
 };
 // Can whoever sits on it decide where it goes?
@@ -84,9 +86,9 @@ export const canSteer = (m) => !!m.def.boat || (!!m.gear && m.gear.saddle && m.g
 const rideable = { persistent: true, mount: true, rideTick, unseat };
 Object.assign(MOB_TYPES, {
   horse: { name: 'Horse', hp: 26, w: 1.2, h: 1.6, speed: 1.9, sound: 'horse', pitch: 1, drops: [drop('leather', 0, 2)], anim: 'quad', gear: gearFor(true), seat: 1.3,
-    ride: { speed: 9.2, jump: 11.5, step: 1.05 }, xp: [1, 3], ...rideable },
+    ride: { speed: 9.2, jump: 11.5, step: 1.05 }, xp: [1, 3], leadTick: leadPull, ...rideable },
   donkey: { name: 'Donkey', hp: 22, w: 1.1, h: 1.4, speed: 1.6, sound: 'donkey', pitch: 1, drops: [drop('leather', 0, 2)], anim: 'quad', gear: gearFor(true), seat: 1.1,
-    ride: { speed: 7, jump: 10, step: 1.05 }, xp: [1, 3], ...rideable },
+    ride: { speed: 7, jump: 10, step: 1.05 }, xp: [1, 3], leadTick: leadPull, ...rideable },
   boat: { name: 'Boat', hp: 3, w: 1.3, h: 0.55, speed: 0, sound: 'boat', pitch: 1, drops: [drop('boat', 1, 1)], anim: 'boat', boat: true, fireImmune: true, seat: 0.12,
     ride: { speed: 7.6, land: 0.7, float: B.water, sink: 0.12 }, xp: [0, 0], ai: boatAI, animate: rowing, ...rideable },
 });
@@ -211,6 +213,9 @@ const FEED = { apple: 3, wheat: 2, bread: 4, golden_apple: 10, hay_bale: 8, carr
 export function decideUse(m, who, item, sneak) {
   const def = m.def, g = m.gear, it = ITEMS[item], horse = m.type === 'horse' || m.type === 'donkey';
   if (m.dead) return { did: 'none' };
+  // (a lead put on, or taken off: that comes before riding it)
+  const led = decideLead(m, who, item);
+  if (led) return led;
   if (m.riderId != null && m.riderId !== who) return { did: 'hint', text: 'Someone is already riding it' };
   if (def.boat) return seat(m, who);
   if (it && it.key === 'saddle' && !g.saddle) {
@@ -247,10 +252,16 @@ function seat(m, who) {
 // What the player's own game does with the answer
 export function applyUse(p, m, r) {
   if (!r) return;
-  if (r.did === 'gear' || r.did === 'feed') {
+  if (r.did === 'gear' || r.did === 'feed' || r.did === 'lead') {
     if (!p.creative && p.inv.held) { p.inv.held.count--; if (p.inv.held.count <= 0) p.inv.slots[p.inv.selected] = null; }
     G.ui.invChanged();
     sfx(r.did === 'feed' ? 'eat' : 'saddle', m.pos);
+    if (r.did === 'lead') p.hint('Use a fence post to tie it up');
+  } else if (r.did === 'unlead') {
+    // (the lead goes back in your hand: dropped at your feet if there is no room)
+    if (!p.creative && p.inv.add(ID.lead, 1)) G.entities.dropItem(ID.lead, 1, p.pos.x, p.pos.y + 1, p.pos.z);
+    G.ui.invChanged();
+    sfx('saddle', m.pos);
   } else if (r.did === 'ungear') sfx('saddle', m.pos);
   else if (r.did === 'hint') p.hint(r.text);
   else if (r.did === 'mount') { p.mountUp(m); if (m.gear && !m.gear.tame) p.hint('Hold on! It will throw you until it trusts you'); else if (m.gear && !m.gear.saddle) p.hint('Without a saddle it goes where it likes'); }
@@ -268,6 +279,8 @@ export function useMount(p, m) {
 export function useLabel(p, m) {
   const it = p.inv.held ? ITEMS[p.inv.held.id] : null, g = m.gear;
   if (m.def.boat) return 'Get in';
+  if (canLead(m) && (heldByMe(m) || Array.isArray(g.lead))) return 'Take Off Lead';
+  if (canLead(m) && it && it.key === 'lead' && g.lead == null) return 'Put On Lead';
   if (it && it.key === 'saddle' && !g.saddle) return 'Saddle';
   if (it && it.horseArmor && m.type === 'horse' && !g.armor) return 'Armour';
   if (it && FEED[it.key] && m.type !== 'strider' && (m.hp < m.maxHp || !g.tame)) return 'Feed';

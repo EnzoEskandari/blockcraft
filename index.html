@@ -120,9 +120,10 @@
   #food.hunger .food { filter: hue-rotate(75deg) saturate(1.4); }
   @keyframes jitter { 0% { transform: translateY(-1px); } 100% { transform: translateY(1px); } }
   #hotbar-row { display: flex; align-items: center; gap: 6px; pointer-events: auto; }
-  #hotbar { display: flex; padding: 2px; background: rgba(0, 0, 0, 0.5); border: 2px solid #111; box-shadow: inset 0 0 0 2px rgba(140, 140, 140, 0.35); }
-  #hotbar .slot { width: var(--slot-size); height: var(--slot-size); position: relative; box-sizing: border-box; border: 1px solid rgba(160, 160, 160, 0.25); }
-  #hotbar .slot.sel { outline: 3px solid #fff; outline-offset: -1px; box-shadow: 0 0 0 1px #000, inset 0 0 0 1px #000; z-index: 1; }
+  /* the hotbar: a stone-grey frame round dark wells, the one in your hand framed in white (1.10.4) */
+  #hotbar { display: flex; padding: 2px; background: rgba(16, 16, 16, 0.55); border: 2px solid #000; box-shadow: inset 0 0 0 2px rgba(150, 150, 150, 0.5), 0 3px 0 rgba(0, 0, 0, 0.3); }
+  #hotbar .slot { width: var(--slot-size); height: var(--slot-size); position: relative; box-sizing: border-box; border: 2px solid rgba(118, 118, 118, 0.5); box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.3); }
+  #hotbar .slot.sel { outline: 3px solid #f2f2f2; outline-offset: 0; border-color: #000; background: rgba(255, 255, 255, 0.1); box-shadow: 0 0 0 4px #000, inset 0 0 0 1px rgba(255, 255, 255, 0.35); z-index: 1; }
   .slot img { position: absolute; left: 11%; top: 11%; width: 78%; height: 78%; pointer-events: none; }
   .slot img.px { image-rendering: pixelated; }
   .slot .count {
@@ -333,6 +334,8 @@
   .note { font-size: 20px; color: var(--text-dim); text-align: center; margin: -2px 0 4px; }
 
   #options-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; width: min(640px, 100%); }
+  #options-grid .opt-head { grid-column: 1 / -1; margin: 8px 0 -2px; font: 400 13px var(--title-font); color: var(--accent); text-shadow: 2px 2px 0 #3f3f00; letter-spacing: 0.04em; }
+  #options-grid .opt-head:first-child { margin-top: 0; }
   @media (max-width: 560px) { #options-grid { grid-template-columns: 1fr; } }
   .slider { position: relative; display: block; height: 44px; }
   .slider input { -webkit-appearance: none; appearance: none; display: block; width: 100%; height: 44px; margin: 0; background: #000; border: 2px solid #000; box-sizing: border-box; touch-action: pan-y; }
@@ -358,7 +361,7 @@
   /* ---------------- inventory panels */
   .panel {
     position: relative; background: var(--gui); color: var(--ink); border: 2px solid #000; border-radius: 3px;
-    box-shadow: inset 3px 3px 0 var(--gui-hi), inset -3px -3px 0 var(--gui-lo);
+    box-shadow: inset 3px 3px 0 var(--gui-hi), inset -3px -3px 0 var(--gui-lo), 0 6px 0 rgba(0, 0, 0, 0.35);
     padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 6px; max-width: 100%; box-sizing: border-box;
   }
   .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -376,7 +379,16 @@
   .panel .slot.big { width: calc(var(--slot-size) * 1.35); height: calc(var(--slot-size) * 1.35); }
   .panel .slot.sel { outline: 3px solid #fff; outline-offset: -3px; }
   .hotbar-grid { margin-top: 6px; }
-  .armor-col { display: flex; flex-direction: column; margin-right: 18px; }
+  .armor-col { display: flex; flex-direction: column; margin-right: 6px; }
+  /* you, drawn in 3D beside your armour (see doll.js) */
+  .doll-box { width: calc(var(--slot-size) * 2.1); height: calc(var(--slot-size) * 4); margin-right: 14px; flex: none; background: #000; box-shadow: inset 2px 2px 0 var(--slot-lo), inset -2px -2px 0 var(--gui-hi); }
+  .doll-box canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+  @media (max-width: 600px) {
+    .doll-box { width: calc(var(--slot-size) * 1.3); margin-right: 4px; }
+    .craft-row { gap: 8px; }
+    .craft-row .off-col { margin-right: 4px; }
+    .craft-row .arrow { width: 28px; }
+  }
   .panel .slot.armor-slot { background-size: 70% 70%; background-position: center; background-repeat: no-repeat; image-rendering: pixelated; }
   /* achievements: the note that slides in, and the screen that lists them */
   #adv-toast {

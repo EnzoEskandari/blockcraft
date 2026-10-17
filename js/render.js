@@ -1030,11 +1030,14 @@ export function showHighlight(hit, progress) {
   if (!hit) { box.visible = false; crack.visible = false; return; }
   const def = BLOCKS[hit.id];
   box.visible = true;
-  let sx = 1, sy = 1, sz = 1, oy = 0;
+  let sx = 1, sy = 1, sz = 1, ox = 0, oy = 0, oz = 0;
+  // (round the part of the block you can point at: half a slab, a trapdoor, the dragon egg)
+  const part = G.world && G.world.pickBox(hit.x, hit.y, hit.z, hit.id);
   if (def.render === RENDER.TORCH) { sx = sz = 0.18; sy = 0.64; oy = -0.18; }
   else if (def.render === RENDER.CROSS) { sx = sz = 0.8; sy = 0.8; oy = -0.1; }
+  else if (part) { sx = part[3] - part[0]; sy = part[4] - part[1]; sz = part[5] - part[2]; ox = (part[0] + part[3]) / 2 - 0.5; oy = (part[1] + part[4]) / 2 - 0.5; oz = (part[2] + part[5]) / 2 - 0.5; }
   box.scale.set(sx, sy, sz);
-  box.position.set(hit.x + 0.5, hit.y + 0.5 + oy, hit.z + 0.5);
+  box.position.set(hit.x + 0.5 + ox, hit.y + 0.5 + oy, hit.z + 0.5 + oz);
   if (progress > 0) {
     crack.visible = true;
     crack.position.copy(box.position);

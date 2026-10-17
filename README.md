@@ -54,6 +54,13 @@ How it works:
 - Animals, villagers and dropped items are kept when you walk away.
 - Press **T** (or the **T** button on iPad) to chat.
 
+## Leads & Looks (1.10.4)
+
+- **Leads** (`js/leads.js`, item 388): where a horse's or donkey's lead goes is kept in its gear as `gear.lead`: `'p'` the host's own player, a guest's number, `[x, y, z]` a fence post, or `'d'` (a guest's lead when the world was saved: it falls off when the animal is next seen). The host decides (`decideLead` from `decideUse`, `decideTie` for posts; guests send `tie`), and `leadPull` steers the animal from `Mob.update` while the lead is taut. It snaps past 12 blocks, and drops when the post goes, the holder leaves or the animal dies. Every browser draws the ropes and knots itself (`drawLeads`).
+- **Players** (`relief` and `shadeSides` in `js/entities.js`, the layer parts at the end of `lookParts` in `js/skins.js`): player models are shaded by the world direction of each side, have depth painted into their picture, and carry a layer standing off the body (a see-through `clear` hair shell with `texSize`, hem, cuffs, shoes). Parts marked `layer` are left out of the flat `skinDoll`.
+- **Inventory doll** (`js/doll.js`): the player model drawn into a render target by the game's renderer, read back into a canvas in the panel, only while the inventory is open.
+- **Depth on flat tiles** (`DEPTH` / `addDepth` in `js/textures.js`): after a tile is painted, some are made lighter or darker in places from a random stream of their own, never recoloured. Only obsidian keeps the `GLOSS` glints. The dragon egg is a model (`boxes`) with a `pick` box, and the block outline uses `pickBox`.
+
 ## Ancient Debris (1.10.3)
 
 - **Netherite**: `ancient_debris` (block 244) is placed by `placeDebris` in `js/dims.js`, called after structures are stamped. It has its own random numbers and only replaces netherrack that has an opaque block on all six sides, a block in from the chunk edge, so it is added to explored land too without changing anything that can be seen (the same kind of additive pass as the 1.7 diamonds). Smelting gives `netherite_scrap`; four scraps and four gold ingots make a `netherite_ingot`.

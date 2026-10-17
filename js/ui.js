@@ -9,6 +9,7 @@ import { structuresNear, treasureAt } from './structures.js';
 import { SEA, BIOME } from './constants.js';
 import { SLOTS, CHARACTERS, PRIZES, item, owns, hasPrize, prizesIn, codeOf, myLook, mySkin, wear, wearLook, randomLook, armColour, handColour } from './skins.js';
 import { skinDoll } from './entities.js';
+import { InventoryDoll } from './doll.js';
 import { paintHand, applyGraphics } from './render.js';
 import { sameItem, stack, craftableTimes, takeIngredients } from './inventory.js';
 import { isEnchanted, enchList, enchLine, ENCH, xpForLevel, enchantability, tableLevels, tableOffer, enchanted, anvil, grind, repairItem, countShelves } from './enchant.js';
@@ -1125,28 +1126,33 @@ export class UI {
 
   // ---------------------------------------------------------------- options
   buildOptions() {
+    // (in groups, each under a heading)
     const OPTS = [
+      { head: 'Graphics' },
       { key: 'renderDist', label: 'Render Distance', min: 2, max: 12, step: 1, fmt: (v) => v + ' chunks' },
       { key: 'fov', label: 'FOV', min: 50, max: 110, step: 1, fmt: (v) => (v === 70 ? 'Normal' : v) },
       { key: 'gamma', label: 'Brightness', min: 0, max: 1, step: 0.05, fmt: (v) => (v === 0 ? 'Moody' : v === 1 ? 'Bright' : Math.round(v * 100) + '%') },
-      { key: 'volume', label: 'Sound', min: 0, max: 1, step: 0.05, fmt: (v) => (v === 0 ? 'Off' : Math.round(v * 100) + '%') },
-      { key: 'sensitivity', label: 'Mouse Sensitivity', min: 0.2, max: 3, step: 0.05, fmt: (v) => Math.round(v * 100) + '%' },
-      { key: 'touchSens', label: 'Touch Look Speed', min: 0.2, max: 3, step: 0.05, fmt: (v) => Math.round(v * 100) + '%' },
-      { key: 'autoJump', label: 'Auto-Jump', toggle: true },
-      { key: 'viewBob', label: 'View Bobbing', toggle: true },
       { key: 'lighting', label: 'Lighting', cycle: ['simple', 'fancy', 'max'], names: { simple: 'Simple', fancy: 'Fancy', max: 'Max' } },
       { key: 'shadowQ', label: 'Shadows', cycle: ['off', 'low', 'medium', 'high', 'max'], names: { off: 'Off', low: 'Low', medium: 'Medium', high: 'High', max: 'Max' } },
       { key: 'textures', label: 'Textures', cycle: ['fast', 'fancy', 'max'], names: { fast: 'Fast', fancy: 'Fancy', max: 'Max' } },
       { key: 'fpsLimit', label: 'Frame Rate', cycle: ['screen', 'unlimited'], names: { screen: 'Matches Screen', unlimited: 'Unlimited' } },
+      { key: 'viewBob', label: 'View Bobbing', toggle: true },
       { key: 'view', label: 'View', cycle: ['first', 'third', 'second'], names: { first: 'First Person', third: 'Third Person', second: 'Second Person' } },
+      { head: 'Controls' },
+      { key: 'sensitivity', label: 'Mouse Sensitivity', min: 0.2, max: 3, step: 0.05, fmt: (v) => Math.round(v * 100) + '%' },
+      { key: 'touchSens', label: 'Touch Look Speed', min: 0.2, max: 3, step: 0.05, fmt: (v) => Math.round(v * 100) + '%' },
+      { key: 'autoJump', label: 'Auto-Jump', toggle: true },
       { key: 'touch', label: 'Touch Controls', cycle: ['auto', 'on', 'off'], names: { auto: 'Auto', on: 'On', off: 'Off' } },
       { key: 'touchAim', label: 'Touch Aiming', cycle: ['finger', 'crosshair'], names: { finger: 'Where You Tap', crosshair: 'Crosshair' } },
+      { head: 'Game & Sound' },
+      { key: 'volume', label: 'Sound', min: 0, max: 1, step: 0.05, fmt: (v) => (v === 0 ? 'Off' : Math.round(v * 100) + '%') },
       { key: 'dayLength', label: 'Day Length', cycle: [1200, 600], names: { 1200: '20 min', 600: '10 min' } },
       { key: 'showCoords', label: 'Show Coordinates', toggle: true },
     ];
     const grid = $('options-grid');
     this.optionSync = [];
     for (const o of OPTS) {
+      if (o.head) { grid.appendChild(h('h3', 'opt-head', o.head)); continue; }
       if (o.toggle || o.cycle) {
         const b = h('button', 'btn');
         b.type = 'button';
@@ -1257,6 +1263,7 @@ export class UI {
       this.fps = Math.round(this.frames / this.fpsTime); this.frames = 0; this.fpsTime = 0;
       if (G.screen === 'pause' && G.net) this.syncPause();
     }
+    if (this.doll && G.screen === 'inventory') this.doll.update(dt);
     const c = this.hudCache;
     if (this.hudDirty) {
       this.hudDirty = false;
@@ -1565,6 +1572,13 @@ export class UI {
           el.style.backgroundImage = `url(${this.armorIcons[i]})`;
         }
         row.appendChild(col);
+        // you, in what you wear, beside your armour
+        const box = h('div', 'doll-box');
+        const cv = document.createElement('canvas');
+        box.appendChild(cv);
+        row.appendChild(box);
+        if (this.doll) this.doll.dispose();
+        this.doll = new InventoryDoll(cv);
         // the off hand, beside the boots
         const offCol = h('div', 'off-col');
         const offSlot = add(offCol, { kind: 'offhand', arr: G.player.off, i: 0 });
@@ -2248,6 +2262,7 @@ export class UI {
 
   closeContainer() {
     const p = G.player;
+    if (this.doll) { this.doll.dispose(); this.doll = null; }
     const giveBack = (s) => {
       if (!s) return;
       const left = p.inv.add(s.id, s.count, s.dmg, s.e);

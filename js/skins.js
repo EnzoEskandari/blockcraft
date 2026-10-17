@@ -278,7 +278,8 @@ export function lookParts(look, H, bare = false) {
     if (specs.side) specs.side(g, x, y, w, h, C);
   };
   const head = {
-    front: (g, x, y) => { if (hat.mask) hat.mask(g, x, y, C); else C.face(g, x, y); },
+    // (a shade under the middle of the face for a nose; the face is painted over it)
+    front: (g, x, y) => { if (hat.mask) hat.mask(g, x, y, C); else { rect(g, x + 3, y + 5, 2, 1, dark(tone, 0.88)); C.face(g, x, y); } },
     top: (g, x, y, w, h) => { if (hat.all) rect(g, x, y, w, h, hat.all); else if (hair.top) rect(g, x, y, w, h, hairC); else if (hair.stripe) rect(g, x + 3, y, 2, h, hairC); },
     back: (g, x, y, w, h) => { if (hat.all) rect(g, x, y, w, h, hat.all); else if (hair.stripe) rect(g, x + 3, y, 2, 3, hairC); else rows(hair.back)(g, x, y, w, h); },
     px: side, nx: side,
@@ -292,6 +293,24 @@ export function lookParts(look, H, bare = false) {
   if (!hat.all) (hair.parts || []).forEach((p, i) => { if (!((tall || bare) && p.tall)) parts.push({ name: 'hair' + i, parent: 'head', size: p.size, pos: [p.x || 0, p.y, p.z || 0], color: hairC }); });
   (hat.parts || []).forEach((p, i) => parts.push({ name: 'hat' + i, parent: 'head', size: p.size, pos: [p.x || 0, p.y, p.z || 0], color: p.color }));
   for (const p of back.parts || []) parts.push({ parent: 'body', ...p });
+  // Depth (1.10.4): a layer that stands a little off the body, as on a Minecraft skin. The hair stands off
+  // the head (with the arms of glasses over it), the hem of the top and the cuffs of the sleeves are
+  // raised, and there are shoes on the feet.
+  if (!hat.all && hair.key !== 'none') {
+    const shellSide = (g, x, y, w, h) => { rows(hair.side)(g, x, y, w, h); if (specs.side) specs.side(g, x, y, w, h, C); };
+    parts.push({ name: 'hairShell', parent: 'head', size: [8.5, 8.5, 8.5], texSize: [8, 8, 8], pos: [0, 4, 0], color: hairC, clear: true, layer: 1, paint: {
+      front: (g, x, y) => { if (hair.front) hair.front(g, x, y, C); },
+      top: (g, x, y, w, h) => { if (hair.top) rect(g, x, y, w, h, hairC); else if (hair.stripe) rect(g, x + 3, y, 2, h, hairC); },
+      back: (g, x, y, w, h) => { if (hair.stripe) rect(g, x + 3, y, 2, 3, hairC); else rows(hair.back)(g, x, y, w, h); },
+      px: shellSide, nx: shellSide,
+    } });
+  }
+  parts.push({ name: 'hem', parent: 'body', size: [8.5, 1.5, 4.5], pos: [0, -5.25, 0], color: top.c, layer: 1 });
+  [-1, 1].forEach((k, i) => {
+    const sleeve = top.sleeves || top.c;
+    parts.push({ name: 'cuff' + i, parent: 'arm' + i, size: [4.5, 1.2, 4.5], pos: [0, top.sleeves ? -7.4 : -1.4, 0], color: sleeve, layer: 1 });
+    parts.push({ name: 'shoe' + i, parent: 'leg' + i, size: [4.4, 2.2, 4.9], pos: [0, -10.9, 0.35], color: [62, 58, 60], layer: 1 });
+  });
   return parts;
 }
 
