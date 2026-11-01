@@ -60,13 +60,31 @@ export const enchLine = (key, lvl) => (ENCH[key] ? ENCH[key].name + (ENCH[key].m
 // What a stack carries
 export const ench = (s, key) => (s && s.e && s.e[key]) || 0;
 export const enchList = (s) => (s && s.e ? ENCH_KEYS.filter((k) => s.e[k]).map((k) => [k, s.e[k]]) : []);
-export const isEnchanted = (s) => !!(s && s.e && Object.keys(s.e).length);
+// (what a bundle holds travels in `e` too, so it goes wherever a stack goes; it is not an enchantment)
+export const isEnchanted = (s) => !!(s && s.e && Object.keys(s.e).some((k) => k !== 'bundle'));
+
+// What a bundle holds, as saved stacks [id, count, wear, enchantments, loaded]: real things only, no bundles
+function cleanBundle(list) {
+  const out = [];
+  for (const v of Array.isArray(list) ? list.slice(0, 64) : []) {
+    if (!Array.isArray(v) || !ITEMS[v[0]] || v[0] === ID.bundle) continue;
+    const e = cleanEnch(v[3]);
+    if (e) delete e.bundle;
+    const entry = [v[0], Math.max(1, Math.min(ITEMS[v[0]].stack || 64, v[1] | 0)), Math.max(0, v[2] | 0)];
+    if (e && Object.keys(e).length || v[4]) entry.push(e && Object.keys(e).length ? e : 0);
+    if (v[4]) entry.push(1);
+    out.push(entry);
+  }
+  return out;
+}
 
 // Only real enchantments at sensible levels survive loading a save or a message from another player
 export function cleanEnch(e) {
   if (!e || typeof e !== 'object' || Array.isArray(e)) return null;
   const out = {};
   let n = 0;
+  const held = cleanBundle(e.bundle);
+  if (held.length) { out.bundle = held; n++; }
   for (const k of ENCH_KEYS) {
     const l = e[k] | 0;
     if (l > 0) { out[k] = Math.min(l, ENCH[k].max); n++; }

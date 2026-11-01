@@ -405,7 +405,7 @@ async function flushRecord(world, account) {
 const rooms = new Map();   // world id -> { host, peers: Map(id -> ws), next }
 const send = (ws, msg) => { if (ws && ws.readyState === 1) ws.send(typeof msg === 'string' ? msg : JSON.stringify(msg)); };
 
-const MIN_PAGE = 2;   // the oldest page that may join (see `caps`)
+const MIN_PAGE = 4;   // the oldest page that may join (see `caps`): an older one would empty any bundle it handled
 // Someone opening an online world: they run it if nobody is in that dimension yet, otherwise they join whoever does
 async function enterWorld(ws, m) {
   if (!store || stopping) { send(ws, { t: 'error', msg: stopping ? 'Blockcraft is updating. Reconnecting…' : notReady(), retry: true }); return; }

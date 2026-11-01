@@ -67,6 +67,10 @@ How it works:
 - **Inventory doll** (`js/doll.js`): the player model drawn into a render target by the game's renderer, read back into a canvas in the panel, only while the inventory is open.
 - **Depth on flat tiles** (`DEPTH` / `addDepth` in `js/textures.js`): after a tile is painted, some are made lighter or darker in places from a random stream of their own, never recoloured. Only obsidian keeps the `GLOSS` glints. The dragon egg is a model (`boxes`) with a `pick` box, and the block outline uses `pickBox`.
 
+## Bundles (1.10.8)
+
+A bundle (`bundleAdd`, `bundleTake`, `bundleItems` in `js/inventory.js`, `useBundle` in `js/ui.js`) keeps its contents as saved stacks in `e.bundle`, because `e` already goes everywhere a stack goes: saves, chests, dropped items and multiplayer. `cleanEnch` keeps that key and checks what is in it; `isEnchanted` ignores it. Pages older than `caps: 4` would strip it, so `MIN_PAGE` is 4.
+
 ## Ancient Debris (1.10.3)
 
 - **Netherite**: `ancient_debris` (block 244) is placed by `placeDebris` in `js/dims.js`, called after structures are stamped. It has its own random numbers and only replaces netherrack that has an opaque block on all six sides, a block in from the chunk edge, so it is added to explored land too without changing anything that can be seen (the same kind of additive pass as the 1.7 diamonds). Smelting gives `netherite_scrap`; four scraps and four gold ingots make a `netherite_ingot`.

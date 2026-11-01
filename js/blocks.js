@@ -494,6 +494,8 @@ item(377, 'netherite_ingot', 'Netherite Ingot', { fireproof: true });
 item(378, 'netherite_upgrade', 'Netherite Upgrade Template', { fireproof: true });
 // (1.10.4) a lead, for leading a horse or a donkey, and tying it to a fence post
 item(388, 'lead', 'Lead');
+// (1.10.8) a bag that holds a stack's worth of mixed things in one slot (see the bundle functions in inventory.js)
+item(427, 'bundle', 'Bundle', { stack: 1 });
 // (1.10.5) spawn eggs, in the creative inventory: one for every creature in the game, with its name and the
 // colours of the egg (shell, spots). Use one on a block and the creature hatches there; use one on a spawner and the spawner
 // makes that creature from then on. The numbers are kept forever, so new creatures go on the end.
@@ -718,6 +720,7 @@ for (const [block, ingot] of [['emerald_block', 'emerald'], ['iron_block', 'iron
 RECIPE_DEFS.push({ in: ['netherite_scrap', 'netherite_scrap', 'netherite_scrap', 'netherite_scrap', 'gold_ingot', 'gold_ingot', 'gold_ingot', 'gold_ingot'], out: ['netherite_ingot', 1] });
 RECIPE_DEFS.push({ shape: ['DTD', 'DND', 'DDD'], key: { D: 'diamond', T: 'netherite_upgrade', N: 'netherrack' }, out: ['netherite_upgrade', 2] });
 RECIPE_DEFS.push({ shape: ['###', '###', '###'], key: { '#': 'netherite_ingot' }, out: ['netherite_block', 1] });
+RECIPE_DEFS.push({ shape: ['S', 'L'], key: { S: 'string', L: 'leather' }, out: ['bundle', 1] });
 RECIPE_DEFS.push({ in: ['netherite_block'], out: ['netherite_ingot', 9] });
 for (const m of TOOL_MATERIALS) {
   RECIPE_DEFS.push({ shape: ['XX', ' S', ' S'], key: { X: m.ing, S: 'stick' }, out: [`${m.key}_hoe`, 1] });

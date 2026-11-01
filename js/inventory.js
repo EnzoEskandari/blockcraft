@@ -1,5 +1,5 @@
 // Item stacks and the player's inventory (slots 0-8 are the hotbar, 9-35 the main grid).
-import { maxStack, ITEMS } from './blocks.js';
+import { maxStack, ITEMS, ID } from './blocks.js';
 import { cleanEnch, wears } from './enchant.js';
 
 // A stack: { id, count, dmg } and, when it is enchanted, e: { enchantment: level }
@@ -16,6 +16,44 @@ export function unpackSlots(arr, n) {
   const out = new Array(n).fill(null);
   (arr || []).forEach((v, i) => { if (v && i < n && ITEMS[v[0]]) { out[i] = stack(v[0], v[1], v[2], cleanEnch(v[3])); if (v[4]) out[i].ch = 1; } });
   return out;
+}
+
+// Bundles. A bundle holds what would fill one stack of 64, of any mix of things: a thing that stacks to 16 takes
+// up four times the room, and one that does not stack fills it alone. Its contents are saved stacks, last in
+// last, kept in `e.bundle` so that they stay with it wherever a stack goes.
+export const BUNDLE_SIZE = 64;
+export const isBundle = (s) => !!s && s.id === ID.bundle;
+export const bundleItems = (s) => unpackSlots(s.e && s.e.bundle, BUNDLE_SIZE).filter(Boolean);
+const roomEach = (id) => Math.ceil(BUNDLE_SIZE / maxStack(id));
+export const bundleFill = (s) => bundleItems(s).reduce((n, x) => n + roomEach(x.id) * x.count, 0);
+const setItems = (s, list) => { if (list.length) s.e = { bundle: packSlots(list) }; else delete s.e; };
+
+// Puts as much of stack `st` into the bundle as fits (taking it off `st`) and returns how many went in
+export function bundleAdd(b, st) {
+  if (!st || isBundle(st)) return 0;
+  const n = Math.min(st.count, Math.floor((BUNDLE_SIZE - bundleFill(b)) / roomEach(st.id)));
+  if (n <= 0) return 0;
+  const list = bundleItems(b);
+  let left = n;
+  // (on top of what it has of the same thing, and that goes to the top, where it comes out first)
+  for (let i = list.length - 1; i >= 0 && left; i--) {
+    const x = list[i];
+    if (!sameItem(x, st) || x.count >= maxStack(x.id)) continue;
+    const k = Math.min(left, maxStack(x.id) - x.count);
+    x.count += k; left -= k;
+    list.push(...list.splice(i, 1));
+  }
+  if (left) { const x = cloneStack(st); x.count = left; if (st.ch) x.ch = 1; list.push(x); }
+  setItems(b, list);
+  st.count -= n;
+  return n;
+}
+
+// Takes out what went in last, or null if there is nothing in it
+export function bundleTake(b) {
+  const list = bundleItems(b), x = list.pop() || null;
+  setItems(b, list);
+  return x;
 }
 
 // How many times a recipe can be made from the items that count(id) reports

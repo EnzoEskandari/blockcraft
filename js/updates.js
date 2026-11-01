@@ -81,6 +81,19 @@ const BASTION_BRIDGE = {
 export const UPDATES = [
   {
     // a small update: it keeps the Nether & Noise picture
+    version: '1.10.8', name: 'Bundled Up', date: '2026-11-01',
+    splashes: ['Saddle up!', 'Neigh!', 'Hee-haw!', 'Mind the lava!', 'Knock it back!', 'Row, row, row!', 'Black brick and gold!', 'Four new lands!', 'It moos now!', 'Two eyes each!',
+      'Swim for it!', 'Ride a strider!', 'What a hoard!', 'Baa!', 'Plant a cherry tree!', 'Tougher than diamond!', 'Mind the drop!', 'Hold your horses!', 'Tie it up!', 'Walkies!',
+      'Hatch a dragon!', 'Build it higher!', 'Speed II!', 'Wild horses!', 'Good fences!', 'Pack it in!'],
+    scene: BASTION_BRIDGE,
+    notes: [
+      'Bundles save room in your inventory. Craft one from a piece of string above a piece of leather. It holds a stack\'s worth of any mix of things in one slot: 64 ordinary items, fewer of things that stack to 16, and a single thing that does not stack at all fills it.',
+      'To fill a bundle, pick something up and click it onto the bundle, or pick up the bundle and click it onto what you want to put in. Right-click a bundle (press and hold on a touch screen) to take out what went in last.',
+      'The blue bar on a bundle shows how full it is, and pointing at it lists what is inside. What is in a bundle stays in it when you drop it, put it in a chest or die.',
+    ],
+  },
+  {
+    // a small update: it keeps the Nether & Noise picture
     version: '1.10.7', name: 'Good Fences', date: '2026-10-17',
     splashes: ['Saddle up!', 'Neigh!', 'Hee-haw!', 'Mind the lava!', 'Knock it back!', 'Row, row, row!', 'Black brick and gold!', 'Four new lands!', 'It moos now!', 'Two eyes each!',
       'Swim for it!', 'Ride a strider!', 'What a hoard!', 'Baa!', 'Plant a cherry tree!', 'Tougher than diamond!', 'Mind the drop!', 'Hold your horses!', 'Tie it up!', 'Walkies!',

@@ -12,7 +12,7 @@ import { skinDoll } from './entities.js';
 import { InventoryDoll } from './doll.js';
 import { POWERS, RANGE, PAYMENT, decode, encode, pyramidLevel, powersOf } from './beacons.js';
 import { paintHand, applyGraphics } from './render.js';
-import { sameItem, stack, craftableTimes, takeIngredients } from './inventory.js';
+import { sameItem, stack, craftableTimes, takeIngredients, isBundle, bundleItems, bundleFill, bundleAdd, bundleTake, BUNDLE_SIZE } from './inventory.js';
 import { isEnchanted, enchList, enchLine, ENCH, xpForLevel, enchantability, tableLevels, tableOffer, enchanted, anvil, grind, repairItem, countShelves } from './enchant.js';
 import { requestLock, exitLock, setTouchMode, resetTouch } from './input.js';
 import { sfx, setVolume, initAudio } from './audio.js';
@@ -1234,6 +1234,14 @@ export class UI {
     if (isEnchanted(s)) { const g = h('span', 'glint'); g.style.setProperty('--icon', `url(${img.src})`); el.appendChild(g); }
     if (s.count > 1) el.appendChild(h('span', 'count', String(s.count)));
     const it = ITEMS[s.id];
+    // (how full a bundle is)
+    if (isBundle(s) && s.e) {
+      const bar = h('span', 'dur'), fill = h('i');
+      fill.style.width = Math.min(100, bundleFill(s) / BUNDLE_SIZE * 100) + '%';
+      fill.style.background = '#6a9cff';
+      bar.appendChild(fill);
+      el.appendChild(bar);
+    }
     if (it && it.durability && s.dmg > 0) {
       const f = Math.max(0, 1 - s.dmg / it.durability);
       const bar = h('span', 'dur');
@@ -2259,6 +2267,7 @@ export class UI {
       return;
     }
     if (ref.kind === 'armor' && c && !(ITEMS[c.id].armor && ITEMS[c.id].armor.slot === ref.i)) return;
+    if (ref.kind === 'normal' && this.useBundle(arr, i, c, button)) { this.afterChange(ref); return; }
     if (button === 2) {
       if (!c) {
         if (s) { const half = Math.ceil(s.count / 2); this.cursor = { ...s, count: half }; s.count -= half; if (!s.count) arr[i] = null; }
@@ -2275,6 +2284,28 @@ export class UI {
       } else { arr[i] = c; this.cursor = s; }
     }
     this.afterChange(ref);
+  }
+
+  // Bundles in the inventory, on either kind of click unless it says otherwise: something in hand goes into a
+  // bundle it is put on; a bundle in hand scoops up what it is put on; and a right click (a long press on a touch
+  // screen) takes out what went in last. True if that was what this click did.
+  useBundle(arr, i, c, button) {
+    const s = arr[i];
+    if (c && isBundle(s) && !isBundle(c)) {
+      if (!bundleAdd(s, c)) this.toast('That does not fit in this bundle');
+      else sfx('pop', null, { vol: 0.4 });
+      if (!c.count) this.cursor = null;
+      return true;
+    }
+    if (isBundle(c) && s && !isBundle(s)) {
+      if (!bundleAdd(c, s)) return false;   // (no room: they swap places, as anything else would)
+      sfx('pop', null, { vol: 0.4 });
+      if (!s.count) arr[i] = null;
+      return true;
+    }
+    if (button === 2 && !c && isBundle(s) && s.e) { this.cursor = bundleTake(s); sfx('pop', null, { vol: 0.4 }); return true; }
+    if (button === 2 && isBundle(c) && !s && c.e) { arr[i] = bundleTake(c); sfx('pop', null, { vol: 0.4 }); return true; }
+    return false;
   }
 
   afterChange(ref) {
@@ -2422,10 +2453,22 @@ export class UI {
     if (s.id === ID.treasure_map) t.appendChild(h('div', 'tip-line', 'Hold it and use it to read it'));
     if (s.id === ID.charred_skull) t.appendChild(h('div', 'tip-line', 'Three on a T of soul sand wake the Wither'));
     if (s.id === ID.golden_apple) t.appendChild(h('div', 'tip-line', 'Mends you for a while'));
+    if (isBundle(s)) {
+      const inside = bundleItems(s).reverse();
+      for (const x of inside.slice(0, 8)) t.appendChild(h('div', 'tip-line', `${itemName(x.id)} ×${x.count}`));
+      if (inside.length > 8) t.appendChild(h('div', 'tip-line', `and ${inside.length - 8} more`));
+      t.appendChild(h('div', 'tip-line', `${bundleFill(s)} / ${BUNDLE_SIZE} full`));
+      if (!inside.length) t.appendChild(h('div', 'tip-line', 'Click things onto it to put them in'));
+    }
   }
 
   // What a stack says about itself in one line (the toast when you select it)
   describe(s) {
+    if (isBundle(s)) {
+      const inside = bundleItems(s).reverse();
+      if (!inside.length) return 'Bundle (empty)';
+      return `Bundle ${bundleFill(s)}/${BUNDLE_SIZE}: ` + inside.slice(0, 3).map((x) => `${itemName(x.id)} ×${x.count}`).join(', ') + (inside.length > 3 ? ` and ${inside.length - 3} more` : '');
+    }
     const list = enchList(s);
     return itemName(s.id) + (list.length ? ' (' + list.map(([k, l]) => enchLine(k, l)).join(', ') + ')' : '');
   }
