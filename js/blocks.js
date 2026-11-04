@@ -499,7 +499,24 @@ item(427, 'bundle', 'Bundle', { stack: 1 });
 // 1.10.9: guns, and the bullets they fire
 item(428, 'pistol', 'Pistol', { stack: 1, durability: 250 });
 item(429, 'rifle', 'Rifle', { stack: 1, durability: 350 });
-item(430, 'bullet', 'Bullet');
+item(430, 'bullet', 'Iron Bullet');
+// 1.10.10: the rest of the guns, kinds of bullet, and cars that run on gas
+item(431, 'revolver', 'Revolver', { stack: 1, durability: 300 });
+item(432, 'smg', 'Submachine Gun', { stack: 1, durability: 600 });
+item(433, 'assault_rifle', 'Assault Rifle', { stack: 1, durability: 700 });
+item(434, 'shotgun', 'Shotgun', { stack: 1, durability: 250 });
+item(435, 'sniper_rifle', 'Sniper Rifle', { stack: 1, durability: 200 });
+item(436, 'minigun', 'Minigun', { stack: 1, durability: 1500 });
+item(437, 'rocket_launcher', 'Rocket Launcher', { stack: 1, durability: 60 });
+item(438, 'copper_bullet', 'Copper Bullet');
+item(439, 'diamond_bullet', 'Diamond Bullet');
+item(440, 'netherite_bullet', 'Netherite Bullet', { fireproof: true });
+item(441, 'fire_bullet', 'Fire Bullet');
+item(442, 'explosive_bullet', 'Explosive Bullet');
+item(443, 'shotgun_shell', 'Shotgun Shell');
+item(444, 'rocket', 'Rocket', { stack: 16 });
+item(445, 'car', 'Car', { stack: 1 });
+item(446, 'gas_can', 'Gas Can', { stack: 16 });
 // (1.10.5) spawn eggs, in the creative inventory: one for every creature in the game, with its name and the
 // colours of the egg (shell, spots). Use one on a block and the creature hatches there; use one on a spawner and the spawner
 // makes that creature from then on. The numbers are kept forever, so new creatures go on the end.
@@ -660,6 +677,22 @@ const RECIPE_DEFS = [
   { shape: ['III', 'PF '], key: { I: 'iron_ingot', P: '#planks', F: 'flint' }, out: ['pistol', 1] },
   { shape: ['III', 'III', 'PPF'], key: { I: 'iron_ingot', P: '#planks', F: 'flint' }, out: ['rifle', 1] },
   { shape: ['I', 'G'], key: { I: 'iron_ingot', G: 'gunpowder' }, out: ['bullet', 8] },
+  { shape: ['III', 'PFG'], key: { I: 'iron_ingot', P: '#planks', F: 'flint', G: 'gold_ingot' }, out: ['revolver', 1] },
+  { shape: ['III', 'PFI'], key: { I: 'iron_ingot', P: '#planks', F: 'flint' }, out: ['smg', 1] },
+  { shape: ['III', 'IRI', 'PPF'], key: { I: 'iron_ingot', R: 'redstone', P: '#planks', F: 'flint' }, out: ['assault_rifle', 1] },
+  { shape: ['II ', 'IIF', 'PP '], key: { I: 'iron_ingot', P: '#planks', F: 'flint' }, out: ['shotgun', 1] },
+  { shape: ['DII', 'III', 'PPF'], key: { D: 'diamond', I: 'iron_ingot', P: '#planks', F: 'flint' }, out: ['sniper_rifle', 1] },
+  { shape: ['III', 'RFR', 'III'], key: { I: 'iron_block', R: 'redstone', F: 'flint' }, out: ['minigun', 1] },
+  { shape: ['III', 'TF ', 'III'], key: { I: 'iron_ingot', T: 'tnt', F: 'flint' }, out: ['rocket_launcher', 1] },
+  { shape: ['C', 'G'], key: { C: 'copper_ingot', G: 'gunpowder' }, out: ['copper_bullet', 8] },
+  { shape: ['D', 'G'], key: { D: 'diamond', G: 'gunpowder' }, out: ['diamond_bullet', 8] },
+  { shape: ['N', 'G'], key: { N: 'netherite_scrap', G: 'gunpowder' }, out: ['netherite_bullet', 4] },
+  { in: ['bullet', 'bullet', 'bullet', 'bullet', 'cinder_powder'], out: ['fire_bullet', 4] },
+  { in: ['bullet', 'bullet', 'bullet', 'bullet', 'gunpowder', 'gunpowder'], out: ['explosive_bullet', 4] },
+  { shape: ['F', 'G', 'P'], key: { F: 'flint', G: 'gunpowder', P: 'paper' }, out: ['shotgun_shell', 4] },
+  { shape: ['I', 'T', 'G'], key: { I: 'iron_ingot', T: 'tnt', G: 'gunpowder' }, out: ['rocket', 2] },
+  { shape: ['  G', 'III', 'C C'], key: { G: 'glass', I: 'iron_block', C: 'coal_block' }, out: ['car', 1] },
+  { in: ['iron_ingot', 'coal', 'coal'], out: ['gas_can', 1] },
   { in: ['iron_ingot', 'flint'], out: ['flint_and_steel', 1] },
   { shape: ['#I#', '###', ' # '], key: { '#': '#planks', I: 'iron_ingot' }, out: ['shield', 1] },
   { in: ['cobblestone', 'oak_leaves'], out: ['mossy_cobblestone', 1] },

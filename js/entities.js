@@ -1617,6 +1617,7 @@ class ItemEntity {
 const arrowGeo = new THREE.BoxGeometry(0.05, 0.05, 0.55);
 const arrowHeadGeo = new THREE.BoxGeometry(0.09, 0.09, 0.1);
 const bulletGeo = new THREE.BoxGeometry(0.05, 0.05, 0.35);
+const GRAVITY = { bullet: 3, shell: 6, rocket: 4 };   // (how fast each kind of shot drops)
 const tridentGeo = [new THREE.BoxGeometry(0.06, 0.06, 1.4), new THREE.BoxGeometry(0.42, 0.06, 0.06), new THREE.BoxGeometry(0.06, 0.06, 0.38)];
 class Arrow {
   constructor(x, y, z, vx, vy, vz, owner, opts = {}) {
@@ -1634,12 +1635,13 @@ class Arrow {
     this.bolt = !!opts.bolt;          // shot from a crossbow
     this.shot = opts.shot || 0;       // which shot it belongs to (one crossbow shot can kill several)
     this.trident = opts.trident || null;   // a thrown trident: the stack itself, picked up again where it lands
-    this.bullet = !!opts.bullet;      // fired from a gun: flies almost straight and is gone when it hits
+    this.bullet = opts.bullet || null;   // fired from a gun ('bullet', 'shell' or 'rocket'): flies almost straight and is gone when it hits
+    this.boom = opts.boom || 0;          // (and blows up there: rockets and explosive bullets, which don't break blocks)
     this.stuck = false;
     this.age = 0;
     this.removed = false;
     const g = new THREE.Group();
-    this.mat = new THREE.MeshBasicMaterial({ color: this.bullet ? 0xffe08a : this.trident ? 0x4fb8aa : this.effect === 'slow' ? 0x6a7a8a : 0x8a6a3a });
+    this.mat = new THREE.MeshBasicMaterial({ color: this.bullet === 'rocket' ? 0x5a7a4a : this.bullet === 'shell' ? 0xcfcfcf : this.bullet ? 0xffe08a : this.trident ? 0x4fb8aa : this.effect === 'slow' ? 0x6a7a8a : 0x8a6a3a });
     this.headMat = new THREE.MeshBasicMaterial({ color: this.trident ? 0x8fe6da : 0x9a9a9a });
     if (this.trident) {
       // a long shaft with a crossbar and three prongs
@@ -1648,6 +1650,12 @@ class Arrow {
       bar.position.z = 0.5;
       g.add(bar);
       for (const px of [-0.17, 0, 0.17]) { const pr = new THREE.Mesh(tridentGeo[2], this.headMat); pr.position.set(px, 0, 0.7); g.add(pr); }
+    } else if (this.bullet === 'rocket') {
+      const head = new THREE.Mesh(arrowHeadGeo, new THREE.MeshBasicMaterial({ color: 0xc83228 }));
+      head.scale.set(1.6, 1.6, 1.5); head.position.z = 0.3;
+      const body = new THREE.Mesh(bulletGeo, this.mat);
+      body.scale.set(3, 3, 1.5);
+      g.add(body, head);
     } else if (this.bullet) {
       g.add(new THREE.Mesh(bulletGeo, this.mat));
     } else {
@@ -1677,7 +1685,8 @@ class Arrow {
       if (this.age > 40) this.removed = true;
       return;
     }
-    this.vel.y -= (this.bullet ? 3 : 20) * dt;
+    this.vel.y -= (this.bullet ? GRAVITY[this.bullet] : 20) * dt;
+    if (this.bullet === 'rocket') G.entities.particles.spawn(this.pos.x, this.pos.y, this.pos.z, (rand() - 0.5) * 0.5, 0.3, (rand() - 0.5) * 0.5, 0.6, 0.6, 0.6, 0.12, 0.6, -0.1);
     const sx = this.vel.x * dt, sy = this.vel.y * dt, sz = this.vel.z * dt;
     const len = Math.hypot(sx, sy, sz);
     if (len < 1e-6) return;
@@ -1698,6 +1707,7 @@ class Arrow {
         sfx('arrowhit', m.pos);
         if (mine && G.adv && !this.bullet) G.adv.shot(m, far, this);
         if (this.trident) { this.tridentHit(m); return; }
+        if (this.boom) { this.blast(); return; }
         // Piercing: it flies on through this many more
         if (this.pierce > 0) { this.pierce--; (this.hits || (this.hits = new Set())).add(m); continue; }
         this.removed = true;
@@ -1711,6 +1721,7 @@ class Arrow {
         if (t >= 0 && t <= len) {
           G.net.pvp(a, dmg, this.pos.x, this.pos.z);
           sfx('arrowhit', a.pos);
+          if (this.boom) { this.blast(); return; }
           this.removed = true;
           return;
         }
@@ -1735,6 +1746,7 @@ class Arrow {
       this.pos.x += dx * hit.dist; this.pos.y += dy * hit.dist; this.pos.z += dz * hit.dist;
       this.stuck = true; this.age = 0;
       sfx('arrowhit', this.pos);
+      if (this.boom) { this.blast(); return; }
       if (this.bullet) {
         for (let k = 0; k < 5; k++) G.entities.particles.spawn(this.pos.x - dx * 0.05, this.pos.y - dy * 0.05, this.pos.z - dz * 0.05, -dx + (rand() - 0.5) * 1.5, rand(), -dz + (rand() - 0.5) * 1.5, 0.45, 0.42, 0.38, 0.05, 0.3, 1);
         this.removed = true;
@@ -1745,11 +1757,20 @@ class Arrow {
     }
     this.orient();
     if (this.trident && this.pos.y < -10 && ench(this.trident, 'loyalty')) { this.returning = true; return; }
-    if ((this.age > (this.bullet ? 3 : 20) && !this.trident) || this.pos.y < -20) this.removed = true;
+    if ((this.age > (this.bullet ? 6 : 20) && !this.trident) || this.pos.y < -20) this.removed = true;
   }
 
   // A trident that has hit something: Channeling calls lightning down on a mob under the open sky, then it
   // drops (or, with Loyalty, flies back)
+  // A rocket or explosive bullet goes off: it hurts and throws what is near, but leaves the blocks alone
+  blast() {
+    const { x, y, z } = this.pos;
+    explosionFx(x, y, z, this.boom);
+    if (G.net) G.net.explosion(x, y, z, this.boom);
+    explosionDamage(x, y, z, this.boom);
+    this.removed = true;
+  }
+
   tridentHit(m) {
     if (ench(this.trident, 'channeling') && G.world.getLight(Math.floor(m.pos.x), Math.floor(m.pos.y + m.h), Math.floor(m.pos.z))[0] >= 15) {
       G.entities.lightning(m.pos.x, m.pos.y, m.pos.z);

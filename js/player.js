@@ -16,6 +16,7 @@ import { Body } from './body.js';
 import { useMount, useLabel, leaveMount, placeBoat, rideMove, canSteer } from './mounts.js';
 import { isFence, useFence } from './leads.js';
 import { useEgg } from './eggs.js';
+import { GUNS, fireGun } from './guns.js';
 
 const GRAVITY = 32;
 const JUMP_V = 9.0;
@@ -28,11 +29,9 @@ const tmpV = new THREE.Vector3();
 const toolOf = (it) => (it && !it.isBlock ? it.tool : null);
 
 // Items with a use of their own on right-click; anything else in the main hand lets an off-hand shield come up
-const USES = ['bow', 'bucket', 'water_bucket', 'lava_bucket', 'flint_and_steel', 'shade_pearl', 'shade_eye', 'wheat_seeds', 'crossbow', 'trident', 'fishing_rod', 'experience_bottle', 'treasure_map', 'charred_skull', 'pistol', 'rifle'];
-// Guns: how hard a bullet hits, how fast it flies, the wait between shots and how far the shot kicks your aim up
-const GUNS = { pistol: { dmg: 6, speed: 90, cd: 0.4, kick: 0.03 }, rifle: { dmg: 13, speed: 150, cd: 1.1, kick: 0.08 } };
+const USES = ['bow', 'bucket', 'water_bucket', 'lava_bucket', 'flint_and_steel', 'shade_pearl', 'shade_eye', 'wheat_seeds', 'crossbow', 'trident', 'fishing_rod', 'experience_bottle', 'treasure_map', 'charred_skull'];
 let shotSeq = 0;   // numbers crossbow shots, so one shot's kills can be counted together
-const noUse = (st) => { if (!st) return true; const it = ITEMS[st.id]; return !(it.isBlock || it.food || it.armor || USES.includes(it.key)); };
+const noUse = (st) => { if (!st) return true; const it = ITEMS[st.id]; return !(it.isBlock || it.food || it.armor || USES.includes(it.key) || !!GUNS[it.key]); };
 const SHIELD_STOPS = ['mob', 'arrow', 'fireball', 'explosion', 'player'];
 
 export class Player {
@@ -770,7 +769,8 @@ export class Player {
     // Use / place (right click, repeats while held)
     if ((input.usePressed || (input.useHeld && this.useCd <= 0)) && !this.frozen && !this.eating) {
       this.placeBlocked = false;
-      if (this.use(target, false) || this.useOff(target, false)) this.useCd = 0.25;
+      this.nextUse = 0;   // (a gun says when it can fire again)
+      if (this.use(target, false) || this.useOff(target, false)) this.useCd = this.nextUse || 0.25;
       else if (input.usePressed && !this.placeBlocked) this.useCd = 0.25;
     }
 
@@ -938,15 +938,17 @@ export class Player {
     const mob = target && target.mob;
     if (mob && mob.def.mount && !mob.dead) return useMount(this, mob);
     // a boat is set down on water (or on the ground) where you point
-    if (held && held.id === ID.boat && !mob) {
+    if (held && (held.id === ID.boat || held.id === ID.car) && !mob) {
+      const car = held.id === ID.car;
       const r = this.pickRay(this.lastInput || {});
       const hit = raycast(G.world, r.ox, r.oy, r.oz, r.dx, r.dy, r.dz, 5.5, (id) => id === B.water || BLOCKS[id].solid);
       if (!hit) return false;
       const onWater = hit.id === B.water;
+      if (car && onWater) { this.hint('A car goes on the ground'); return true; }
       const x = r.ox + r.dx * hit.dist, z = r.oz + r.dz * hit.dist, y = onWater ? hit.y + 0.9 : hit.y + 1.02;
       if (!onWater && hit.ny !== 1) return false;
-      if (boxBlocked(G.world, x, y + (onWater ? 0.15 : 0), z, 0.6, 0.5)) { this.hint('There is no room for a boat there'); return true; }
-      placeBoat(x, y, z, this.yaw + Math.PI);
+      if (boxBlocked(G.world, x, y + (onWater ? 0.15 : 0), z, car ? 0.8 : 0.6, car ? 1.4 : 0.5)) { this.hint(`There is no room for a ${car ? 'car' : 'boat'} there`); return true; }
+      placeBoat(x, y, z, this.yaw + Math.PI, car ? 'car' : 'boat');
       if (!this.creative) { held.count--; if (held.count <= 0) this.inv.slots[this.inv.selected] = null; G.ui.invChanged(); }
       swingHand();
       return true;
@@ -1093,22 +1095,7 @@ export class Player {
       return true;
     }
     const gun = GUNS[it.key];
-    if (gun) {
-      if (this.gunCd > 0) return true;
-      if (!this.creative && this.inv.count(ID.bullet) < 1) { this.hint('You need bullets'); return false; }
-      const r = this.pickRay(this.lastInput || {});
-      const mx = this.pos.x + r.dx * 0.6, my = this.eyeY - 0.1 + r.dy * 0.6, mz = this.pos.z + r.dz * 0.6;
-      G.entities.spawnArrow(mx, my, mz, r.dx * gun.speed, r.dy * gun.speed, r.dz * gun.speed, 'player', { bullet: true, damage: gun.dmg, keep: true });
-      // a flash at the muzzle and a kick upwards
-      for (let k = 0; k < 6; k++) G.entities.particles.spawn(mx, my, mz, r.dx * 2 + Math.random() - 0.5, r.dy * 2 + Math.random() - 0.5, r.dz * 2 + Math.random() - 0.5, 1, 0.75 + Math.random() * 0.2, 0.3, 0.07, 0.12, 0);
-      this.pitch = Math.min(Math.PI / 2 - 0.001, this.pitch + gun.kick);
-      sfx('gun');
-      swingHand();
-      if (!this.creative) { this.inv.remove(ID.bullet, 1); this.inv.damageHeld(1); }
-      G.ui.invChanged();
-      this.gunCd = gun.cd;
-      return true;
-    }
+    if (gun) return fireGun(this, gun);
     if (held.id === ID.trident) {
       const rip = ench(held, 'riptide');
       if (rip) {

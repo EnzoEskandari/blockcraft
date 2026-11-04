@@ -67,9 +67,13 @@ How it works:
 - **Inventory doll** (`js/doll.js`): the player model drawn into a render target by the game's renderer, read back into a canvas in the panel, only while the inventory is open.
 - **Depth on flat tiles** (`DEPTH` / `addDepth` in `js/textures.js`): after a tile is painted, some are made lighter or darker in places from a random stream of their own, never recoloured. Only obsidian keeps the `GLOSS` glints. The dragon egg is a model (`boxes`) with a `pick` box, and the block outline uses `pickBox`.
 
-## Guns (1.10.9)
+## Guns (1.10.9, 1.10.10)
 
-`pistol`, `rifle` and `bullet` (items 428 to 430). `GUNS` in `js/player.js` holds each gun's damage, bullet speed, wait between shots (`gunCd`, its own timer, because the use loop resets `useCd`) and kick. A bullet is an `Arrow` with `bullet: true`: little gravity, a fixed `damage`, gone on its first hit, never picked up, and it doesn't count towards the arrow advancements.
+Items 428 to 444. `js/guns.js` holds `GUNS` (damage, bullet speed, wait between shots, kick, spread, pellets, pierce, blast, which ammo) and `AMMO` (each kind's damage multiplier, pierce, fire, blast); `fireGun` uses the first ammo that fits in inventory order. The wait is `Player.gunCd`, and `nextUse` tells the use loop when to try again (it otherwise waits 0.25 s, too slow for the fast guns). A shot is an `Arrow` with `bullet` set to `'bullet'`, `'shell'` or `'rocket'`: little gravity, a fixed `damage`, gone on its first hit, never picked up, not counted for the arrow advancements. `boom` shots call `Arrow.blast`, which hurts and throws things like an explosion but breaks no blocks.
+
+## Cars (1.10.10)
+
+`car` (mob and item 445) is ridden like the boat (`js/mounts.js`): `canSteer`, no sideways movement, slow to speed up. Its gear holds `coat` (paint) and `fuel` (0 to `FUEL_MAX`), saved and synced like a horse's gear; gas burns in `carry` where the car really lives, one unit per `FUEL_DIST` blocks, and `gas_can` (446) adds `FUEL_CAN`. Guests place one with `bo` and `t: 'car'`, so `caps` and `MIN_PAGE` are 5.
 
 ## Bundles (1.10.8)
 

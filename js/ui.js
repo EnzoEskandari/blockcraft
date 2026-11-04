@@ -12,6 +12,7 @@ import { skinDoll } from './entities.js';
 import { InventoryDoll } from './doll.js';
 import { POWERS, RANGE, PAYMENT, decode, encode, pyramidLevel, powersOf } from './beacons.js';
 import { paintHand, applyGraphics } from './render.js';
+import { gunLines } from './guns.js';
 import { sameItem, stack, craftableTimes, takeIngredients, isBundle, bundleItems, bundleFill, bundleAdd, bundleTake, BUNDLE_SIZE } from './inventory.js';
 import { isEnchanted, enchList, enchLine, ENCH, xpForLevel, enchantability, tableLevels, tableOffer, enchanted, anvil, grind, repairItem, countShelves } from './enchant.js';
 import { requestLock, exitLock, setTouchMode, resetTouch } from './input.js';
@@ -2450,6 +2451,7 @@ export class UI {
     for (const [k, l] of enchList(s)) t.appendChild(h('div', ENCH[k].curse ? 'tip-ench curse' : 'tip-ench', enchLine(k, l)));
     if (it && it.durability) t.appendChild(h('div', 'tip-line', `Durability: ${it.durability - (s.dmg || 0)} / ${it.durability}`));
     if (it && it.food) t.appendChild(h('div', 'tip-line', `Restores ${it.food / 2} food`));
+    for (const line of gunLines(s)) t.appendChild(h('div', 'tip-line', line));
     if (s.id === ID.treasure_map) t.appendChild(h('div', 'tip-line', 'Hold it and use it to read it'));
     if (s.id === ID.charred_skull) t.appendChild(h('div', 'tip-line', 'Three on a T of soul sand wake the Wither'));
     if (s.id === ID.golden_apple) t.appendChild(h('div', 'tip-line', 'Mends you for a while'));

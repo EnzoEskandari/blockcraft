@@ -81,6 +81,21 @@ const BASTION_BRIDGE = {
 export const UPDATES = [
   {
     // a small update: it keeps the Nether & Noise picture
+    version: '1.10.10', name: 'Armed and Fuelled', date: '2026-11-03',
+    splashes: ['Saddle up!', 'Neigh!', 'Hee-haw!', 'Mind the lava!', 'Knock it back!', 'Row, row, row!', 'Black brick and gold!', 'Four new lands!', 'It moos now!', 'Two eyes each!',
+      'Swim for it!', 'Ride a strider!', 'What a hoard!', 'Baa!', 'Plant a cherry tree!', 'Tougher than diamond!', 'Mind the drop!', 'Hold your horses!', 'Tie it up!', 'Walkies!',
+      'Hatch a dragon!', 'Build it higher!', 'Speed II!', 'Wild horses!', 'Good fences!', 'Pack it in!', 'Bang!', 'Reload!', 'Vroom!', 'Fill her up!', 'Nine guns!'],
+    scene: BASTION_BRIDGE,
+    notes: [
+      'Seven more guns: the Revolver, Submachine Gun, Assault Rifle, Shotgun, Sniper Rifle, Minigun and Rocket Launcher. Point at one in your inventory to see how hard it hits and how fast it fires. Hold the button down to keep firing.',
+      'Kinds of bullet: Copper (weaker, cheap), Iron, Diamond (harder, and goes through one thing), Netherite (hardest, goes through two), Fire (sets things alight) and Explosive. Make them from the metal above gunpowder; fire and explosive bullets are four iron bullets with cinder powder or two gunpowder. A gun fires whichever bullets come first in your inventory, so put the ones you want in your hotbar.',
+      'The Shotgun fires shells (flint, gunpowder and paper) and the Rocket Launcher fires rockets (an iron ingot, TNT and gunpowder). Rockets and explosive bullets hurt everything near where they land but do not break blocks.',
+      'Cars! Craft one from a glass block, three blocks of iron and two blocks of coal, set it down on the ground and get in. It is about three times as fast as running, climbs one block at a time and can\'t go sideways.',
+      'Cars run on gas. A gas can is an iron ingot and two coal; use one on a car to fill it up a quarter. A new car comes with a quarter of a tank, and a full tank goes about 800 blocks. The gauge shows as it drops.',
+    ],
+  },
+  {
+    // a small update: it keeps the Nether & Noise picture
     version: '1.10.9', name: 'Locked and Loaded', date: '2026-11-03',
     splashes: ['Saddle up!', 'Neigh!', 'Hee-haw!', 'Mind the lava!', 'Knock it back!', 'Row, row, row!', 'Black brick and gold!', 'Four new lands!', 'It moos now!', 'Two eyes each!',
       'Swim for it!', 'Ride a strider!', 'What a hoard!', 'Baa!', 'Plant a cherry tree!', 'Tougher than diamond!', 'Mind the drop!', 'Hold your horses!', 'Tie it up!', 'Walkies!',
