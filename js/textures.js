@@ -1549,6 +1549,19 @@ Object.assign(ART, {
     '..OLHHHHHHHHhhO.', '..OLHHHHHHHHhhO.', '..OHHHHHHHHHhhO.', '..OHHHHHHHHhhhO.', '..OHHHHHHHhhhhO.', '...OHHHHhhhhO...',
     '....OOOOOOOO....', '................', '................', '................',
   ],
+  pistol: [
+    '................', '................', '................', '..OOOOOOOOOOOOO.', '.OIIIIIIIIIIIIIO', '.OiiiiiiiiiiiiiO',
+    '.OWWWWOOOOOOOOO.', '.OWWWWOiO.......', '.OWWWwOOO.......', 'OWWWwO..........', 'OWWwwO..........', 'OWwwO...........',
+    '.OOO............',
+  ],
+  rifle: [
+    '................', '................', '................', '................', '.........OO.....', '.OOOOOOOOOOOOOOO',
+    'OWWWWWWOIIIIIIIO', 'OWWWWWWWiiiiiiiO', 'OwWWWWWWWOOOOOO.', 'OwwwOOOOiO......', '.OOO...OO.......',
+  ],
+  bullet: [
+    '................', '.....O....O.....', '....OIO..OIO....', '....OIO..OIO....', '....OHO..OHO....', '....OHO..OHO....',
+    '....OHO..OHO....', '....OHO..OHO....', '....OOO..OOO....',
+  ],
   template: [
     '................', '..OOOOOOOOOOOO..', '..OLLLLLLLLLHO..', '..OLHHHHHHHHhO..', '..OLHHHDDHHHhO..', '..OLHHDNNDHHhO..',
     '..OLHDNNNNDHhO..', '..OLHDNNNNDHhO..', '..OLHHDNNDHHhO..', '..OLHHHDDHHHhO..', '..OLHHHHHHHHhO..', '..OLHhHHhHHhhO..',
@@ -1709,6 +1722,9 @@ Object.assign(ITEM_ART, {
   diamond_horse_armor: ['horse_armor', pal3([74, 226, 212], [30, 160, 150], [200, 255, 250], { O: [14, 80, 76] })],
   boat: ['boat', pal3([176, 140, 86], [128, 96, 54], [206, 172, 116], { O: [70, 50, 26] })],
   bundle: ['bundle', pal3([164, 104, 60], [116, 70, 36], [204, 146, 96], { O: [60, 34, 16], S: [226, 214, 186] })],
+  pistol: ['pistol', { O: [30, 30, 32], I: [156, 156, 162], i: [98, 98, 104], W: [140, 90, 48], w: [100, 62, 30] }],
+  rifle: ['rifle', { O: [30, 30, 32], I: [156, 156, 162], i: [98, 98, 104], W: [140, 90, 48], w: [100, 62, 30] }],
+  bullet: ['bullet', { O: [70, 50, 20], I: [150, 150, 156], H: [214, 170, 70] }],
   netherite_scrap: ['lump', pal3([108, 80, 70], [72, 52, 46], [154, 120, 104], { O: [36, 24, 22] })],
   netherite_ingot: ['ingot', pal3([82, 74, 80], [50, 44, 50], [134, 124, 130], { O: [20, 16, 20] })],
   netherite_upgrade: ['template', pal3([92, 84, 90], [60, 54, 60], [132, 122, 128], { O: [26, 22, 26], D: [82, 230, 220], N: [40, 34, 40] })],

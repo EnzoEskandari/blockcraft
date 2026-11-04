@@ -357,6 +357,7 @@ export function sfx(name, pos, opts = {}) {
       break;
     case 'fuse': noise(d, t, 1.5, 'highpass', 3000, 0.7, 0.3); break;
     case 'bow': tone(d, t, 0.15, 'triangle', 420, 180, 0.3); noise(d, t, 0.1, 'highpass', 2000, 1, 0.2); break;
+    case 'gun': noise(d, t, 0.3, 'lowpass', 2600, 0.7, 0.9, 260); tone(d, t, 0.12, 'square', 150, 45, 0.35); break;
     case 'arrowhit': noise(d, t, 0.06, 'bandpass', 1400, 2, 0.4); break;
     case 'click': tone(d, t, 0.04, 'sine', 900, 800, 0.15); break;
     case 'splash': noise(d, t, 0.45, 'lowpass', 1300, 0.8, 0.5, 400); break;

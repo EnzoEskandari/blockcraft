@@ -67,6 +67,10 @@ How it works:
 - **Inventory doll** (`js/doll.js`): the player model drawn into a render target by the game's renderer, read back into a canvas in the panel, only while the inventory is open.
 - **Depth on flat tiles** (`DEPTH` / `addDepth` in `js/textures.js`): after a tile is painted, some are made lighter or darker in places from a random stream of their own, never recoloured. Only obsidian keeps the `GLOSS` glints. The dragon egg is a model (`boxes`) with a `pick` box, and the block outline uses `pickBox`.
 
+## Guns (1.10.9)
+
+`pistol`, `rifle` and `bullet` (items 428 to 430). `GUNS` in `js/player.js` holds each gun's damage, bullet speed, wait between shots (`gunCd`, its own timer, because the use loop resets `useCd`) and kick. A bullet is an `Arrow` with `bullet: true`: little gravity, a fixed `damage`, gone on its first hit, never picked up, and it doesn't count towards the arrow advancements.
+
 ## Bundles (1.10.8)
 
 A bundle (`bundleAdd`, `bundleTake`, `bundleItems` in `js/inventory.js`, `useBundle` in `js/ui.js`) keeps its contents as saved stacks in `e.bundle`, because `e` already goes everywhere a stack goes: saves, chests, dropped items and multiplayer. `cleanEnch` keeps that key and checks what is in it; `isEnchanted` ignores it. Pages older than `caps: 4` would strip it, so `MIN_PAGE` is 4.

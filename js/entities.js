@@ -1616,6 +1616,7 @@ class ItemEntity {
 // ---------------------------------------------------------------- arrows
 const arrowGeo = new THREE.BoxGeometry(0.05, 0.05, 0.55);
 const arrowHeadGeo = new THREE.BoxGeometry(0.09, 0.09, 0.1);
+const bulletGeo = new THREE.BoxGeometry(0.05, 0.05, 0.35);
 const tridentGeo = [new THREE.BoxGeometry(0.06, 0.06, 1.4), new THREE.BoxGeometry(0.42, 0.06, 0.06), new THREE.BoxGeometry(0.06, 0.06, 0.38)];
 class Arrow {
   constructor(x, y, z, vx, vy, vz, owner, opts = {}) {
@@ -1633,11 +1634,12 @@ class Arrow {
     this.bolt = !!opts.bolt;          // shot from a crossbow
     this.shot = opts.shot || 0;       // which shot it belongs to (one crossbow shot can kill several)
     this.trident = opts.trident || null;   // a thrown trident: the stack itself, picked up again where it lands
+    this.bullet = !!opts.bullet;      // fired from a gun: flies almost straight and is gone when it hits
     this.stuck = false;
     this.age = 0;
     this.removed = false;
     const g = new THREE.Group();
-    this.mat = new THREE.MeshBasicMaterial({ color: this.trident ? 0x4fb8aa : this.effect === 'slow' ? 0x6a7a8a : 0x8a6a3a });
+    this.mat = new THREE.MeshBasicMaterial({ color: this.bullet ? 0xffe08a : this.trident ? 0x4fb8aa : this.effect === 'slow' ? 0x6a7a8a : 0x8a6a3a });
     this.headMat = new THREE.MeshBasicMaterial({ color: this.trident ? 0x8fe6da : 0x9a9a9a });
     if (this.trident) {
       // a long shaft with a crossbar and three prongs
@@ -1646,6 +1648,8 @@ class Arrow {
       bar.position.z = 0.5;
       g.add(bar);
       for (const px of [-0.17, 0, 0.17]) { const pr = new THREE.Mesh(tridentGeo[2], this.headMat); pr.position.set(px, 0, 0.7); g.add(pr); }
+    } else if (this.bullet) {
+      g.add(new THREE.Mesh(bulletGeo, this.mat));
     } else {
       const shaft = new THREE.Mesh(arrowGeo, this.mat);
       const head = new THREE.Mesh(arrowHeadGeo, this.headMat);
@@ -1673,7 +1677,7 @@ class Arrow {
       if (this.age > 40) this.removed = true;
       return;
     }
-    this.vel.y -= 20 * dt;
+    this.vel.y -= (this.bullet ? 3 : 20) * dt;
     const sx = this.vel.x * dt, sy = this.vel.y * dt, sz = this.vel.z * dt;
     const len = Math.hypot(sx, sy, sz);
     if (len < 1e-6) return;
@@ -1690,9 +1694,9 @@ class Arrow {
         // (a trident with Impaling hits harder what lives in, or stands in, water)
         const imp = this.trident ? ench(this.trident, 'impaling') : 0;
         m.hurt((mine ? dmg : Math.min(dmg, 5)) + (imp && (m.inWater || m.def.aquatic) ? 2.5 * imp : 0), this.pos.x, this.pos.z, mine, 1 + 0.75 * this.punch, this.shooter,
-          mine ? { fire: this.flame ? 5 : 0, arrow: far, bolt: this.bolt ? 1 : 0, shot: this.shot } : null);
+          mine ? { fire: this.flame ? 5 : 0, arrow: this.bullet ? 0 : far, bolt: this.bolt ? 1 : 0, shot: this.shot } : null);
         sfx('arrowhit', m.pos);
-        if (mine && G.adv) G.adv.shot(m, far, this);
+        if (mine && G.adv && !this.bullet) G.adv.shot(m, far, this);
         if (this.trident) { this.tridentHit(m); return; }
         // Piercing: it flies on through this many more
         if (this.pierce > 0) { this.pierce--; (this.hits || (this.hits = new Set())).add(m); continue; }
@@ -1731,12 +1735,17 @@ class Arrow {
       this.pos.x += dx * hit.dist; this.pos.y += dy * hit.dist; this.pos.z += dz * hit.dist;
       this.stuck = true; this.age = 0;
       sfx('arrowhit', this.pos);
+      if (this.bullet) {
+        for (let k = 0; k < 5; k++) G.entities.particles.spawn(this.pos.x - dx * 0.05, this.pos.y - dy * 0.05, this.pos.z - dz * 0.05, -dx + (rand() - 0.5) * 1.5, rand(), -dz + (rand() - 0.5) * 1.5, 0.45, 0.42, 0.38, 0.05, 0.3, 1);
+        this.removed = true;
+        return;
+      }
     } else {
       this.pos.x += sx; this.pos.y += sy; this.pos.z += sz;
     }
     this.orient();
     if (this.trident && this.pos.y < -10 && ench(this.trident, 'loyalty')) { this.returning = true; return; }
-    if ((this.age > 20 && !this.trident) || this.pos.y < -20) this.removed = true;
+    if ((this.age > (this.bullet ? 3 : 20) && !this.trident) || this.pos.y < -20) this.removed = true;
   }
 
   // A trident that has hit something: Channeling calls lightning down on a mob under the open sky, then it

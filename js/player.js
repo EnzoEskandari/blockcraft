@@ -28,7 +28,9 @@ const tmpV = new THREE.Vector3();
 const toolOf = (it) => (it && !it.isBlock ? it.tool : null);
 
 // Items with a use of their own on right-click; anything else in the main hand lets an off-hand shield come up
-const USES = ['bow', 'bucket', 'water_bucket', 'lava_bucket', 'flint_and_steel', 'shade_pearl', 'shade_eye', 'wheat_seeds', 'crossbow', 'trident', 'fishing_rod', 'experience_bottle', 'treasure_map', 'charred_skull'];
+const USES = ['bow', 'bucket', 'water_bucket', 'lava_bucket', 'flint_and_steel', 'shade_pearl', 'shade_eye', 'wheat_seeds', 'crossbow', 'trident', 'fishing_rod', 'experience_bottle', 'treasure_map', 'charred_skull', 'pistol', 'rifle'];
+// Guns: how hard a bullet hits, how fast it flies, the wait between shots and how far the shot kicks your aim up
+const GUNS = { pistol: { dmg: 6, speed: 90, cd: 0.4, kick: 0.03 }, rifle: { dmg: 13, speed: 150, cd: 1.1, kick: 0.08 } };
 let shotSeq = 0;   // numbers crossbow shots, so one shot's kills can be counted together
 const noUse = (st) => { if (!st) return true; const it = ITEMS[st.id]; return !(it.isBlock || it.food || it.armor || USES.includes(it.key)); };
 const SHIELD_STOPS = ['mob', 'arrow', 'fireball', 'explosion', 'player'];
@@ -69,6 +71,7 @@ export class Player {
     this.eating = null;
     this.mineCd = 0;
     this.useCd = 0;
+    this.gunCd = 0;
     this.lastSwing = -10;
     this.lastSelected = 0;
     this.bob = 0;
@@ -268,6 +271,7 @@ export class Player {
     this.invul -= dt;
     this.mineCd -= dt;
     this.useCd -= dt;
+    this.gunCd -= dt;
     this.hintCd -= dt;
 
     this.lastInput = input;
@@ -1086,6 +1090,23 @@ export class Player {
       if (this.charging) return true;
       if (!this.creative && this.inv.count(ID.arrow) < 1) { this.hint('You need arrows'); return false; }
       this.charging = { s: held, t: 0, need: Math.max(0.25, 1.25 - 0.25 * ench(held, 'quick_charge')), auto: !!fromTap };
+      return true;
+    }
+    const gun = GUNS[it.key];
+    if (gun) {
+      if (this.gunCd > 0) return true;
+      if (!this.creative && this.inv.count(ID.bullet) < 1) { this.hint('You need bullets'); return false; }
+      const r = this.pickRay(this.lastInput || {});
+      const mx = this.pos.x + r.dx * 0.6, my = this.eyeY - 0.1 + r.dy * 0.6, mz = this.pos.z + r.dz * 0.6;
+      G.entities.spawnArrow(mx, my, mz, r.dx * gun.speed, r.dy * gun.speed, r.dz * gun.speed, 'player', { bullet: true, damage: gun.dmg, keep: true });
+      // a flash at the muzzle and a kick upwards
+      for (let k = 0; k < 6; k++) G.entities.particles.spawn(mx, my, mz, r.dx * 2 + Math.random() - 0.5, r.dy * 2 + Math.random() - 0.5, r.dz * 2 + Math.random() - 0.5, 1, 0.75 + Math.random() * 0.2, 0.3, 0.07, 0.12, 0);
+      this.pitch = Math.min(Math.PI / 2 - 0.001, this.pitch + gun.kick);
+      sfx('gun');
+      swingHand();
+      if (!this.creative) { this.inv.remove(ID.bullet, 1); this.inv.damageHeld(1); }
+      G.ui.invChanged();
+      this.gunCd = gun.cd;
       return true;
     }
     if (held.id === ID.trident) {

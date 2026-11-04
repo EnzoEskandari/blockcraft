@@ -81,6 +81,19 @@ const BASTION_BRIDGE = {
 export const UPDATES = [
   {
     // a small update: it keeps the Nether & Noise picture
+    version: '1.10.9', name: 'Locked and Loaded', date: '2026-11-03',
+    splashes: ['Saddle up!', 'Neigh!', 'Hee-haw!', 'Mind the lava!', 'Knock it back!', 'Row, row, row!', 'Black brick and gold!', 'Four new lands!', 'It moos now!', 'Two eyes each!',
+      'Swim for it!', 'Ride a strider!', 'What a hoard!', 'Baa!', 'Plant a cherry tree!', 'Tougher than diamond!', 'Mind the drop!', 'Hold your horses!', 'Tie it up!', 'Walkies!',
+      'Hatch a dragon!', 'Build it higher!', 'Speed II!', 'Wild horses!', 'Good fences!', 'Pack it in!', 'Bang!', 'Reload!'],
+    scene: BASTION_BRIDGE,
+    notes: [
+      'Guns! A pistol is three iron ingots above a plank and a flint. A rifle is six iron ingots above two planks and a flint. Right-click (or tap) to fire.',
+      'The pistol fires quickly and hits about as hard as an iron sword. The rifle is slower to fire but hits twice as hard and its bullets fly almost dead straight, so it is the one for things far away. Each shot kicks your aim up a little.',
+      'Guns fire bullets: an iron ingot above some gunpowder makes eight. Bullets are used up when they hit, so bring plenty. Guns wear out like bows do.',
+    ],
+  },
+  {
+    // a small update: it keeps the Nether & Noise picture
     version: '1.10.8', name: 'Bundled Up', date: '2026-11-01',
     splashes: ['Saddle up!', 'Neigh!', 'Hee-haw!', 'Mind the lava!', 'Knock it back!', 'Row, row, row!', 'Black brick and gold!', 'Four new lands!', 'It moos now!', 'Two eyes each!',
       'Swim for it!', 'Ride a strider!', 'What a hoard!', 'Baa!', 'Plant a cherry tree!', 'Tougher than diamond!', 'Mind the drop!', 'Hold your horses!', 'Tie it up!', 'Walkies!',

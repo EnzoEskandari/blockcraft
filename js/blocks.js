@@ -496,6 +496,10 @@ item(378, 'netherite_upgrade', 'Netherite Upgrade Template', { fireproof: true }
 item(388, 'lead', 'Lead');
 // (1.10.8) a bag that holds a stack's worth of mixed things in one slot (see the bundle functions in inventory.js)
 item(427, 'bundle', 'Bundle', { stack: 1 });
+// 1.10.9: guns, and the bullets they fire
+item(428, 'pistol', 'Pistol', { stack: 1, durability: 250 });
+item(429, 'rifle', 'Rifle', { stack: 1, durability: 350 });
+item(430, 'bullet', 'Bullet');
 // (1.10.5) spawn eggs, in the creative inventory: one for every creature in the game, with its name and the
 // colours of the egg (shell, spots). Use one on a block and the creature hatches there; use one on a spawner and the spawner
 // makes that creature from then on. The numbers are kept forever, so new creatures go on the end.
@@ -653,6 +657,9 @@ const RECIPE_DEFS = [
   { shape: ['XSX', 'SXS', 'XSX'], key: { X: 'gunpowder', S: 'sand' }, out: ['tnt', 1] },
   { shape: [' S#', 'S #', ' S#'], key: { S: 'stick', '#': 'string' }, out: ['bow', 1] },
   { shape: ['F', 'S', 'E'], key: { F: 'flint', S: 'stick', E: 'feather' }, out: ['arrow', 4] },
+  { shape: ['III', 'PF '], key: { I: 'iron_ingot', P: '#planks', F: 'flint' }, out: ['pistol', 1] },
+  { shape: ['III', 'III', 'PPF'], key: { I: 'iron_ingot', P: '#planks', F: 'flint' }, out: ['rifle', 1] },
+  { shape: ['I', 'G'], key: { I: 'iron_ingot', G: 'gunpowder' }, out: ['bullet', 8] },
   { in: ['iron_ingot', 'flint'], out: ['flint_and_steel', 1] },
   { shape: ['#I#', '###', ' # '], key: { '#': '#planks', I: 'iron_ingot' }, out: ['shield', 1] },
   { in: ['cobblestone', 'oak_leaves'], out: ['mossy_cobblestone', 1] },
