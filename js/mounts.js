@@ -49,6 +49,7 @@ function equine(v, donkey) {
   return parts;
 }
 const PLANK = [176, 140, 86];
+const ICE = [B.ice, B.packed_ice, B.frosted_ice], ICE_SPEED = 16;
 Object.assign(MODELS, {
   horse: (v) => equine(v, false),
   donkey: (v) => equine(v, true),
@@ -74,6 +75,47 @@ MODELS.car = (v) => {
   ];
   [[-12, 13], [12, 13], [-12, -13], [12, -13]].forEach(([x, z], i) => parts.push({ name: 'wheel' + i, size: [4, 9, 9], pos: [x, 4.5, z], color: tyre,
     paint: { all: (gx, px, py, w, h) => rect(gx, px + (w >> 1) - 1, py + (h >> 1) - 1, 2, 2, [170, 170, 176]) } }));
+  return parts;
+};
+// A sports car (1.10.11): low and wide, racing stripes and a wing at the back
+const STRIPE = [246, 246, 240], TYRE = [26, 26, 28], RIM = [190, 190, 196], DARK_GLASS = [70, 96, 120];
+const lamps = (z, y, w) => [
+  { name: 'lamp0', size: [5, 2, 1], pos: [-w, y, z], color: [255, 240, 170] }, { name: 'lamp1', size: [5, 2, 1], pos: [w, y, z], color: [255, 240, 170] },
+  { name: 'tail0', size: [6, 2, 1], pos: [-w, y, -z], color: [220, 30, 30] }, { name: 'tail1', size: [6, 2, 1], pos: [w, y, -z], color: [220, 30, 30] },
+];
+const fourWheels = (parts, x, y, z, size) => [[-x, z], [x, z], [-x, -z], [x, -z]].forEach(([wx, wz], i) => parts.push({ name: 'wheel' + i, size, pos: [wx, y, wz], color: TYRE,
+  paint: { all: (gx, px, py, w, h) => rect(gx, px + (w >> 1) - 2, py + (h >> 1) - 2, 4, 4, RIM) } }));
+MODELS.sports_car = (v) => {
+  const c = CAR_COLORS[gearOf(v).coat % CAR_COLORS.length] || CAR_COLORS[0];
+  const stripes = (gx, x, y, w, h) => { rect(gx, x + (w >> 1) - 3, y, 2, h, STRIPE); rect(gx, x + (w >> 1) + 1, y, 2, h, STRIPE); };
+  const parts = [
+    { name: 'body', size: [26, 6, 44], pos: [0, 6.5, 0], color: c, paint: { top: stripes, all: (gx, x, y, w, h) => rect(gx, x, y + h - 1, w, 1, dark(c, 0.6)) } },
+    { name: 'cabin', size: [20, 5, 15], pos: [0, 12, -5], color: DARK_GLASS },
+    { name: 'roof', size: [20, 1, 13], pos: [0, 15, -5], color: c, paint: { top: stripes } },
+    { name: 'wing', size: [26, 1, 5], pos: [0, 14, -20], color: dark(c, 0.8) },
+    { name: 'post0', size: [2, 4, 2], pos: [-8, 11.5, -20], color: [40, 40, 44] }, { name: 'post1', size: [2, 4, 2], pos: [8, 11.5, -20], color: [40, 40, 44] },
+    { name: 'grille', size: [14, 2, 1], pos: [0, 5, 22.2], color: [30, 30, 32] },
+    ...lamps(22.2, 7.5, 8),
+  ];
+  fourWheels(parts, 13, 4, 14, [5, 8, 8]);
+  return parts;
+};
+// A supercar: lower still, a wedge with side intakes, a splitter at the front and a big wing
+MODELS.supercar = (v) => {
+  const c = CAR_COLORS[gearOf(v).coat % CAR_COLORS.length] || CAR_COLORS[0], black = [24, 24, 26];
+  const parts = [
+    { name: 'body', size: [28, 5, 46], pos: [0, 5.5, 0], color: c, paint: { all: (gx, x, y, w, h) => rect(gx, x, y + h - 1, w, 1, dark(c, 0.55)) } },
+    { name: 'nose', size: [24, 2, 10], pos: [0, 2.5, 20], color: dark(c, 0.85) },
+    { name: 'cabin', size: [18, 4, 14], pos: [0, 10, -3], color: [40, 52, 64] },
+    { name: 'roof', size: [18, 1, 10], pos: [0, 12.5, -4], color: c },
+    { name: 'deck', size: [22, 2, 12], pos: [0, 9, -15], color: dark(c, 0.8), paint: { top: (gx, x, y, w, h) => { for (let i = 1; i < h; i += 3) rect(gx, x + 2, y + i, w - 4, 1, black); } } },
+    { name: 'intake0', size: [1, 3, 9], pos: [-14.2, 6, -6], color: black }, { name: 'intake1', size: [1, 3, 9], pos: [14.2, 6, -6], color: black },
+    { name: 'splitter', size: [28, 1, 3], pos: [0, 1.6, 23], color: black },
+    { name: 'wing', size: [30, 1, 6], pos: [0, 14, -21], color: black },
+    { name: 'post0', size: [2, 4, 2], pos: [-9, 11.5, -21], color: black }, { name: 'post1', size: [2, 4, 2], pos: [9, 11.5, -21], color: black },
+    ...lamps(23.2, 6.5, 9),
+  ];
+  fourWheels(parts, 14, 3.5, 15, [5, 7, 8]);
   return parts;
 };
 // (a strider can be saddled too)
@@ -109,15 +151,19 @@ Object.assign(MOB_TYPES, {
     ride: { speed: 7.6, land: 0.7, float: B.water, sink: 0.12 }, xp: [0, 0], ai: boatAI, animate: rowing, ...rideable },
 });
 // A car keeps its paint and how much gas is in it (0 to FUEL_MAX; a gas can adds FUEL_CAN, and a unit lasts
-// FUEL_DIST blocks)
-export const FUEL_MAX = 100, FUEL_CAN = 25, FUEL_DIST = 8;
+// its `fuelDist` blocks: a full tank goes 800 blocks in a car, 1400 in a sports car, 2000 in a supercar)
+export const FUEL_MAX = 100, FUEL_CAN = 25;
+export const CARS = { car: 'car', sports_car: 'sports_car', supercar: 'supercar' };   // (the item that sets each one down)
 const carGear = (saved) => {
   const g = saved && typeof saved === 'object' ? saved : {};
   return { coat: Number.isFinite(g.coat) ? Math.abs(g.coat | 0) % CAR_COLORS.length : Math.floor(rand() * CAR_COLORS.length), fuel: Number.isFinite(g.fuel) ? Math.max(0, Math.min(FUEL_MAX, g.fuel)) : FUEL_CAN,
     tame: true, saddle: false, armor: 0, spd: 1, temper: 0, lead: null };
 };
-MOB_TYPES.car = { name: 'Car', hp: 40, w: 1.6, h: 1.4, speed: 0, sound: 'boat', pitch: 0.6, drops: [drop('car', 1, 1)], anim: 'car', car: true, fireImmune: true, seat: 0.35,
-  ride: { speed: 18, step: 1.05 }, xp: [0, 0], ai: carAI, animate: wheels, gear: carGear, ...rideable };
+const carType = (key, name, o) => ({ name, hp: 40, w: 1.6, h: 1.4, speed: 0, sound: 'boat', pitch: 0.6, drops: [drop(key, 1, 1)], anim: 'car', car: true, fireImmune: true,
+  seat: 0.35, xp: [0, 0], ai: carAI, animate: wheels, gear: carGear, ...rideable, ...o });
+MOB_TYPES.car = carType('car', 'Car', { ride: { speed: 18, step: 1.05 }, fuelDist: 8 });
+MOB_TYPES.sports_car = carType('sports_car', 'Sports Car', { w: 1.7, h: 1.1, seat: 0.25, ride: { speed: 26, step: 1.05, grip: 2.4 }, fuelDist: 14 });
+MOB_TYPES.supercar = carType('supercar', 'Supercar', { w: 1.8, h: 1, hp: 50, seat: 0.2, ride: { speed: 34, step: 1.05, grip: 3 }, fuelDist: 20 });
 
 function wheels(m, dt, hs) {
   m.roll = (m.roll || 0) + hs * dt / 0.28;
@@ -166,7 +212,8 @@ function boatAI(m, dt) {
   if (f.how === 1) m.vel.y = Math.min(m.vel.y + 30 * dt, 3);
   else if (f.how === 0) m.vel.y = (f.y - m.pos.y) * 10;
   else m.vel.y = Math.max(m.vel.y - 32 * dt, -40);
-  const k = Math.max(0, 1 - dt * (m.afloat ? 1.5 : 6));
+  const icy = !m.afloat && ICE.includes(w.getBlock(Math.floor(m.pos.x), Math.floor(m.pos.y - 0.2), Math.floor(m.pos.z)));
+  const k = Math.max(0, 1 - dt * (m.afloat ? 1.5 : icy ? 0.3 : 6));
   m.vel.x *= k; m.vel.z *= k;
   const res = moveBox(w, m, m.vel.x * dt, m.vel.y * dt, m.vel.z * dt);
   if (res.y) m.vel.y = 0;
@@ -206,7 +253,7 @@ function carry(m, rider, dt) {
   m.onGround = true; m.fire = 0; m.angry = false;
   if (m.def.car && !m.proxy) {
     const was = Math.ceil(m.gear.fuel);
-    m.gear.fuel = Math.max(0, m.gear.fuel - Math.hypot(m.pos.x - ox, m.pos.z - oz) / FUEL_DIST);
+    m.gear.fuel = Math.max(0, m.gear.fuel - Math.hypot(m.pos.x - ox, m.pos.z - oz) / m.def.fuelDist);
     if (Math.ceil(m.gear.fuel) !== was) m.vDirty = true;   // (guests see the gauge go down)
   }
   m.afloat = !!m.def.boat && G.world.getBlock(Math.floor(m.pos.x), Math.floor(m.pos.y + 0.3), Math.floor(m.pos.z)) === B.water;
@@ -328,7 +375,7 @@ export function applyUse(p, m, r) {
     sfx('saddle', m.pos);
   } else if (r.did === 'ungear') sfx('saddle', m.pos);
   else if (r.did === 'hint') p.hint(r.text);
-  else if (r.did === 'mount') { p.mountUp(m); if (m.def.car) p.hint(m.gear.fuel > 0 ? `Gas: ${Math.round(m.gear.fuel / FUEL_MAX * 100)}%` : 'Out of gas. Use a gas can on the car'); if (m.gear && !m.gear.tame) p.hint('Hold on! It will throw you until it trusts you'); else if (m.gear && !m.gear.saddle) p.hint('Without a saddle it goes where it likes'); }
+  else if (r.did === 'mount') { p.mountUp(m); if (m.def.car) p.hint(m.gear.fuel > 0 ? `Gas: ${Math.round(m.gear.fuel / FUEL_MAX * 100)}%` : 'Out of gas. Use a gas can on the car'); else if (m.gear && !m.gear.tame) p.hint('Hold on! It will throw you until it trusts you'); else if (m.gear && !m.gear.saddle) p.hint('Without a saddle it goes where it likes'); }
   else if (r.did === 'off') p.dismount(r.why);
   else if (r.did === 'tamed') { G.ui.toast(`The ${m.def.name.toLowerCase()} is tame. Put a saddle on it to ride where you like`); sfx('levelup', null, { vol: 0.5 }); if (G.adv) G.adv.did('tame'); }
 }
@@ -363,7 +410,7 @@ export function placeBoat(x, y, z, yaw, type = 'boat') {
   if (G.net && G.net.role === 'client') { G.net.send({ k: 'bo', x, y, z, yaw, t: type }); return; }
   const m = G.entities.spawnMob(type, x, y, z);
   m.yaw = yaw; m.model.root.rotation.y = yaw;
-  sfx(type === 'car' ? 'engine' : 'splash', m.pos, { vol: 0.5 });
+  sfx(CARS[type] ? 'engine' : 'splash', m.pos, { vol: 0.5 });
 }
 
 // ---------------------------------------------------------------- the rider's movement
@@ -379,7 +426,9 @@ export function rideMove(p, dt, input) {
   const afloat = !!f && f.how >= 0;
   const bx = Math.floor(p.pos.x), bz = Math.floor(p.pos.z);
   const wet = !R.float && w.getBlock(bx, Math.floor(p.pos.y + 0.6), bz) === B.water;
-  let speed = R.float ? (afloat ? R.speed : R.land) : R.speed * (m.gear ? m.gear.spd : 1) * (wet ? 0.4 : 1);
+  // (a boat on ice slides along fast, the way it does in the original game, and takes a long while to stop)
+  const icy = !!m.def.boat && !afloat && ICE.includes(w.getBlock(bx, Math.floor(p.pos.y - 0.2), bz));
+  let speed = icy ? ICE_SPEED : R.float ? (afloat ? R.speed : R.land) : R.speed * (m.gear ? m.gear.spd : 1) * (wet ? (m.def.car ? 0.12 : 0.4) : 1);
   if (p.effects.slow > 0) speed *= 0.7;
   if (m.def.car) {
     // no gas, no go; the gauge shows as it drops past each tenth
@@ -390,11 +439,12 @@ export function rideMove(p, dt, input) {
   const sy = Math.sin(p.yaw), cy = Math.cos(p.yaw);
   const wx = (-sy * fwd + cy * str) * speed, wz = (-cy * fwd - sy * str) * speed;
   // (a boat gathers way and loses it slowly; an animal answers at once)
-  const k = Math.min(1, (m.def.boat ? (afloat ? 1.6 : 6) : m.def.car ? (p.onGround ? 1.8 : 0.3) : p.onGround ? 9 : 3) * dt);
+  const k = Math.min(1, (m.def.boat ? (icy ? 0.6 : afloat ? 1.6 : 6) : m.def.car ? (p.onGround ? R.grip || 1.8 : 0.3) : p.onGround ? 9 : 3) * dt);
   p.vel.x += (wx - p.vel.x) * k;
   p.vel.z += (wz - p.vel.z) * k;
   if (f && f.how === 1) p.vel.y = Math.min(p.vel.y + 30 * dt, 3);
   else if (f && f.how === 0) p.vel.y = (f.y - p.pos.y) * 10;
+  else if (wet && m.def.car) p.vel.y = Math.max(p.vel.y - 12 * dt, -2.5);   // (a car sinks, and can only crawl along the bottom)
   else if (wet) p.vel.y = Math.min(p.vel.y + 26 * dt, 2.2);   // (a horse swims)
   else {
     p.vel.y = Math.max(p.vel.y - 32 * dt, -78);

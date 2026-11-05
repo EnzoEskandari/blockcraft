@@ -3,7 +3,7 @@
 import { G } from './game.js';
 import { ITEMS } from './blocks.js';
 import { sfx } from './audio.js';
-import { swingHand } from './render.js';
+import { kickGun } from './render.js';
 
 // dmg: what one bullet does with ordinary (iron) bullets; speed: how fast it flies; cd: seconds between shots;
 // kick: how far each shot throws your aim up; spread: how far shots stray; pellets: bullets in one shot;
@@ -65,7 +65,7 @@ export function fireGun(p, gun) {
   for (let k = 0; k < 6; k++) G.entities.particles.spawn(mx, my, mz, r.dx * 2 + Math.random() - 0.5, r.dy * 2 + Math.random() - 0.5, r.dz * 2 + Math.random() - 0.5, 1, 0.75 + Math.random() * 0.2, 0.3, 0.07, 0.12, 0);
   p.pitch = Math.min(Math.PI / 2 - 0.001, p.pitch + gun.kick);
   sfx(gun.snd);
-  if (gun.cd >= 0.3) swingHand();
+  kickGun(gun.cd >= 0.3 ? 1 : 0.55);
   if (!p.creative) {
     const a = p.inv.slots[i];
     if (--a.count <= 0) p.inv.slots[i] = null;

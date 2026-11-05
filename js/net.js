@@ -6,7 +6,7 @@ import { G, store, load } from './game.js';
 import { validSkin, mySkin } from './skins.js';
 import { R, itemModel, tintModel } from './render.js';
 import { buildModel, holdInHand, lightAt, explosionFx, explosionDamage, spawnBlockParticles } from './entities.js';
-import { decideUse, applyUse } from './mounts.js';
+import { decideUse, applyUse, CARS } from './mounts.js';
 import { decideTie } from './leads.js';
 import { hatch } from './eggs.js';
 import { BLOCKS, B, ITEMS } from './blocks.js';
@@ -283,7 +283,7 @@ export class Net {
       let timer = setTimeout(() => fail('The multiplayer server did not answer. Check your connection and try again.', true), 25000);
       ws.onopen = () => {
         onStatus('Joining…');
-        ws.send(JSON.stringify({ t: 'world', id: worldId, dim, token: account.token, haves, mine, spec: spec || undefined, caps: 5 }));   // (caps: 5 knows cars, 4 keeps what is in bundles, 1 hides spectators, 2 reloads when an admin says so, 3 has weather and sets it and the time when told)
+        ws.send(JSON.stringify({ t: 'world', id: worldId, dim, token: account.token, haves, mine, spec: spec || undefined, caps: 6 }));   // (caps: 6 knows sports cars and supercars, 5 knows cars, 4 keeps what is in bundles, 1 hides spectators, 2 reloads when an admin says so, 3 has weather and sets it and the time when told)
       };
       ws.onerror = () => {};
       ws.onclose = () => {
@@ -722,7 +722,7 @@ export class Net {
       }
       case 'bo': {
         if (!a || !w || ![d.x, d.y, d.z, d.yaw].every(Number.isFinite) || Math.hypot(d.x - a.pos.x, d.y - a.pos.y, d.z - a.pos.z) > 8) return;
-        const m = G.entities.spawnMob(d.t === 'car' ? 'car' : 'boat', d.x, d.y, d.z);
+        const m = G.entities.spawnMob(CARS[d.t] || 'boat', d.x, d.y, d.z);
         m.yaw = d.yaw;
         break;
       }

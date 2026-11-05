@@ -73,7 +73,9 @@ Items 428 to 444. `js/guns.js` holds `GUNS` (damage, bullet speed, wait between 
 
 ## Cars (1.10.10)
 
-`car` (mob and item 445) is ridden like the boat (`js/mounts.js`): `canSteer`, no sideways movement, slow to speed up. Its gear holds `coat` (paint) and `fuel` (0 to `FUEL_MAX`), saved and synced like a horse's gear; gas burns in `carry` where the car really lives, one unit per `FUEL_DIST` blocks, and `gas_can` (446) adds `FUEL_CAN`. Guests place one with `bo` and `t: 'car'`, so `caps` and `MIN_PAGE` are 5.
+`car` (mob and item 445) is ridden like the boat (`js/mounts.js`): `canSteer`, no sideways movement, slow to speed up. Its gear holds `coat` (paint) and `fuel` (0 to `FUEL_MAX`), saved and synced like a horse's gear; gas burns in `carry` where the car really lives, one unit per `FUEL_DIST` blocks, and `gas_can` (446) adds `FUEL_CAN`. Guests place one with `bo` and `t` set to the type (`CARS` lists them), so `caps` and `MIN_PAGE` are 6 (1.10.11 added `sports_car` and `supercar`, items 447 and 448, each with its own `ride.speed`, `grip` and `fuelDist`). In a car, first person becomes a view from behind and above (`updateCamera`). Saved boats and cars come back with `stay`, so `spawnMob` doesn't lift them out of the wall a wide car can be left nosed into.
+
+Held guns (1.10.11) are box models from `js/gunmodels.js` (`gunModel`), in the first-person hand (`setHeldItem`, recoil and flash in `updateHand`, `kickGun`) and in other bodies' hands (`holdInHand`). Your own shots skip what you ride, and `explosionDamage` takes a `spare` mob for that. Boats on ice slide (`ICE`, `ICE_SPEED` in mounts.js).
 
 ## Bundles (1.10.8)
 

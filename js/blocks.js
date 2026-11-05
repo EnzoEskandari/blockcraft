@@ -517,6 +517,9 @@ item(443, 'shotgun_shell', 'Shotgun Shell');
 item(444, 'rocket', 'Rocket', { stack: 16 });
 item(445, 'car', 'Car', { stack: 1 });
 item(446, 'gas_can', 'Gas Can', { stack: 16 });
+// 1.10.11: faster cars that go further on a tank
+item(447, 'sports_car', 'Sports Car', { stack: 1 });
+item(448, 'supercar', 'Supercar', { stack: 1 });
 // (1.10.5) spawn eggs, in the creative inventory: one for every creature in the game, with its name and the
 // colours of the egg (shell, spots). Use one on a block and the creature hatches there; use one on a spawner and the spawner
 // makes that creature from then on. The numbers are kept forever, so new creatures go on the end.
@@ -693,6 +696,8 @@ const RECIPE_DEFS = [
   { shape: ['I', 'T', 'G'], key: { I: 'iron_ingot', T: 'tnt', G: 'gunpowder' }, out: ['rocket', 2] },
   { shape: ['  G', 'III', 'C C'], key: { G: 'glass', I: 'iron_block', C: 'coal_block' }, out: ['car', 1] },
   { in: ['iron_ingot', 'coal', 'coal'], out: ['gas_can', 1] },
+  { shape: ['RGR', 'III', 'C C'], key: { R: 'redstone', G: 'glass', I: 'iron_block', C: 'coal_block' }, out: ['sports_car', 1] },
+  { shape: ['DGD', 'BBB', 'C C'], key: { D: 'diamond', G: 'glass', B: 'gold_block', C: 'coal_block' }, out: ['supercar', 1] },
   { in: ['iron_ingot', 'flint'], out: ['flint_and_steel', 1] },
   { shape: ['#I#', '###', ' # '], key: { '#': '#planks', I: 'iron_ingot' }, out: ['shield', 1] },
   { in: ['cobblestone', 'oak_leaves'], out: ['mossy_cobblestone', 1] },

@@ -5,6 +5,7 @@ import { atlasData, TILES, TEX, ICONS } from './textures.js';
 import { BLOCKS, ITEMS, B, ID, RENDER } from './blocks.js';
 import { smoothstep, mulberry32 } from './noise.js';
 import { itemModel, armGeometry } from './itemmodels.js';
+import { gunModel, hasGunModel } from './gunmodels.js';
 
 export { itemModel };
 
@@ -1063,7 +1064,7 @@ export function canvasTexture(canvas) {
 export function tintModel(obj, v, red = 0) {
   const apply = (m) => { m.color.setRGB(v, v * (1 - red), v * (1 - red)); };
   obj.traverse((o) => {
-    if (!o.material) return;
+    if (!o.material || o.userData.flash) return;   // (a muzzle flash makes its own light)
     if (Array.isArray(o.material)) o.material.forEach(apply); else apply(o.material);
   });
 }
@@ -1101,6 +1102,7 @@ function buildHand() {
   R.handItemId = -1;
   R.handItem = null;
   R.swing = 0;
+  R.recoil = 0; R.flashT = 0;
   // the off hand's item, on the left
   R.offHolder = new THREE.Group();
   R.handScene.add(R.offHolder);
@@ -1148,6 +1150,17 @@ export function setHeldItem(id) {
     h.add(arm);
     return;
   }
+  const key = ITEMS[id] && ITEMS[id].key;
+  if (hasGunModel(key)) {
+    // a gun is held out in front, pointing where you look (a little in from the right, towards the crosshair)
+    const g = gunModel(key);
+    g.scale.setScalar(0.03);
+    g.position.set(...GUN_AT);
+    g.rotation.set(0, 0.07, 0);
+    h.add(g);
+    R.handItem = g;
+    return;
+  }
   const m = itemModel(id);
   if (m.userData.cube) {
     // (turned so its front and one side show beside its top)
@@ -1189,6 +1202,16 @@ export function updateHand(dt, light, bob, sway, eat = -1, shield = 0) {
   );
   h.rotation.set(sw * 0.8 + e * 0.1, sw * 0.5 + e * 0.2, sw * 0.3 - e * 0.1);
   const item = R.handItem;
+  // a gun kicks back and up when it fires, with a flash at the muzzle
+  R.recoil = Math.max(0, R.recoil - dt * 7);
+  R.flashT -= dt;
+  if (item && item.userData.gun) {
+    const r = R.recoil * R.recoil;
+    item.position.set(GUN_AT[0], GUN_AT[1] + r * 0.03, GUN_AT[2] + r * 0.13);
+    item.rotation.set(r * 0.4, 0.07, 0);
+    item.userData.flash.visible = R.flashT > 0;
+    item.userData.flash.rotation.x = R.flashT * 40;
+  }
   if (item && item.userData.baseRot) {
     const b = item.userData.baseRot;
     item.rotation.set(b.x - e * 0.1, b.y + e * 0.95, b.z - e * 0.3);
@@ -1208,6 +1231,9 @@ export function updateHand(dt, light, bob, sway, eat = -1, shield = 0) {
 }
 
 export function swingHand() { if (R.swing <= 0.3) R.swing = 1; }
+// A gun going off in your hand (k: how hard it kicks, 0 to 1)
+export function kickGun(k) { R.recoil = Math.max(R.recoil, k); R.flashT = 0.05; }
+const GUN_AT = [0.3, -0.27, -0.5];
 
 // ---------------------------------------------------------------- chunks
 function geometry(d) {

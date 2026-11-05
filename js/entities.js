@@ -1,6 +1,7 @@
 // Mobs, villagers, dropped items, arrows, thrown potions and pearls, primed TNT, particles and explosions.
 import * as THREE from 'three';
 import { G } from './game.js';
+import { gunModel, hasGunModel } from './gunmodels.js';
 import { R, itemModel, tintModel, brightness } from './render.js';
 import { BLOCKS, ITEMS, ID, B, WOOL_COLORS } from './blocks.js';
 import { moveBox, raycast, rayBox, boxBlocked, touching } from './physics.js';
@@ -262,6 +263,15 @@ const MODELS = {
 // flat side seen from the side as in Minecraft (blocks are held as small cubes)
 // (left: the off hand instead; a shield is strapped to the forearm, facing out)
 export function holdInHand(model, id, scale = 10, left = false) {
+  // (a gun is a solid model, held with its barrel pointing ahead)
+  if (ITEMS[id] && hasGunModel(ITEMS[id].key)) {
+    const g = gunModel(ITEMS[id].key);
+    g.scale.setScalar(scale / 16);
+    g.position.set(0, -10, 1);
+    g.rotation.set(0, Math.PI, 0);
+    model.parts[left ? 'arm1' : 'arm0'].add(g);
+    return g;
+  }
   const it = itemModel(id);
   if (it.userData.cube) {
     it.scale.setScalar(scale * 0.6);
@@ -1695,7 +1705,7 @@ class Arrow {
     const dmg = (this.damage || Math.round(speed * 0.2) + 1) * this.mul;
     for (const m of G.entities.mobs) {
       if (this.owner === 'fx' || this.spent) break;
-      if (m.dead || m === this.shooter || m === (this.shooter && this.shooter.mount) || (this.hits && this.hits.has(m))) continue;
+      if (m.dead || m === this.shooter || m === (this.shooter && this.shooter.mount) || (this.owner === 'player' && m === p.riding) || (this.hits && this.hits.has(m))) continue;
       const t = rayBox(this.pos.x, this.pos.y, this.pos.z, dx, dy, dz, m.pos.x - m.hw, m.pos.y, m.pos.z - m.hw, m.pos.x + m.hw, m.pos.y + m.h, m.pos.z + m.hw);
       if (t >= 0 && t <= len) {
         const mine = this.owner === 'player';
@@ -1767,7 +1777,7 @@ class Arrow {
     const { x, y, z } = this.pos;
     explosionFx(x, y, z, this.boom);
     if (G.net) G.net.explosion(x, y, z, this.boom);
-    explosionDamage(x, y, z, this.boom);
+    explosionDamage(x, y, z, this.boom, null, true, this.owner === 'player' ? G.player.riding : null);   // (not the car you fire it from)
     this.removed = true;
   }
 
@@ -2129,7 +2139,7 @@ export function explosionFx(x, y, z, power) {
 }
 
 // Hurts and throws back mobs and players caught in a blast (skipping one remote player, if given)
-export function explosionDamage(x, y, z, r, skip = null, mobs = true) {
+export function explosionDamage(x, y, z, r, skip = null, mobs = true, spare = null) {
   const hurtOne = (e, isPlayer) => {
     const ex = e.pos.x - x, ey = e.pos.y + e.h / 2 - y, ez = e.pos.z - z;
     const d = Math.hypot(ex, ey, ez);
@@ -2143,7 +2153,7 @@ export function explosionDamage(x, y, z, r, skip = null, mobs = true) {
     e.vel.y += 4 + impact * 6;
     e.vel.z += (ez / n) * impact * 14;
   };
-  if (mobs) for (const m of G.entities.mobs) if (!m.dead && !m.removed && !m.def.blastProof) hurtOne(m, false);
+  if (mobs) for (const m of G.entities.mobs) if (!m.dead && !m.removed && !m.def.blastProof && m !== spare) hurtOne(m, false);
   for (const q of players()) if (!q.dead && q !== skip) hurtOne(q, true);
 }
 
@@ -2188,8 +2198,9 @@ export class Entities {
   spawnMob(type, x, y, z, opts = {}) {
     if (typeof opts !== 'object') opts = { variant: opts };
     const m = new Mob(type, x, y, z, opts);
-    // lift out of any blocks it was placed inside
-    let k = 0;
+    // lift out of any blocks it was placed inside (not a boat or car coming back where it was left: one wider
+    // than whoever drove it can be left nosed into a wall, and lifting it put it up on the surface)
+    let k = opts.stay ? 8 : 0;
     while (k++ < 8 && boxBlocked(G.world, m.pos.x, m.pos.y, m.pos.z, m.hw, m.h)) m.pos.y += 1;
     this.mobs.push(m);
     return m;
@@ -2295,7 +2306,7 @@ export class Entities {
     w.stored.delete(k);
     for (const d of st.m || []) {
       if (d.k && (w.deadMobs.has(d.k) || this.mobs.some((m) => m.key === d.k))) continue;
-      const m = this.spawnMob(d.t, d.x, d.y, d.z, { variant: d.v, prof: d.p, size: d.s, baby: !!d.b, key: d.k, home: d.h, persistent: !!d.P, vst: d.vst && typeof d.vst === 'object' ? d.vst : null, gear: d.g && typeof d.g === 'object' ? d.g : null });
+      const m = this.spawnMob(d.t, d.x, d.y, d.z, { variant: d.v, prof: d.p, size: d.s, baby: !!d.b, key: d.k, home: d.h, persistent: !!d.P, vst: d.vst && typeof d.vst === 'object' ? d.vst : null, gear: d.g && typeof d.g === 'object' ? d.g : null, stay: !!(MOB_TYPES[d.t] && MOB_TYPES[d.t].mount) });
       if (d.hp) m.hp = Math.min(m.maxHp, d.hp);
       if (d.E) m.fromEgg = true;
       m.yaw = d.yaw || 0;

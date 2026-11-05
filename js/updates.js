@@ -81,6 +81,23 @@ const BASTION_BRIDGE = {
 export const UPDATES = [
   {
     // a small update: it keeps the Nether & Noise picture
+    version: '1.10.11', name: 'Fast Lane', date: '2026-11-04',
+    splashes: ['Saddle up!', 'Neigh!', 'Hee-haw!', 'Mind the lava!', 'Knock it back!', 'Row, row, row!', 'Black brick and gold!', 'Four new lands!', 'It moos now!', 'Two eyes each!',
+      'Swim for it!', 'Ride a strider!', 'What a hoard!', 'Baa!', 'Plant a cherry tree!', 'Tougher than diamond!', 'Mind the drop!', 'Hold your horses!', 'Tie it up!', 'Walkies!',
+      'Hatch a dragon!', 'Build it higher!', 'Speed II!', 'Wild horses!', 'Good fences!', 'Pack it in!', 'Bang!', 'Reload!', 'Vroom!', 'Fill her up!', 'Nine guns!',
+      'Zoom zoom!', 'Slide!', 'Racing stripes!'],
+    scene: BASTION_BRIDGE,
+    notes: [
+      'Two faster cars. The Sports Car (redstone, glass, three blocks of iron and two blocks of coal) is half as fast again as a car and goes 1400 blocks on a tank. The Supercar (diamonds, glass, three blocks of gold and two blocks of coal) is nearly twice as fast and goes 2000 blocks on a tank.',
+      'In a car you now see it from behind and a little above, so the road ahead shows over the roof. Press V for the other views.',
+      'Guns are held as proper solid guns pointing ahead, with a kick and a muzzle flash each time they fire. Other players see you holding them that way too.',
+      'Your own bullets and rockets no longer hurt the car you are sitting in.',
+      'Boats slide fast across ice, as they do in the original game.',
+      'Fixed: a car or boat left underground could come back up on the surface when you came back to the world.',
+    ],
+  },
+  {
+    // a small update: it keeps the Nether & Noise picture
     version: '1.10.10', name: 'Armed and Fuelled', date: '2026-11-03',
     splashes: ['Saddle up!', 'Neigh!', 'Hee-haw!', 'Mind the lava!', 'Knock it back!', 'Row, row, row!', 'Black brick and gold!', 'Four new lands!', 'It moos now!', 'Two eyes each!',
       'Swim for it!', 'Ride a strider!', 'What a hoard!', 'Baa!', 'Plant a cherry tree!', 'Tougher than diamond!', 'Mind the drop!', 'Hold your horses!', 'Tie it up!', 'Walkies!',

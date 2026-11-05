@@ -1602,6 +1602,15 @@ Object.assign(ART, {
     '...OGGGOGGGGO...', '.OOOCCCCCCCCOOO.', 'OCCCCCCCCCCCCCYO', 'OCCCCCCCCCCCCCCO', 'OcOOOcccccOOOccO', '.OBBO.....OBBO..',
     '..OO.......OO...',
   ],
+  sports_car: [
+    '................', '................', '................', '................', 'OOOO............', '.OO..OOOOO......',
+    '.OO.OGGGGGOO....', '.OCCCCCCCCCCCOO.', 'OCCWWCCCCCCCCCYO', 'OcOOOccccccOOOcO', '.OBBBO....OBBBO.', '..OOO......OOO..',
+  ],
+  supercar: [
+    '................', '................', '................', '................', '................', 'OOOOO...........',
+    '.OO...OOOOO.....', '.OO.OOGGGGGOOO..', 'OOOOCCCCCCCCCCOO', 'OCCCCCCCCCCCCCYO', 'OcOOOcOcccOOOccO', '.OBBBO....OBBBO.',
+    '..OOO......OOO..',
+  ],
   gas_can: [
     '................', '................', '........OO......', '...OOOO.OSO.....', '...O..OOSO......', '..OOOOOOOOO.....',
     '..ORRRRRRRO.....', '..ORrRRRrRO.....', '..ORRrRrRRO.....', '..ORRRrRRRO.....', '..ORRrRrRRO.....', '..ORrRRRrRO.....',
@@ -1789,6 +1798,8 @@ Object.assign(ITEM_ART, {
   shotgun_shell: ['shell', { O: [60, 20, 16], R: [200, 44, 36], r: [150, 30, 26], H: [214, 170, 70] }],
   rocket: ['rocket', { O: [30, 34, 26], R: [200, 50, 40], G: [120, 140, 104], g: [90, 108, 76], F: [70, 84, 60] }],
   car: ['car', { O: [30, 20, 20], C: [200, 40, 36], c: [140, 26, 24], G: [170, 220, 240], Y: [255, 236, 150], B: [36, 36, 38] }],
+  sports_car: ['sports_car', { O: [40, 30, 10], C: [246, 196, 30], c: [190, 140, 20], W: [250, 250, 244], G: [80, 110, 140], Y: [255, 240, 170], B: [30, 30, 32] }],
+  supercar: ['supercar', { O: [20, 40, 10], C: [150, 220, 40], c: [100, 160, 24], G: [44, 60, 76], Y: [255, 240, 170], B: [30, 30, 32] }],
   gas_can: ['gas_can', { O: [60, 16, 14], R: [204, 40, 32], r: [150, 26, 22], S: [200, 200, 204] }],
   netherite_scrap: ['lump', pal3([108, 80, 70], [72, 52, 46], [154, 120, 104], { O: [36, 24, 22] })],
   netherite_ingot: ['ingot', pal3([82, 74, 80], [50, 44, 50], [134, 124, 130], { O: [20, 16, 20] })],
