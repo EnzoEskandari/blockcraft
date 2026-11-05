@@ -7,7 +7,7 @@ import { treasureFor } from './structures.js';
 import { activateEndPortal } from './dims.js';
 import { Inventory } from './inventory.js';
 import { moveBox, raycast, boxBlocked, touching } from './physics.js';
-import { R, showHighlight, swingHand, setHeldItem, setOffItem, updateHand, brightness } from './render.js';
+import { R, showHighlight, swingHand, setHeldItem, setOffItem, updateHand, brightness, showScope } from './render.js';
 import { sfx, blockSound } from './audio.js';
 import { hitParticles } from './entities.js';
 import { iconColors } from './textures.js';
@@ -30,6 +30,7 @@ const toolOf = (it) => (it && !it.isBlock ? it.tool : null);
 
 // Items with a use of their own on right-click; anything else in the main hand lets an off-hand shield come up
 const USES = ['bow', 'bucket', 'water_bucket', 'lava_bucket', 'flint_and_steel', 'shade_pearl', 'shade_eye', 'wheat_seeds', 'crossbow', 'trident', 'fishing_rod', 'experience_bottle', 'treasure_map', 'charred_skull'];
+const SCOPE_ZOOM = 0.2;   // (how much of the usual view the sniper's scope shows)
 let shotSeq = 0;   // numbers crossbow shots, so one shot's kills can be counted together
 const noUse = (st) => { if (!st) return true; const it = ITEMS[st.id]; return !(it.isBlock || it.food || it.armor || USES.includes(it.key) || !!GUNS[it.key]); };
 const SHIELD_STOPS = ['mob', 'arrow', 'fireball', 'explosion', 'player'];
@@ -71,6 +72,7 @@ export class Player {
     this.mineCd = 0;
     this.useCd = 0;
     this.gunCd = 0;
+    this.scope = 0;            // how far into the sniper's scope you are looking (0 to 1)
     this.lastSwing = -10;
     this.lastSelected = 0;
     this.bob = 0;
@@ -276,9 +278,10 @@ export class Player {
     this.lastInput = input;
     if (this.dead) { this.target = null; this.eating = null; showHighlight(null); return; }
 
-    // Look
-    this.yaw -= input.lookX;
-    this.pitch = Math.max(-Math.PI / 2 + 0.001, Math.min(Math.PI / 2 - 0.001, this.pitch - input.lookY));
+    // Look (through a scope it turns as much slower as the view is zoomed in, so a far target can be held)
+    const look = 1 - this.scope * (1 - SCOPE_ZOOM);
+    this.yaw -= input.lookX * look;
+    this.pitch = Math.max(-Math.PI / 2 + 0.001, Math.min(Math.PI / 2 - 0.001, this.pitch - input.lookY * look));
 
     // Switching items resets the attack cooldown and cancels eating
     if (this.inv.selected !== this.lastSelected) {
@@ -1539,7 +1542,13 @@ export class Player {
   updateCamera(dt) {
     const cam = R.camera;
     const car = this.riding && this.riding.def.car && !this.dead;
+    // The sniper rifle's scope: sneak while holding it
+    const held = this.inv.held, scoped = !!held && held.id === ID.sniper_rifle && this.sneaking && !this.dead && !G.screen;
+    this.scope = Math.max(0, Math.min(1, this.scope + (scoped ? dt : -dt) * 8));
+    this.scoped = this.scope > 0.5;
+    showScope(this.scope);
     let view = this.spectator ? 'first' : (G.settings.view || 'first');
+    if (this.scope > 0) view = 'first';
     if (car && view === 'first') view = 'third';   // (from inside you would see the car from inside)
     const outside = view === 'third' || view === 'second';
     this.outside = outside;
@@ -1576,12 +1585,12 @@ export class Player {
       const id = G.world.getBlock(Math.floor(cam.position.x), Math.floor(cam.position.y), Math.floor(cam.position.z));
       this.camInWater = id === B.water; this.camInLava = id === B.lava;
     } else { this.camInWater = this.headInWater; this.camInLava = this.headInLava; }
-    const fov = G.settings.fov * (1 + this.fovKick * 0.12) * (this.camInWater ? 0.9 : 1);
+    const fov = G.settings.fov * (1 + this.fovKick * 0.12) * (this.camInWater ? 0.9 : 1) * (1 - this.scope * (1 - SCOPE_ZOOM));
     if (Math.abs(cam.fov - fov) > 0.01) { cam.fov = fov; cam.updateProjectionMatrix(); }
     if (this.dead && !outside && this.pos.y > -60) cam.position.y = this.pos.y + 0.3;
     const [s, b] = G.world.getLight(Math.floor(this.pos.x), Math.floor(this.eyeY), Math.floor(this.pos.z));
     updateHand(dt, brightness(s, b), this.bob * Math.PI, bob, this.eating ? this.eating.t : -1, this.shieldHand || 0);
-    R.handHolder.visible = !this.dead && !outside;
+    R.handHolder.visible = !this.dead && !outside && this.scope < 0.5;
     // (your own body, unless the camera has been pushed right up against it)
     this.body.update(dt, this, outside && room > 0.7);
   }

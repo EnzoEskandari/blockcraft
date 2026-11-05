@@ -81,6 +81,18 @@ const BASTION_BRIDGE = {
 export const UPDATES = [
   {
     // a small update: it keeps the Nether & Noise picture
+    version: '1.10.12', name: 'Steady Aim', date: '2026-11-05',
+    splashes: ['Saddle up!', 'Neigh!', 'Hee-haw!', 'Mind the lava!', 'Knock it back!', 'Row, row, row!', 'Black brick and gold!', 'Four new lands!', 'It moos now!', 'Two eyes each!',
+      'Swim for it!', 'Ride a strider!', 'What a hoard!', 'Baa!', 'Plant a cherry tree!', 'Tougher than diamond!', 'Mind the drop!', 'Hold your horses!', 'Tie it up!', 'Walkies!',
+      'Hatch a dragon!', 'Build it higher!', 'Speed II!', 'Wild horses!', 'Good fences!', 'Pack it in!', 'Bang!', 'Reload!', 'Vroom!', 'Fill her up!', 'Nine guns!',
+      'Zoom zoom!', 'Slide!', 'Racing stripes!', 'Steady aim!'],
+    scene: BASTION_BRIDGE,
+    notes: [
+      'The Sniper Rifle has a scope: hold it and sneak (Shift, or the sneak button on a touch screen) to look through it. It zooms in five times, looking around slows down to match, and the shot kicks less. The marks below the middle help with far shots, which drop a little.',
+    ],
+  },
+  {
+    // a small update: it keeps the Nether & Noise picture
     version: '1.10.11', name: 'Fast Lane', date: '2026-11-04',
     splashes: ['Saddle up!', 'Neigh!', 'Hee-haw!', 'Mind the lava!', 'Knock it back!', 'Row, row, row!', 'Black brick and gold!', 'Four new lands!', 'It moos now!', 'Two eyes each!',
       'Swim for it!', 'Ride a strider!', 'What a hoard!', 'Baa!', 'Plant a cherry tree!', 'Tougher than diamond!', 'Mind the drop!', 'Hold your horses!', 'Tie it up!', 'Walkies!',

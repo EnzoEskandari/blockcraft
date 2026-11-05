@@ -1235,6 +1235,28 @@ export function swingHand() { if (R.swing <= 0.3) R.swing = 1; }
 export function kickGun(k) { R.recoil = Math.max(R.recoil, k); R.flashT = 0.05; }
 const GUN_AT = [0.3, -0.27, -0.5];
 
+// The view through a sniper's scope (k: 0 none to 1 fully looking through it): black all round a round
+// window with fine crosshairs, made the first time it is needed
+let scopeEl = null;
+export function showScope(k) {
+  if (!scopeEl) {
+    if (!k) return;
+    scopeEl = document.createElement('div');
+    scopeEl.style.cssText = 'position:fixed;inset:0;pointer-events:none;opacity:0;background:radial-gradient(circle at 50% 50%, transparent 0, transparent 40vmin, rgba(0,0,0,0.85) 40.4vmin, #000 41vmin)';
+    const line = (css) => { const d = document.createElement('div'); d.style.cssText = 'position:absolute;background:#000;' + css; scopeEl.appendChild(d); };
+    line('left:50%;top:10vh;bottom:10vh;width:2px;margin-left:-1px');
+    line('top:50%;left:10vw;right:10vw;height:2px;margin-top:-1px');
+    for (const f of [0.25, 0.5]) line(`left:50%;top:calc(50% + ${f * 20}vmin);width:${f * 4}vmin;height:2px;margin-left:-${f * 2}vmin`);   // (marks below the middle for far shots)
+    const hud = document.getElementById('hud');
+    // (first in the HUD, so the hotbar and hearts still show over it)
+    if (hud) hud.insertBefore(scopeEl, hud.firstChild); else document.body.appendChild(scopeEl);
+  }
+  scopeEl.style.opacity = k;
+  scopeEl.style.display = k > 0 ? '' : 'none';
+  const cross = document.getElementById('crosshair');
+  if (cross) cross.style.visibility = k > 0.5 ? 'hidden' : '';
+}
+
 // ---------------------------------------------------------------- chunks
 function geometry(d) {
   const g = new THREE.BufferGeometry();

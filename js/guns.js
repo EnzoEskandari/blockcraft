@@ -48,7 +48,7 @@ export function fireGun(p, gun) {
   const i = ammoSlot(p.inv, gun.ammo);
   if (i < 0 && !p.creative) { p.hint(`You need ${NEED[gun.ammo]}`); return false; }
   const ammo = i >= 0 ? ammoOf(p.inv.slots[i]) : AMMO[PLAIN[gun.ammo]];
-  const r = p.pickRay(p.lastInput || {});
+  const r = p.pickRay(p.scoped ? {} : p.lastInput || {});   // (through a scope: its middle, wherever a finger tapped)
   const mx = p.pos.x + r.dx * 0.6, my = p.eyeY - 0.1 + r.dy * 0.6, mz = p.pos.z + r.dz * 0.6;
   const opts = { bullet: gun.ammo, damage: Math.round(gun.dmg * ammo.mul * 10) / 10, keep: true, pierce: (gun.pierce || 0) + (ammo.pierce || 0),
     flame: !!ammo.fire, boom: gun.boom || ammo.boom || 0 };
@@ -63,7 +63,7 @@ export function fireGun(p, gun) {
   }
   // a flash at the muzzle and a kick upwards
   for (let k = 0; k < 6; k++) G.entities.particles.spawn(mx, my, mz, r.dx * 2 + Math.random() - 0.5, r.dy * 2 + Math.random() - 0.5, r.dz * 2 + Math.random() - 0.5, 1, 0.75 + Math.random() * 0.2, 0.3, 0.07, 0.12, 0);
-  p.pitch = Math.min(Math.PI / 2 - 0.001, p.pitch + gun.kick);
+  p.pitch = Math.min(Math.PI / 2 - 0.001, p.pitch + gun.kick * (p.scoped ? 0.4 : 1));
   sfx(gun.snd);
   kickGun(gun.cd >= 0.3 ? 1 : 0.55);
   if (!p.creative) {
