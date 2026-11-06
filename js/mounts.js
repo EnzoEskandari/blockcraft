@@ -8,6 +8,7 @@ import { sfx } from './audio.js';
 import { MOB_TYPES, MODELS, Entities, quadLegs, rect, px } from './entities.js';
 import { BIOME } from './constants.js';
 import { decideLead, leadPull, validLead, heldByMe, canLead } from './leads.js';
+import { pickWild } from './wildlife.js';
 
 const rand = Math.random;
 const drop = (key, min, max) => ({ key, min, max });
@@ -481,6 +482,8 @@ const OPEN = [BIOME.PLAINS, BIOME.SAVANNA, BIOME.MEADOW, BIOME.SUNFLOWER];
 // (land seen for the first time: often the animals placed there are horses or donkeys; 1.10.6 made them
 // commoner, two groups in five horses and one in ten donkeys, where it had been one in five and one in fifteen)
 Entities.prototype.pickPassive = function (biome) {
+  const wild = pickWild(biome);   // (pandas and polar bears: see wildlife.js)
+  if (wild) return wild;
   if (!OPEN.includes(biome)) return null;
   const r = rand();
   return r < 0.4 ? 'horse' : r < 0.5 ? 'donkey' : null;

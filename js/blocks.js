@@ -322,7 +322,7 @@ block(214, 'tulip', 'Tulip', { ...plant, support: SOIL });
 block(215, 'oxeye_daisy', 'Oxeye Daisy', { ...plant, support: SOIL });
 block(216, 'sunflower', 'Sunflower', { ...plant, support: SOIL });
 block(217, 'lily_pad', 'Lily Pad', { render: RENDER.MODEL, opaque: false, hardness: 0, sound: 'grass', height: 0.0625, boxes: [[0, 0, 0, 16, 1, 16]], support: () => [B.water, B.ice, B.frosted_ice] });
-block(218, 'bamboo', 'Bamboo', { ...plant, fuel: 3, support: () => [B.grass, B.dirt, B.podzol, B.sand, B.bamboo] });
+block(218, 'bamboo', 'Bamboo', { ...plant, solid: true, fuel: 3, support: () => [B.grass, B.dirt, B.podzol, B.sand, B.bamboo] });
 block(219, 'tube_coral_block', 'Tube Coral Block', { hardness: 1.5, tool: 'pickaxe', level: 0 });
 block(220, 'fire_coral_block', 'Fire Coral Block', { hardness: 1.5, tool: 'pickaxe', level: 0 });
 block(221, 'brain_coral_block', 'Brain Coral Block', { hardness: 1.5, tool: 'pickaxe', level: 0 });
@@ -537,8 +537,11 @@ export const SPAWN_EGGS = [
   ['shademite', 'Shademite', [22, 22, 22], [110, 110, 110]], ['clamper', 'Clamper', [148, 103, 148], [77, 56, 78]], ['void_dragon', 'Void Dragon', [28, 28, 28], [224, 121, 250]],
   ['blight', 'Wither', [30, 30, 30], [80, 100, 100]], ['cave_spider', 'Cave Spider', [12, 66, 77], [163, 0, 0]], ['mooshroom', 'Mooshroom', [161, 16, 18], [183, 183, 183]],
   ['horse', 'Horse', [192, 158, 124], [238, 229, 0]], ['donkey', 'Donkey', [83, 70, 62], [134, 118, 103]],
+  ['panda', 'Panda', [231, 231, 231], [27, 27, 34]], ['polar_bear', 'Polar Bear', [242, 242, 242], [149, 149, 149]],
 ];
-SPAWN_EGGS.forEach(([type, name, shell, spots], i) => item(389 + i, type + '_spawn_egg', name + ' Spawn Egg', { egg: type, eggColors: [shell, spots] }));
+// (the numbers after 426 were taken by then, so later eggs have numbers of their own)
+const LATE_EGGS = { panda: 449, polar_bear: 450 };
+SPAWN_EGGS.forEach(([type, name, shell, spots], i) => item(LATE_EGGS[type] || 389 + i, type + '_spawn_egg', name + ' Spawn Egg', { egg: type, eggColors: [shell, spots] }));
 // What a monster spawner makes, by its meta: the first six are the ones generated in the world (dungeons,
 // fortresses, strongholds, mineshafts); the rest come from spawn eggs. Only ever added to, at the end.
 const SPAWNER_FIRST = ['cinder', 'shademite', 'zombie', 'skeleton', 'spider', 'cave_spider'];

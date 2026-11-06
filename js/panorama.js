@@ -8,9 +8,10 @@ import { buildChunkMesh } from './mesher.js';
 import { LATEST } from './updates.js';
 import { signMesh, disposeSignMesh } from './signs.js';
 import { fairWeather } from './weather.js';
+import { buildModel } from './entities.js';
 
 let RAD = 3;   // chunks made around the spot; those within RAD - 1 are drawn (a scene can ask for a wider view)
-const P = { world: null, todo: [], yaw: 0, shown: false, at: null, signs: [] };
+const P = { world: null, todo: [], yaw: 0, shown: false, at: null, signs: [], models: [] };
 
 export function startPanorama() {
   const sc = LATEST.scene;
@@ -25,9 +26,12 @@ export function startPanorama() {
     // built around the world's spawn, or around a spot the scene names (`at`: the middle of a village, say)
     const sp = sc.at ? { x: sc.at[0], z: sc.at[1], h: w.column(sc.at[0], sc.at[1]).h } : w.findSpawn();
     const ox = Math.floor(sp.x), oz = Math.floor(sp.z), g = sp.h;
+    P.wanted = [];
     sc.build((dx, dy, dz, key, meta = 0) => w.setBlockAnywhere(ox + dx, g + dy, oz + dz, key ? B[key] : 0, meta),
       (dx, dy, dz, lines) => w.signs.set(`${ox + dx},${g + dy},${oz + dz}`, lines),
-      (dx, dz) => w.column(ox + dx, oz + dz).h - g);   // how much higher the ground is there
+      (dx, dz) => w.column(ox + dx, oz + dz).h - g,   // how much higher the ground is there
+      // a creature or a car standing still in the scene (its look as a mob's variant would give it)
+      (type, dx, dy, dz, yaw = 0, variant) => P.wanted.push({ type, variant, x: ox + dx + 0.5, y: g + dy, z: oz + dz + 0.5, yaw }));
     const v = sc.view || [0, 0];   // where in the scene the view stands (and how high above the ground)
     P.at = { x: ox + v[0] + 0.5, y: g + (v[2] ?? 2.62), z: oz + v[1] + 0.5 };
   }
@@ -46,6 +50,8 @@ export function stopPanorama() {
   for (const c of P.world.chunks.values()) disposeChunkMeshes(c);
   for (const m of P.signs) disposeSignMesh(m);
   P.signs = [];
+  for (const m of P.models) { R.scene.remove(m.root); m.mat.dispose(); }
+  P.models = [];
   P.world = null;
   P.todo = [];
   document.body.classList.remove('panorama');
@@ -74,6 +80,17 @@ export function panoramaFrame(dt) {
         const m = signMesh(id, w.getMeta(x, y, z), x, y, z, lines);
         R.scene.add(m);
         P.signs.push(m);
+      }
+      // and what stands in it
+      for (const o of P.wanted || []) {
+        try {
+          const m = buildModel(o.type, o.variant);
+          m.root.position.set(o.x, o.y, o.z);
+          m.root.rotation.y = o.yaw;
+          m.mat.color.setScalar(0.92);
+          R.scene.add(m.root);
+          P.models.push(m);
+        } catch { /* a model this page can't draw */ }
       }
     }
   }

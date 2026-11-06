@@ -67,15 +67,21 @@ How it works:
 - **Inventory doll** (`js/doll.js`): the player model drawn into a render target by the game's renderer, read back into a canvas in the panel, only while the inventory is open.
 - **Depth on flat tiles** (`DEPTH` / `addDepth` in `js/textures.js`): after a tile is painted, some are made lighter or darker in places from a random stream of their own, never recoloured. Only obsidian keeps the `GLOSS` glints. The dragon egg is a model (`boxes`) with a `pick` box, and the block outline uses `pickBox`.
 
-## Guns (1.10.9, 1.10.10)
+## Pandas, polar bears and bamboo (1.11)
+
+`js/wildlife.js` adds `panda` and `polar_bear` (models, mob types, spawn eggs 449 and 450: the egg numbers after 426 were taken, so `LATE_EGGS` gives them their own). `pickWild` chooses them for a chunk's first animals in bamboo jungles, jungles and snowy biomes (`Entities.wildGround` / `wildCount` let bears stand on snow and ice and come in ones and twos), and `tickWild` lets a few wander in near players on land already seen. A polar bear is `bear`: `pickTarget` sends it after whoever hit it until they are 20 blocks away. Bamboo is `solid` (a full block to walk into). `caps` and `MIN_PAGE` are 7.
+
+The title scene `BAMBOO_ROAD` (updates.js) uses the fourth `build` argument, `model(type, dx, dy, dz, yaw, variant)`, which stands still models of creatures or cars in a scene (panorama.js).
+
+## Guns (1.11)
 
 Items 428 to 444. `js/guns.js` holds `GUNS` (damage, bullet speed, wait between shots, kick, spread, pellets, pierce, blast, which ammo) and `AMMO` (each kind's damage multiplier, pierce, fire, blast); `fireGun` uses the first ammo that fits in inventory order. The wait is `Player.gunCd`, and `nextUse` tells the use loop when to try again (it otherwise waits 0.25 s, too slow for the fast guns). A shot is an `Arrow` with `bullet` set to `'bullet'`, `'shell'` or `'rocket'`: little gravity, a fixed `damage`, gone on its first hit, never picked up, not counted for the arrow advancements. `boom` shots call `Arrow.blast`, which hurts and throws things like an explosion but breaks no blocks.
 
-## Cars (1.10.10)
+## Cars (1.11)
 
-`car` (mob and item 445) is ridden like the boat (`js/mounts.js`): `canSteer`, no sideways movement, slow to speed up. Its gear holds `coat` (paint) and `fuel` (0 to `FUEL_MAX`), saved and synced like a horse's gear; gas burns in `carry` where the car really lives, one unit per `FUEL_DIST` blocks, and `gas_can` (446) adds `FUEL_CAN`. Guests place one with `bo` and `t` set to the type (`CARS` lists them), so `caps` and `MIN_PAGE` are 6 (1.10.11 added `sports_car` and `supercar`, items 447 and 448, each with its own `ride.speed`, `grip` and `fuelDist`). In a car, first person becomes a view from behind and above (`updateCamera`). Saved boats and cars come back with `stay`, so `spawnMob` doesn't lift them out of the wall a wide car can be left nosed into.
+`car` (mob and item 445) is ridden like the boat (`js/mounts.js`): `canSteer`, no sideways movement, slow to speed up. Its gear holds `coat` (paint) and `fuel` (0 to `FUEL_MAX`), saved and synced like a horse's gear; gas burns in `carry` where the car really lives, one unit per `FUEL_DIST` blocks, and `gas_can` (446) adds `FUEL_CAN`. Guests place one with `bo` and `t` set to the type (`CARS` lists them), so `caps` and `MIN_PAGE` are 6 or more (`sports_car` and `supercar`, items 447 and 448, each with its own `ride.speed`, `grip` and `fuelDist`). In a car, first person becomes a view from behind and above (`updateCamera`). Saved boats and cars come back with `stay`, so `spawnMob` doesn't lift them out of the wall a wide car can be left nosed into.
 
-Held guns (1.10.11) are box models from `js/gunmodels.js` (`gunModel`), in the first-person hand (`setHeldItem`, recoil and flash in `updateHand`, `kickGun`) and in other bodies' hands (`holdInHand`). Your own shots skip what you ride, and `explosionDamage` takes a `spare` mob for that. Boats on ice slide (`ICE`, `ICE_SPEED` in mounts.js). The sniper's scope: sneaking with it held blends `Player.scope` up, which narrows the view by `SCOPE_ZOOM`, slows looking by the same amount, hides the hand and shows `showScope`'s overlay (render.js); `fireGun` aims through the middle while `scoped`.
+Held guns are box models from `js/gunmodels.js` (`gunModel`), in the first-person hand (`setHeldItem`, recoil and flash in `updateHand`, `kickGun`) and in other bodies' hands (`holdInHand`). Your own shots skip what you ride, and `explosionDamage` takes a `spare` mob for that. Boats on ice slide (`ICE`, `ICE_SPEED` in mounts.js). The sniper's scope: sneaking with it held blends `Player.scope` up, which narrows the view by `SCOPE_ZOOM`, slows looking by the same amount, hides the hand and shows `showScope`'s overlay (render.js); `fireGun` aims through the middle while `scoped`.
 
 ## Bundles (1.10.8)
 

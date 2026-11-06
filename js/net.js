@@ -283,7 +283,7 @@ export class Net {
       let timer = setTimeout(() => fail('The multiplayer server did not answer. Check your connection and try again.', true), 25000);
       ws.onopen = () => {
         onStatus('Joining…');
-        ws.send(JSON.stringify({ t: 'world', id: worldId, dim, token: account.token, haves, mine, spec: spec || undefined, caps: 6 }));   // (caps: 6 knows sports cars and supercars, 5 knows cars, 4 keeps what is in bundles, 1 hides spectators, 2 reloads when an admin says so, 3 has weather and sets it and the time when told)
+        ws.send(JSON.stringify({ t: 'world', id: worldId, dim, token: account.token, haves, mine, spec: spec || undefined, caps: 7 }));   // (caps: 7 knows pandas and polar bears, 6 knows sports cars and supercars, 5 knows cars, 4 keeps what is in bundles, 1 hides spectators, 2 reloads when an admin says so, 3 has weather and sets it and the time when told)
       };
       ws.onerror = () => {};
       ws.onclose = () => {

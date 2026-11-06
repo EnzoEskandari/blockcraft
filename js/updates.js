@@ -78,62 +78,43 @@ const BASTION_BRIDGE = {
   },
 };
 
+// A road cut through a bamboo jungle at the end of the afternoon: a car, a sports car and a supercar parked on it,
+// lamps along the verges and pandas in the bamboo on either side. (Seed 2024, where the jungle is flat.)
+const BAMBOO_ROAD = {
+  seed: 2024, at: [-118, -1194], view: [0, 9, 3.4], pitch: -0.12, time: 0.44, rad: 4,
+  build(put, sign, ground, model) {
+    for (let z = -30; z <= 30; z++) for (let x = -5; x <= 5; x++) {
+      const gz = ground(x, z), verge = Math.abs(x) === 5;
+      for (let y = Math.min(gz, 0); y < 0; y++) put(x, y, z, 'dirt');
+      put(x, 0, z, verge ? 'grass' : Math.abs(x) === 4 ? 'stone_bricks' : x === 0 && ((z % 4) + 4) % 4 < 2 ? 'yellow_wool' : 'blackstone');
+      for (let y = 1; y <= 16; y++) put(x, y, z, null);
+    }
+    // lamps on the verges
+    for (let z = -26; z <= 26; z += 13) for (const x of [-5, 5]) { for (let y = 1; y <= 3; y++) put(x, y, z, 'oak_fence'); put(x, 4, z, 'glowstone'); }
+    put(5, 1, 14, 'sign', 3); sign(5, 1, 14, ['Blockcraft 1.11', 'Fast & Wild', 'Guns, cars,', 'pandas, bears']);
+    model('supercar', -2, 1, 3, 0.25, '5.0.0');
+    model('sports_car', 2, 1, 15, Math.PI - 0.15, '4.0.0');
+    model('car', -2, 1, 20, 0.1, '1.0.0');
+    model('sports_car', 2, 1, -6, Math.PI + 0.2, '0.0.0');
+    for (const [x, z, yaw] of [[8, 6, -1.2], [-8, 12, 1.8], [7, -2, -2.4], [-7, 2, 0.6]]) model('panda', x, ground(x, z) + 1, z, yaw);
+  },
+};
+
 export const UPDATES = [
   {
-    // a small update: it keeps the Nether & Noise picture
-    version: '1.10.12', name: 'Steady Aim', date: '2026-11-05',
-    splashes: ['Saddle up!', 'Neigh!', 'Hee-haw!', 'Mind the lava!', 'Knock it back!', 'Row, row, row!', 'Black brick and gold!', 'Four new lands!', 'It moos now!', 'Two eyes each!',
-      'Swim for it!', 'Ride a strider!', 'What a hoard!', 'Baa!', 'Plant a cherry tree!', 'Tougher than diamond!', 'Mind the drop!', 'Hold your horses!', 'Tie it up!', 'Walkies!',
-      'Hatch a dragon!', 'Build it higher!', 'Speed II!', 'Wild horses!', 'Good fences!', 'Pack it in!', 'Bang!', 'Reload!', 'Vroom!', 'Fill her up!', 'Nine guns!',
-      'Zoom zoom!', 'Slide!', 'Racing stripes!', 'Steady aim!'],
-    scene: BASTION_BRIDGE,
+    // a big update, with a picture of its own: a road through a bamboo jungle
+    version: '1.11', name: 'Fast & Wild', date: '2026-11-05',
+    splashes: ['Bang!', 'Reload!', 'Vroom!', 'Fill her up!', 'Nine guns!', 'Zoom zoom!', 'Slide!', 'Racing stripes!', 'Steady aim!', 'Pandas!',
+      'Bear hug!', 'Bamboo!', 'Six kinds of bullet!', 'Rocket science!', 'Beep beep!', 'Mind the bear!', 'Sniper ready!', 'Supercar!', 'Out of gas!', 'Cold paws!'],
+    scene: BAMBOO_ROAD,
     notes: [
-      'The Sniper Rifle has a scope: hold it and sneak (Shift, or the sneak button on a touch screen) to look through it. It zooms in five times, looking around slows down to match, and the shot kicks less. The marks below the middle help with far shots, which drop a little.',
-    ],
-  },
-  {
-    // a small update: it keeps the Nether & Noise picture
-    version: '1.10.11', name: 'Fast Lane', date: '2026-11-04',
-    splashes: ['Saddle up!', 'Neigh!', 'Hee-haw!', 'Mind the lava!', 'Knock it back!', 'Row, row, row!', 'Black brick and gold!', 'Four new lands!', 'It moos now!', 'Two eyes each!',
-      'Swim for it!', 'Ride a strider!', 'What a hoard!', 'Baa!', 'Plant a cherry tree!', 'Tougher than diamond!', 'Mind the drop!', 'Hold your horses!', 'Tie it up!', 'Walkies!',
-      'Hatch a dragon!', 'Build it higher!', 'Speed II!', 'Wild horses!', 'Good fences!', 'Pack it in!', 'Bang!', 'Reload!', 'Vroom!', 'Fill her up!', 'Nine guns!',
-      'Zoom zoom!', 'Slide!', 'Racing stripes!'],
-    scene: BASTION_BRIDGE,
-    notes: [
-      'Two faster cars. The Sports Car (redstone, glass, three blocks of iron and two blocks of coal) is half as fast again as a car and goes 1400 blocks on a tank. The Supercar (diamonds, glass, three blocks of gold and two blocks of coal) is nearly twice as fast and goes 2000 blocks on a tank.',
-      'In a car you now see it from behind and a little above, so the road ahead shows over the roof. Press V for the other views.',
-      'Guns are held as proper solid guns pointing ahead, with a kick and a muzzle flash each time they fire. Other players see you holding them that way too.',
-      'Your own bullets and rockets no longer hurt the car you are sitting in.',
-      'Boats slide fast across ice, as they do in the original game.',
-      'Fixed: a car or boat left underground could come back up on the surface when you came back to the world.',
-    ],
-  },
-  {
-    // a small update: it keeps the Nether & Noise picture
-    version: '1.10.10', name: 'Armed and Fuelled', date: '2026-11-03',
-    splashes: ['Saddle up!', 'Neigh!', 'Hee-haw!', 'Mind the lava!', 'Knock it back!', 'Row, row, row!', 'Black brick and gold!', 'Four new lands!', 'It moos now!', 'Two eyes each!',
-      'Swim for it!', 'Ride a strider!', 'What a hoard!', 'Baa!', 'Plant a cherry tree!', 'Tougher than diamond!', 'Mind the drop!', 'Hold your horses!', 'Tie it up!', 'Walkies!',
-      'Hatch a dragon!', 'Build it higher!', 'Speed II!', 'Wild horses!', 'Good fences!', 'Pack it in!', 'Bang!', 'Reload!', 'Vroom!', 'Fill her up!', 'Nine guns!'],
-    scene: BASTION_BRIDGE,
-    notes: [
-      'Seven more guns: the Revolver, Submachine Gun, Assault Rifle, Shotgun, Sniper Rifle, Minigun and Rocket Launcher. Point at one in your inventory to see how hard it hits and how fast it fires. Hold the button down to keep firing.',
-      'Kinds of bullet: Copper (weaker, cheap), Iron, Diamond (harder, and goes through one thing), Netherite (hardest, goes through two), Fire (sets things alight) and Explosive. Make them from the metal above gunpowder; fire and explosive bullets are four iron bullets with cinder powder or two gunpowder. A gun fires whichever bullets come first in your inventory, so put the ones you want in your hotbar.',
-      'The Shotgun fires shells (flint, gunpowder and paper) and the Rocket Launcher fires rockets (an iron ingot, TNT and gunpowder). Rockets and explosive bullets hurt everything near where they land but do not break blocks.',
-      'Cars! Craft one from a glass block, three blocks of iron and two blocks of coal, set it down on the ground and get in. It is about three times as fast as running, climbs one block at a time and can\'t go sideways.',
-      'Cars run on gas. A gas can is an iron ingot and two coal; use one on a car to fill it up a quarter. A new car comes with a quarter of a tank, and a full tank goes about 800 blocks. The gauge shows as it drops.',
-    ],
-  },
-  {
-    // a small update: it keeps the Nether & Noise picture
-    version: '1.10.9', name: 'Locked and Loaded', date: '2026-11-03',
-    splashes: ['Saddle up!', 'Neigh!', 'Hee-haw!', 'Mind the lava!', 'Knock it back!', 'Row, row, row!', 'Black brick and gold!', 'Four new lands!', 'It moos now!', 'Two eyes each!',
-      'Swim for it!', 'Ride a strider!', 'What a hoard!', 'Baa!', 'Plant a cherry tree!', 'Tougher than diamond!', 'Mind the drop!', 'Hold your horses!', 'Tie it up!', 'Walkies!',
-      'Hatch a dragon!', 'Build it higher!', 'Speed II!', 'Wild horses!', 'Good fences!', 'Pack it in!', 'Bang!', 'Reload!'],
-    scene: BASTION_BRIDGE,
-    notes: [
-      'Guns! A pistol is three iron ingots above a plank and a flint. A rifle is six iron ingots above two planks and a flint. Right-click (or tap) to fire.',
-      'The pistol fires quickly and hits about as hard as an iron sword. The rifle is slower to fire but hits twice as hard and its bullets fly almost dead straight, so it is the one for things far away. Each shot kicks your aim up a little.',
-      'Guns fire bullets: an iron ingot above some gunpowder makes eight. Bullets are used up when they hit, so bring plenty. Guns wear out like bows do.',
+      'Guns! Nine of them: the Pistol, Revolver, Submachine Gun, Assault Rifle, Rifle, Sniper Rifle, Minigun, Shotgun and Rocket Launcher. Each is held as a solid gun pointing ahead, kicks when it fires and shows a muzzle flash. Hold the button down to keep firing; point at one in your inventory to see how hard it hits and how fast it fires.',
+      'Bullets: Copper, Iron, Diamond (goes through one thing), Netherite (goes through two), Fire and Explosive, each a metal above gunpowder (fire and explosive ones are made from iron bullets). A gun fires whichever bullets come first in your inventory. The Shotgun fires shells and the Rocket Launcher rockets. Rockets and explosive bullets hurt what is near but break no blocks, and your own shots never hurt the car you sit in.',
+      'The Sniper Rifle has a scope: hold it and sneak to look through it. It zooms in five times and slows your aim to match.',
+      'Cars! The Car, the Sports Car and the Supercar, each faster and going further on a tank than the last (800, 1400 and 2000 blocks). Set one on the ground and get in; in a car you see it from behind. They run on gas: a gas can (an iron ingot and two coal) fills a quarter of the tank.',
+      'Pandas live in bamboo jungles, and now and then in jungles. Polar bears live where it snows; they leave you alone unless you hit them, and then they fight back. Both have spawn eggs.',
+      'Bamboo is solid now: you can\'t walk through it.',
+      'Boats slide fast across ice. Saved cars and boats come back where you left them, even underground.',
     ],
   },
   {

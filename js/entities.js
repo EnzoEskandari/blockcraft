@@ -878,7 +878,7 @@ class Mob {
       if (this.def.villager) for (const g of G.entities.mobs) if (g.def.golem && dist3(g, this) < 16) g.provoked = true;
     }
     if (attacker) this.attacker = attacker;
-    if (!this.def.hostile && !this.def.golem) { this.ai.panic = 4; this.ai.t = 0; }
+    if (!this.def.hostile && !this.def.golem && !this.def.bear) { this.ai.panic = 4; this.ai.t = 0; }
     if (this.def.teleports && rand() < 0.6 && this.hp > 0) this.teleportNear(this.pos, 10);
     if (this.hp <= 0) this.die(attacker);
     else this.retarget = 0;
@@ -931,6 +931,11 @@ class Mob {
     if (def.golem) {
       if (this.provoked) for (const p of ps) consider(p, 24);
       for (const m of mobs) if (!m.dead && m.def.hostile && m.type !== 'boomer' && !(m.def.neutral && !m.angry)) consider(m, 16);
+      return best;
+    }
+    if (def.bear) {
+      if (this.provoked) for (const p of ps) consider(p, 20);
+      if (!best) this.provoked = false;
       return best;
     }
     if (!def.hostile) return null;
@@ -2428,7 +2433,7 @@ export class Entities {
     }
     if (this.spawnTimer <= 0) {
       this.spawnTimer = 1;
-      if (!isClient()) { this.spawnHostiles(); this.despawn(); if (this.tickSpawners) this.tickSpawners(); this.tickGolems(1); if (this.tickHerds) this.tickHerds(); }
+      if (!isClient()) { this.spawnHostiles(); this.despawn(); if (this.tickSpawners) this.tickSpawners(); this.tickGolems(1); if (this.tickHerds) this.tickHerds(); if (this.tickWild) this.tickWild(); }
     }
   }
 
@@ -2485,14 +2490,15 @@ export class Entities {
     const shroom = chunk.biomes[(baseZ << 4) | baseX] === BIOME.MUSHROOM;
     // (on open grassland they are sometimes horses or donkeys: see mounts.js)
     const type = shroom ? 'mooshroom' : (this.pickPassive && this.pickPassive(chunk.biomes[(baseZ << 4) | baseX])) || PASSIVE[(rand() * PASSIVE.length) | 0];
-    const n = 2 + (rand() * 3 | 0);
+    const n = (this.wildCount && this.wildCount(type)) || 2 + (rand() * 3 | 0);   // (wildlife.js)
     const variant = type === 'sheep' ? sheepVariant() : 0;
+    const ground = this.wildGround && this.wildGround[type];
     for (let i = 0; i < n; i++) {
       const lx = Math.min(15, Math.max(0, baseX + ((rand() * 5) | 0) - 2)), lz = Math.min(15, Math.max(0, baseZ + ((rand() * 5) | 0) - 2));
       let y = Math.min(CH - 2, chunk.maxY);
       while (y > 0 && (!chunk.blocks[(y << 8) | (lz << 4) | lx] || BLOCKS[chunk.blocks[(y << 8) | (lz << 4) | lx]].replaceable)) y--;
       const top = chunk.blocks[(y << 8) | (lz << 4) | lx];
-      if (shroom ? top !== B.mycelium : (top !== B.grass && top !== B.snowy_grass && top !== B.podzol)) continue;
+      if (shroom ? top !== B.mycelium : ground ? !ground.includes(top) : (top !== B.grass && top !== B.snowy_grass && top !== B.podzol)) continue;
       const x = chunk.cx * 16 + lx + 0.5, z = chunk.cz * 16 + lz + 0.5;
       this.spawnMob(type, x, y + 1, z, { variant });
     }
