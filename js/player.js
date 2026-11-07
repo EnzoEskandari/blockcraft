@@ -946,8 +946,9 @@ export class Player {
     if (mob && mob.def.turret && !mob.dead) { openTurret(mob); return true; }
     if (mob && mob.def.mount && !mob.dead) return useMount(this, mob);
     // a boat is set down on water (or on the ground) where you point
-    if (held && (held.id === ID.boat || held.id === ID.turret || CARS[ITEMS[held.id].key]) && !mob) {
-      const car = held.id === ID.turret ? 'turret' : CARS[ITEMS[held.id].key], big = car === 'turret' || car === 'plane' || car === 'fighter_jet';
+    const turret = held && (held.id === ID.turret || held.id === ID.missile_turret) ? ITEMS[held.id].key : null;
+    if (held && (held.id === ID.boat || turret || CARS[ITEMS[held.id].key]) && !mob) {
+      const car = turret || CARS[ITEMS[held.id].key], big = !!turret || car === 'plane' || car === 'fighter_jet';
       const r = this.pickRay(this.lastInput || {});
       const hit = raycast(G.world, r.ox, r.oy, r.oz, r.dx, r.dy, r.dz, 5.5, (id) => id === B.water || BLOCKS[id].solid);
       if (!hit) return false;
@@ -955,8 +956,8 @@ export class Player {
       if (car && onWater) { this.hint('That goes on the ground'); return true; }
       const x = r.ox + r.dx * hit.dist, z = r.oz + r.dz * hit.dist, y = onWater ? hit.y + 0.9 : hit.y + 1.02;
       if (!onWater && hit.ny !== 1) return false;
-      if (boxBlocked(G.world, x, y + (onWater ? 0.15 : 0), z, big ? 1.4 : car ? 0.8 : 0.6, car === 'turret' ? 3 : car ? 1.4 : 0.5)) { this.hint('There is no room for it there'); return true; }
-      if (car === 'turret') placeTurret(x, y, z, this.yaw + Math.PI); else placeBoat(x, y, z, this.yaw + Math.PI, car || 'boat');
+      if (boxBlocked(G.world, x, y + (onWater ? 0.15 : 0), z, big ? 1.4 : car ? 0.8 : 0.6, turret ? 3 : car ? 1.4 : 0.5)) { this.hint('There is no room for it there'); return true; }
+      if (turret) placeTurret(x, y, z, this.yaw + Math.PI, turret); else placeBoat(x, y, z, this.yaw + Math.PI, car || 'boat');
       if (!this.creative) { held.count--; if (held.count <= 0) this.inv.slots[this.inv.selected] = null; G.ui.invChanged(); }
       swingHand();
       return true;

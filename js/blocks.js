@@ -527,7 +527,8 @@ item(451, 'plane', 'Plane', { stack: 1 });
 item(452, 'fighter_jet', 'Fighter Jet', { stack: 1 });
 item(453, 'missile', 'Missile', { stack: 16 });
 item(454, 'flare', 'Flare', { stack: 32 });
-item(455, 'turret', 'Turret', { stack: 1 });
+item(455, 'turret', 'Gun Turret', { stack: 1 });
+item(456, 'missile_turret', 'Missile Turret', { stack: 1 });   // (1.11.8)
 // (1.10.5) spawn eggs, in the creative inventory: one for every creature in the game, with its name and the
 // colours of the egg (shell, spots). Use one on a block and the creature hatches there; use one on a spawner and the spawner
 // makes that creature from then on. The numbers are kept forever, so new creatures go on the end.
@@ -713,6 +714,7 @@ const RECIPE_DEFS = [
   { shape: ['I', 'T', 'R'], key: { I: 'iron_ingot', T: 'tnt', R: 'redstone' }, out: ['missile', 2] },
   { shape: ['G', 'P'], key: { G: 'gunpowder', P: 'paper' }, out: ['flare', 4] },
   { shape: ['IDI', 'RBR', 'OOO'], key: { I: 'iron_block', D: 'diamond', R: 'redstone_block', B: 'tnt', O: 'obsidian' }, out: ['turret', 1] },
+  { shape: ['IMI', 'RDR', 'OOO'], key: { I: 'iron_block', M: 'missile', R: 'redstone_block', D: 'diamond_block', O: 'obsidian' }, out: ['missile_turret', 1] },
   { in: ['iron_ingot', 'flint'], out: ['flint_and_steel', 1] },
   { shape: ['#I#', '###', ' # '], key: { '#': '#planks', I: 'iron_ingot' }, out: ['shield', 1] },
   { in: ['cobblestone', 'oak_leaves'], out: ['mossy_cobblestone', 1] },

@@ -1635,6 +1635,11 @@ Object.assign(ART, {
     '......OOOO......', '.......OO.......', '......OPPO......', '......OPPO......', '...OOOOOOOOOO...', '..OBBBBBBBBBBO..',
     '..OYBYBYBYBYBO..', '..OOOOOOOOOOOO..',
   ],
+  missile_turret: [
+    '................', '.........OO.....', '........OSSO....', '.........OO.....', '..OOOOOOOO.O....', '..OGGGGGGGOO....',
+    '..OGRGRGRGO.....', '..OGGGGGGGO.....', '..OGRGRGRGO.....', '..OOOOOOOOO.....', '....OPPPPO......', '...OOOOOOOOOO...',
+    '..OBBBBBBBBBBO..', '..OYBYBYBYBYBO..', '..OOOOOOOOOOOO..',
+  ],
   sports_car: [
     '................', '................', '................', '................', 'OOOO............', '.OO..OOOOO......',
     '.OO.OGGGGGOO....', '.OCCCCCCCCCCCOO.', 'OCCWWCCCCCCCCCYO', 'OcOOOccccccOOOcO', '.OBBBO....OBBBO.', '..OOO......OOO..',
@@ -1836,6 +1841,7 @@ Object.assign(ITEM_ART, {
   missile: ['missile', { O: [40, 40, 44], W: [236, 236, 236], R: [200, 40, 30], F: [120, 120, 126] }],
   flare: ['flare', { O: [80, 30, 20], P: [214, 60, 40], p: [170, 40, 28], R: [255, 120, 40], Y: [255, 230, 120] }],
   turret: ['turret', { O: [30, 30, 30], H: [112, 116, 112], S: [160, 164, 160], P: [90, 92, 90], B: [56, 58, 56], Y: [200, 170, 40] }],
+  missile_turret: ['missile_turret', { O: [28, 30, 22], G: [96, 108, 70], R: [200, 40, 30], S: [200, 204, 196], P: [70, 72, 70], B: [62, 72, 46], Y: [210, 180, 40] }],
   sports_car: ['sports_car', { O: [40, 30, 10], C: [246, 196, 30], c: [190, 140, 20], W: [250, 250, 244], G: [80, 110, 140], Y: [255, 240, 170], B: [30, 30, 32] }],
   supercar: ['supercar', { O: [20, 40, 10], C: [150, 220, 40], c: [100, 160, 24], G: [44, 60, 76], Y: [255, 240, 170], B: [30, 30, 32] }],
   gas_can: ['gas_can', { O: [60, 16, 14], R: [204, 40, 32], r: [150, 26, 22], S: [200, 200, 204] }],

@@ -103,6 +103,18 @@ const BAMBOO_ROAD = {
 export const UPDATES = [
   {
     // a small update: it keeps the Fast & Wild picture
+    version: '1.11.8', name: 'Two Turrets', date: '2026-11-07',
+    splashes: ['Bang!', 'Reload!', 'Vroom!', 'Nine guns!', 'Zoom zoom!', 'Racing stripes!', 'Steady aim!', 'Pandas!', 'Bear hug!', 'Bamboo!',
+      'Rocket science!', 'Beep beep!', 'Mind the bear!', 'Supercar!', 'Cold paws!', 'Fox two!', 'Flares!', 'Lock on!', 'Bandit, six o\'clock!', 'Wheels up!', 'Turret online!', 'Afterburner!', 'Hot stuff!', 'Eat up!', 'Hold the line!', 'Thrust vectoring!', 'Supercruise!', 'Tracers!', 'Command blocks!', 'Clean shot!', 'Incoming!'],
+    scene: BAMBOO_ROAD,
+    notes: [
+      'There are now two turrets. The Turret is now called the Gun Turret: it only fires its stream of tracer rounds, and now fires them at things in the air too.',
+      'New: the Missile Turret, olive green with six missile tubes and a turning radar dish. It fires a homing missile about every second and a half at anything in reach, on the ground or in the air, from further away than the gun turret.',
+      'Its missiles hurt and knock back everything near where they go off, but never break blocks. Flares can still draw them off.',
+      'Make one with an iron block, a missile and an iron block on top, a block of redstone, a diamond block and a block of redstone in the middle, and three obsidian on the bottom. It has the same list as the gun turret for what it leaves alone.',
+    ],
+  },
+  {
     version: '1.11.7', name: 'Clean Shot', date: '2026-11-06',
     splashes: ['Bang!', 'Reload!', 'Vroom!', 'Nine guns!', 'Zoom zoom!', 'Racing stripes!', 'Steady aim!', 'Pandas!', 'Bear hug!', 'Bamboo!',
       'Rocket science!', 'Beep beep!', 'Mind the bear!', 'Supercar!', 'Cold paws!', 'Fox two!', 'Flares!', 'Lock on!', 'Bandit, six o\'clock!', 'Wheels up!', 'Turret online!', 'Afterburner!', 'Hot stuff!', 'Eat up!', 'Hold the line!', 'Thrust vectoring!', 'Supercruise!', 'Tracers!', 'Command blocks!', 'Clean shot!'],

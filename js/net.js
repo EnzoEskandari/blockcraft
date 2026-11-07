@@ -287,7 +287,7 @@ export class Net {
       let timer = setTimeout(() => fail('The multiplayer server did not answer. Check your connection and try again.', true), 25000);
       ws.onopen = () => {
         onStatus('Joining…');
-        ws.send(JSON.stringify({ t: 'world', id: worldId, dim, token: account.token, haves, mine, spec: spec || undefined, caps: 8 }));   // (caps: 8 knows planes and turrets, 7 knows pandas and polar bears, 6 knows sports cars and supercars, 5 knows cars, 4 keeps what is in bundles, 1 hides spectators, 2 reloads when an admin says so, 3 has weather and sets it and the time when told)
+        ws.send(JSON.stringify({ t: 'world', id: worldId, dim, token: account.token, haves, mine, spec: spec || undefined, caps: 9 }));   // (caps: 9 knows missile turrets, 8 knows planes and turrets, 7 knows pandas and polar bears, 6 knows sports cars and supercars, 5 knows cars, 4 keeps what is in bundles, 1 hides spectators, 2 reloads when an admin says so, 3 has weather and sets it and the time when told)
       };
       ws.onerror = () => {};
       ws.onclose = () => {
@@ -735,7 +735,7 @@ export class Net {
       }
       case 'bo': {
         if (!a || !w || ![d.x, d.y, d.z, d.yaw].every(Number.isFinite) || Math.hypot(d.x - a.pos.x, d.y - a.pos.y, d.z - a.pos.z) > 8) return;
-        if (d.t === 'turret') { spawnTurret(d.x, d.y, d.z, d.yaw, a.name || 'player'); break; }
+        if (d.t === 'turret' || d.t === 'missile_turret') { spawnTurret(d.x, d.y, d.z, d.yaw, a.name || 'player', d.t); break; }
         const m = G.entities.spawnMob(CARS[d.t] || 'boat', d.x, d.y, d.z);
         m.yaw = d.yaw;
         break;

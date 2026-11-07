@@ -442,6 +442,7 @@
 "453":"missile",
 "454":"flare",
 "455":"turret",
+"456":"missile_turret",
 "enchantment:protection":"kept by name",
 "enchantment:fire_protection":"kept by name",
 "enchantment:feather_falling":"kept by name",

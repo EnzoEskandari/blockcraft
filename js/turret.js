@@ -1,7 +1,9 @@
-// The turret (1.12): a big gun three blocks across that shoots everything in reach, players and creatures
-// alike, except what is switched off on its list (use it to see the list). Whoever sets it down is off the
-// list to start with. Bullets for what is on the ground; homing missiles (see planes.js) for what flies,
-// which flares can draw off. It needs no ammunition. It lives where the world lives (the host).
+// Turrets (1.11.1): big guns three blocks across that shoot everything in reach, players and creatures alike,
+// except what is switched off on their list (use one to see it). Whoever sets one down is off its list to
+// start with. They need no ammunition, and live where the world lives (the host).
+// The gun turret (`turret`, 'Gun Turret' since 1.11.8) fires streams of tracer rounds, at the ground and the
+// air. The missile turret (`missile_turret`, 1.11.8), olive green with six tubes and a radar dish, fires homing
+// missiles (see planes.js), which flares can draw off; they hurt what is near but break no blocks.
 import * as THREE from 'three';
 import { G } from './game.js';
 import { BLOCKS } from './blocks.js';
@@ -13,6 +15,7 @@ import { launchMissile, myName } from './planes.js';
 const rand = Math.random;
 const players = () => (G.net ? G.net.targets() : G.player ? [G.player] : []);
 const RANGE = 48, AIR_RANGE = 90;
+const MIS_RANGE = 64, MIS_AIR_RANGE = 120, MIS_WAIT = 1.6;   // (the missile turret's reach, and the wait between missiles)
 // Up in the air: nothing solid in the five blocks under it
 function airborne(e) {
   const x = Math.floor(e.pos.x), z = Math.floor(e.pos.z), y = Math.floor(e.pos.y);
@@ -32,6 +35,24 @@ MODELS.turret = () => [
   { name: 'pod1', parent: 'head', size: [7, 10, 16], pos: [17, 1, 4], color: DARK, paint: { front: (g, x, y) => { rect(g, x + 1, y + 1, 2, 2, [200, 40, 30]); rect(g, x + 4, y + 1, 2, 2, [200, 40, 30]); rect(g, x + 1, y + 6, 2, 2, [200, 40, 30]); rect(g, x + 4, y + 6, 2, 2, [200, 40, 30]); } } },
   { name: 'radar', parent: 'head', size: [10, 6, 1], pos: [0, 11, -8], color: STEEL },
 ];
+// The missile turret: an olive launcher on a turntable, six missile tubes with red tips showing, and a radar
+// dish on a mast behind
+const OLIVE = [96, 108, 70], OLIVE_D = [62, 72, 46], RED = [200, 40, 30];
+MODELS.missile_turret = () => [
+  { name: 'base', size: [44, 6, 44], pos: [0, 3, 0], color: OLIVE_D, paint: { top: (g, x, y, w, h) => { for (let i = 2; i < w - 2; i += 6) rect(g, x + i, y + 2, 3, 1, [210, 180, 40]); } } },
+  { name: 'turntable', size: [30, 4, 30], pos: [0, 8, 0], color: [70, 72, 70] },
+  { name: 'head', size: [1, 1, 1], pos: [0, 22, 0], color: OLIVE },
+  { name: 'arm0', parent: 'head', size: [4, 14, 10], pos: [-14, -6, 0], color: OLIVE_D },
+  { name: 'arm1', parent: 'head', size: [4, 14, 10], pos: [14, -6, 0], color: OLIVE_D },
+  { name: 'pod', parent: 'head', size: [24, 16, 26], pos: [0, 2, 2], color: OLIVE, paint: {
+    front: (g, x, y) => { for (let r = 0; r < 2; r++) for (let c = 0; c < 3; c++) { rect(g, x + 2 + c * 7, y + 2 + r * 7, 6, 6, [24, 24, 24]); rect(g, x + 4 + c * 7, y + 4 + r * 7, 2, 2, RED); } },
+    top: (g, x, y, w, h) => { rect(g, x + 1, y + 1, w - 2, 1, OLIVE_D); rect(g, x + 1, y + h - 2, w - 2, 1, OLIVE_D); },
+  } },
+  { name: 'mast', size: [3, 16, 3], pos: [0, 18, -12], color: [70, 72, 70] },
+  { name: 'radar', size: [1, 1, 1], pos: [0, 27, -12], color: [70, 72, 70] },
+  { name: 'dish', parent: 'radar', size: [14, 8, 2], pos: [0, 0, 0], color: [200, 204, 196], paint: { front: (g, x, y, w, h) => rect(g, x + (w >> 1) - 1, y + (h >> 1) - 1, 2, 2, [60, 60, 60]) } },
+  { name: 'feed', parent: 'radar', size: [1, 1, 5], pos: [0, 0, 3], color: [60, 60, 60] },
+];
 
 // Its list: what is switched off ('player:Name' or 'mob:type'), and who set it down
 const turretGear = (saved) => {
@@ -39,8 +60,10 @@ const turretGear = (saved) => {
   return { off: Array.isArray(g.off) ? g.off.filter((k) => typeof k === 'string').slice(0, 200) : [], owner: typeof g.owner === 'string' ? g.owner.slice(0, 40) : '',
     coat: 0, saddle: false, armor: 0, tame: true, spd: 1, temper: 0, lead: null };
 };
-MOB_TYPES.turret = { name: 'Turret', hp: 150, w: 2.8, h: 3, speed: 0, sound: 'golem', pitch: 0.5, drops: [{ key: 'turret', min: 1, max: 1 }], anim: 'turret',
+MOB_TYPES.turret = { name: 'Gun Turret', hp: 150, w: 2.8, h: 3, speed: 0, sound: 'golem', pitch: 0.5, drops: [{ key: 'turret', min: 1, max: 1 }], anim: 'turret',
   turret: true, persistent: true, fireImmune: true, noFall: true, heavy: true, xp: [0, 0], ai: turretAI, gear: turretGear };
+MOB_TYPES.missile_turret = { ...MOB_TYPES.turret, name: 'Missile Turret', drops: [{ key: 'missile_turret', min: 1, max: 1 }], missiles: true };
+export const TURRETS = ['turret', 'missile_turret'];
 
 // What it may shoot at: a creature by its kind, a player by name (the player inside a vehicle, not the vehicle)
 export const turretKey = (e) => (e.isPlayer || e.remote ? 'player:' + (e.isPlayer && !e.remote ? myName() : e.name) : 'mob:' + e.type);
@@ -56,6 +79,7 @@ function turretAI(t, dt) {
   if (t.dead) { t.removed = true; return; }
   t.vel.x = t.vel.z = 0;
   t.retarget = (t.retarget || 0) - dt; t.gunCd = (t.gunCd || 0) - dt; t.misCd = (t.misCd || 0) - dt;
+  const mis = !!t.def.missiles, range = mis ? MIS_RANGE : RANGE, airRange = mis ? MIS_AIR_RANGE : AIR_RANGE;
   const eye = { x: t.pos.x, y: t.pos.y + 1.8, z: t.pos.z };
   const seen = (x, y, z) => { const dx = x - eye.x, dy = y - eye.y, dz = z - eye.z, d = Math.hypot(dx, dy, dz); return !raycast(G.world, eye.x, eye.y, eye.z, dx / d, dy / d, dz / d, d - 0.8, (id) => BLOCKS[id].solid); };
   if (t.retarget <= 0) {
@@ -64,7 +88,7 @@ function turretAI(t, dt) {
     let best = null, bd = Infinity;
     const consider = (e, air) => {
       const d = Math.hypot(e.pos.x - eye.x, e.pos.y - eye.y, e.pos.z - eye.z);
-      if (d < (air ? AIR_RANGE : RANGE) && d < bd && seen(e.pos.x, e.pos.y + 0.9, e.pos.z)) { bd = d; best = e; }
+      if (d < (air ? airRange : range) && d < bd && seen(e.pos.x, e.pos.y + 0.9, e.pos.z)) { bd = d; best = e; }
     };
     for (const m of G.entities.mobs) if (shootable(t, m) && allowed(t, m)) consider(m, !!m.def.flies || airborne(m));
     for (const q of players()) if (!q.dead && q.mode !== 'creative' && q.mode !== 'spectator' && allowed(t, q)) consider(q, airborne(q));
@@ -81,7 +105,21 @@ function turretAI(t, dt) {
   const air = (e.def && e.def.flies) || airborne(e);
   // a stream of glowing tracer rounds, twenty a second from its two barrels in turn. Each hits for less than it
   // used to (what is hit can't be hurt again for a moment anyway, so it does a little less harm than before)
-  if (t.gunCd <= 0 && (!air || d < 60)) {
+  if (mis) {
+    // a homing missile from one of its six tubes in turn, faster at what flies (to catch a jet)
+    if (t.misCd <= 0) {
+      t.misCd = MIS_WAIT;
+      t.shots = (t.shots || 0) + 1;
+      const k = t.shots % 6, col = (k % 3) - 1, row = k < 3 ? 0.5 : 0, cs = Math.cos(t.yaw), sn = Math.sin(t.yaw);
+      const target = e.isPlayer && !e.remote ? e : e.remote ? { isRemotePlayer: true, name: e.name } : e;
+      launchMissile(eye.x + cs * col * 0.45 + ax / d * 1.8, eye.y + 0.3 + row + ay / d * 1.8, eye.z - sn * col * 0.45 + az / d * 1.8, ax / d, ay / d + (air ? 0.15 : 0.05), az / d, air ? 90 : 40, 'turret', target,
+        { shooter: t, allow: (x) => shootable(t, x) && allowed(t, x) });
+      t.kick = 0.25;
+    }
+    t.animate(dt, 0, 99);
+    return;
+  }
+  if (t.gunCd <= 0) {
     t.gunCd = 0.05;
     t.shots = (t.shots || 0) + 1;
     const side = t.shots & 1 ? 1 : -1, cs = Math.cos(t.yaw), sn = Math.sin(t.yaw);
@@ -92,11 +130,6 @@ function turretAI(t, dt) {
       { bullet: 'bullet', tracer: true, damage: 4, keep: true, shooter: t, allow: (x) => (x.isPlayer || x.remote ? allowed(t, x) : shootable(t, x) && allowed(t, x)) });
     t.flash = 0.04; t.flashSide = side;
     if (t.shots % 2) sfx('gun_light', t.pos, { vol: 0.7 });
-  }
-  if (air && t.misCd <= 0) {
-    t.misCd = 3;
-    const target = e.isPlayer && !e.remote ? e : e.remote ? { isRemotePlayer: true, name: e.name } : e;
-    launchMissile(eye.x, eye.y + 1, eye.z, ax / d, ay / d + 0.2, az / d, 25, 'turret', target, { shooter: t, allow: (x) => shootable(t, x) && allowed(t, x) });
   }
   t.animate(dt, 0, 99);
 }
@@ -140,6 +173,14 @@ MOB_TYPES.turret.animate = (t, dt) => {
     if (t.flash > 0) { t.flashMesh.position.set(t.flashSide * 5, 0, 42); t.flashMesh.rotation.z = rand() * 3; const k = 0.8 + rand() * 0.5; t.flashMesh.scale.setScalar(k); }
   }
   if (t.model.parts.radar) t.model.parts.radar.rotation.y = t.age * 3;
+};
+// The missile turret's launcher follows its aim and kicks back as a missile goes; its dish turns
+MOB_TYPES.missile_turret.animate = (t, dt) => {
+  const P = t.model.parts;
+  t.kick = Math.max(0, (t.kick || 0) - (dt || 0));
+  if (P.head) P.head.rotation.x = -(t.aimPitch || 0);
+  if (P.pod) P.pod.position.z = 2 - t.kick * 10;
+  if (P.radar) P.radar.rotation.y = t.age * 2;
 };
 
 // ---------------------------------------------------------------- its list
@@ -185,7 +226,7 @@ export function openTurret(t) {
   }
   section.textContent = '';
   const h2 = document.createElement('h2');
-  h2.textContent = 'Turret: what it shoots at';
+  h2.textContent = t.def.name + ': what it shoots at';
   section.appendChild(h2);
   const note = document.createElement('div');
   note.className = 'hint';
@@ -242,13 +283,13 @@ export function takeTurretList(t, off) {
   t.vDirty = true;
 }
 // Set down: it remembers who did it, and leaves them alone
-export function placeTurret(x, y, z, yaw) {
+export function placeTurret(x, y, z, yaw, type = 'turret') {
   const owner = myName();
-  if (G.net && G.net.role === 'client') { G.net.send({ k: 'bo', x, y, z, yaw, t: 'turret', o: owner }); return; }
-  spawnTurret(x, y, z, yaw, owner);
+  if (G.net && G.net.role === 'client') { G.net.send({ k: 'bo', x, y, z, yaw, t: type, o: owner }); return; }
+  spawnTurret(x, y, z, yaw, owner, type);
 }
-export function spawnTurret(x, y, z, yaw, owner) {
-  const t = G.entities.spawnMob('turret', x, y, z, { gear: { owner, off: ['player:' + owner] } });
+export function spawnTurret(x, y, z, yaw, owner, type = 'turret') {
+  const t = G.entities.spawnMob(TURRETS.includes(type) ? type : 'turret', x, y, z, { gear: { owner, off: ['player:' + owner] } });
   t.yaw = yaw;
   sfx('anvil', t.pos, { vol: 0.6 });
   return t;
