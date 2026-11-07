@@ -1549,6 +1549,7 @@ function golemSpot(w, at) {
 }
 
 // ---------------------------------------------------------------- dropped items
+const BURNS_ITEMS = new Set([B.fire, B.soul_fire].filter((id) => id != null));
 class ItemEntity {
   constructor(id, count, x, y, z, vx, vy, vz, dmg, e) {
     this.id = id; this.count = count; this.dmg = dmg || 0;
@@ -1581,6 +1582,13 @@ class ItemEntity {
       const inWater = here === B.water || (here === B.lava && ITEMS[this.id] && ITEMS[this.id].fireproof);
       if (inWater) this.vel.y = Math.min(this.vel.y + 20 * dt, 1.2);
       else this.vel.y -= 24 * dt;
+      // (anything else burns up in lava or fire, with a hiss and a puff of smoke)
+      if (!inWater && (here === B.lava || BURNS_ITEMS.has(here)) && this.age > 0.05) {
+        smoke(this.pos.x, this.pos.y + 0.3, this.pos.z, 6, 0.5);
+        sfx('extinguish', this.pos, { vol: 0.5 });
+        this.removed = true;
+        return;
+      }
       const res = moveBox(w, this, this.vel.x * dt, this.vel.y * dt, this.vel.z * dt);
       if (res.y) this.vel.y = 0;
       const f = res.ground ? Math.max(0, 1 - 8 * dt) : Math.max(0, 1 - 0.5 * dt);

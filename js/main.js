@@ -813,6 +813,15 @@ export const Game = {
     if (isGuest() || !setWeather(kind, secs)) return;
     if (G.net) G.net.send({ k: 't', t: G.time, d: G.day || 0, n: G.nightsNoSleep || 0, w: weatherKind(), q: 1 });
   },
+  // An admin clears away every dropped item in the world: those lying about and those kept with parts of the
+  // world not loaded just now (done where the world runs; guests' copies go when the host's do). How many went.
+  clearItems() {
+    if (isGuest()) return 0;
+    let n = 0;
+    for (const it of G.entities.items) if (!it.removed) { it.removed = true; n += 1; }
+    for (const st of G.world.stored.values()) if (st && st.i && st.i.length) { n += st.i.length; st.i = []; }
+    return n;
+  },
   // Commands typed in a world that is not online (an admin's own): the online ones go to the server
   command(text) {
     if (!(G.account && G.account.admin)) return;
@@ -838,9 +847,10 @@ export const Game = {
       if (n.length === 3) Game.teleport(n[0], Math.max(1, Math.min(250, n[1])), n[2]); else Game.teleport(n[0], null, n[1]);
       return say(`Teleported to ${n.map(Math.floor).join(', ')}.`);
     }
+    if (c === 'clearitems' || (c === 'clear' && /^items?$/i.test(args[0] || ''))) { const n = Game.clearItems(); return say(`Cleared ${n} dropped item${n === 1 ? '' : 's'}.`); }
     if (['creative', 'survival', 'spectator', 'spectate'].includes(c)) return Game.setMode(c === 'spectate' ? 'spectator' : c);
     if (c === 'gamemode' || c === 'gm') return Game.setMode(/^(c|1|creative)$/i.test(args[0] || '') ? 'creative' : /^(sp|3|spectator|spectate)$/i.test(args[0] || '') ? 'spectator' : 'survival');
-    return say('In a world that is not online: /time, /weather, /tp x y z, /creative, /survival, /spectator.');
+    return say('In a world that is not online: /time, /weather, /tp x y z, /clearitems, /creative, /survival, /spectator.');
   },
   // The pause menu's button: through the server in an online world (it checks who is asking)
   toggleMode() {

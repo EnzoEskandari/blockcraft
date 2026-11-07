@@ -295,7 +295,7 @@ export class UI {
     box.hidden = true;
     if (text[0] !== '/') return;
     const admin = !!(G.account && G.account.admin);
-    const CMDS = admin ? [['time', 'set the time of day', ['day', 'noon', 'sunset', 'night', 'midnight', 'sunrise']], ['weather', 'change the weather', ['clear', 'cloudy', 'rain', 'thunder']],
+    const CMDS = admin ? [['time', 'set the time of day', ['day', 'noon', 'sunset', 'night', 'midnight', 'sunrise']], ['weather', 'change the weather', ['clear', 'cloudy', 'rain', 'thunder']], ['clearitems', 'remove every dropped item'],
       ['where', 'where a player is', 1], ['tp', 'go to a player, or to x y z', 1], ['bring', 'fetch a player to you', 1], ['creative', 'creative mode'], ['survival', 'survival mode'],
       ['kill', 'kill a player', 1], ['kick', 'send a player out', 1], ['ban', 'ban a player', 1], ['unban', 'let a player back', 1], ['op', 'make a player an admin', 1], ['deop', 'take admin away', 1],
       ['reload', 'update the game for everyone'], ['players', 'everyone online'], ['accounts', 'every account'], ['list', 'who is here'], ['help', 'all the commands']]

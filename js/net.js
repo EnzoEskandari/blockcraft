@@ -423,6 +423,7 @@ export class Net {
     // (the time and the weather are set by whoever runs the world, and reach everyone else from there)
     if (m.a === 'time') { if (this.role === 'host') G.game.setTime(m.v); return; }
     if (m.a === 'weather') { if (this.role === 'host') G.game.setWeatherNow(m.v, m.secs); return; }
+    if (m.a === 'clearitems') { if (this.role === 'host') { const n = G.game.clearItems(); this.chat(null, `Cleared ${n} dropped item${n === 1 ? '' : 's'}.`); } return; }
     if (m.a === 'kill') {
       const p = G.player;
       if (p && !p.dead) { p.lastAttacker = by; p.die('admin'); }

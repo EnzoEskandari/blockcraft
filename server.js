@@ -621,6 +621,14 @@ async function command(ws, text) {
     send(room.host, { t: 'admin', a: 'weather', v: k, secs: Math.round(mins * 60) });
     return `The weather is now ${k === 'thunder' ? 'a thunderstorm' : k}${mins ? ` for ${mins} minute${mins === 1 ? '' : 's'}` : ''}.`;
   }
+  // every dropped item in the world goes (whoever runs it does that)
+  if (c === 'clearitems' || (c === 'clear' && /^items?$/i.test(name || ''))) {
+    const room = ws.room && rooms.get(ws.room);
+    if (!room) return 'Join a world first.';
+    if (!(room.host.caps >= 8)) return `${room.host.name || 'Whoever is running this world'} has an old page open and needs to reload before this works.`;
+    send(room.host, { t: 'admin', a: 'clearitems' });
+    return 'Clearing every dropped item in this world.';
+  }
   if (c === 'where' || c === 'tp' || c === 'bring') {
     const a = name ? await accountNamed(name.trim()) : null;
     if (!a) return name ? `There is no player called ${name}.` : 'Say which player.';
@@ -642,7 +650,7 @@ async function command(ws, text) {
   }
   // everyone in every online world saves, loads the newest version of the game and comes straight back in
   if (c === 'reload') return reloadEveryone();
-  if (c === 'help') return 'Admin commands: /time day|noon|night|15, /weather clear|cloudy|rain|thunder, /tp x y z, /reload (everyone gets the newest version), /where name, /tp name, /bring name, /creative, /survival, /kill name, /kick name, /ban name [reason], /unban name, /op name, /deop name, /players (everyone online), /accounts (every account), /list';
+  if (c === 'help') return 'Admin commands: /time day|noon|night|15, /weather clear|cloudy|rain|thunder, /tp x y z, /clearitems (every dropped item), /reload (everyone gets the newest version), /where name, /tp name, /bring name, /creative, /survival, /kill name, /kick name, /ban name [reason], /unban name, /op name, /deop name, /players (everyone online), /accounts (every account), /list';
   if (c === 'players') {
     const on = playerList().filter((x) => x.online.length);
     return on.length ? 'Online: ' + on.map((x) => `${x.name} in ${x.online.join(', ')}`).join('; ') : 'Nobody is in an online world.';
