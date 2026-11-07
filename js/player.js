@@ -20,6 +20,7 @@ import { GUNS, fireGun } from './guns.js';
 import { planeFrame } from './planes.js';
 import { openTurret, placeTurret } from './turret.js';
 import { openCmdBlock, triggerCmd } from './cmdblocks.js';
+import { openSilo, placeSilo, markTarget } from './silo.js';
 
 const GRAVITY = 32;
 const JUMP_V = 9.0;
@@ -944,9 +945,12 @@ export class Player {
     const t = target && target.block;
     const mob = target && target.mob;
     if (mob && mob.def.turret && !mob.dead) { openTurret(mob); return true; }
+    if (mob && mob.def.silo && !mob.dead) { openSilo(mob); return true; }
+    // a Targeting System marks where a silo's missile should land
+    if (held && held.id === ID.targeting_system) { markTarget(this); swingHand(); return true; }
     if (mob && mob.def.mount && !mob.dead) return useMount(this, mob);
     // a boat is set down on water (or on the ground) where you point
-    const turret = held && (held.id === ID.turret || held.id === ID.missile_turret) ? ITEMS[held.id].key : null;
+    const turret = held && (held.id === ID.turret || held.id === ID.missile_turret || held.id === ID.missile_silo) ? ITEMS[held.id].key : null;
     if (held && (held.id === ID.boat || turret || CARS[ITEMS[held.id].key]) && !mob) {
       const car = turret || CARS[ITEMS[held.id].key], big = !!turret || car === 'plane' || car === 'fighter_jet';
       const r = this.pickRay(this.lastInput || {});
@@ -957,7 +961,7 @@ export class Player {
       const x = r.ox + r.dx * hit.dist, z = r.oz + r.dz * hit.dist, y = onWater ? hit.y + 0.9 : hit.y + 1.02;
       if (!onWater && hit.ny !== 1) return false;
       if (boxBlocked(G.world, x, y + (onWater ? 0.15 : 0), z, big ? 1.4 : car ? 0.8 : 0.6, turret ? 3 : car ? 1.4 : 0.5)) { this.hint('There is no room for it there'); return true; }
-      if (turret) placeTurret(x, y, z, this.yaw + Math.PI, turret); else placeBoat(x, y, z, this.yaw + Math.PI, car || 'boat');
+      if (turret === 'missile_silo') placeSilo(x, y, z, this.yaw + Math.PI); else if (turret) placeTurret(x, y, z, this.yaw + Math.PI, turret); else placeBoat(x, y, z, this.yaw + Math.PI, car || 'boat');
       if (!this.creative) { held.count--; if (held.count <= 0) this.inv.slots[this.inv.selected] = null; G.ui.invChanged(); }
       swingHand();
       return true;

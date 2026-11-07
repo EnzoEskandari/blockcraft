@@ -10,6 +10,7 @@ import { decideUse, applyUse, CARS } from './mounts.js';
 import { takePlaneInv } from './planes.js';
 import { takeTurretList, spawnTurret, rememberPlayer } from './turret.js';
 import { setCmd, takeCmd, triggerCmd, applyToMe } from './cmdblocks.js';
+import { siloMsg, spawnSilo } from './silo.js';
 import { decideTie } from './leads.js';
 import { hatch } from './eggs.js';
 import { BLOCKS, B, ITEMS } from './blocks.js';
@@ -287,7 +288,7 @@ export class Net {
       let timer = setTimeout(() => fail('The multiplayer server did not answer. Check your connection and try again.', true), 25000);
       ws.onopen = () => {
         onStatus('Joining…');
-        ws.send(JSON.stringify({ t: 'world', id: worldId, dim, token: account.token, haves, mine, spec: spec || undefined, caps: 9 }));   // (caps: 9 knows missile turrets, 8 knows planes and turrets, 7 knows pandas and polar bears, 6 knows sports cars and supercars, 5 knows cars, 4 keeps what is in bundles, 1 hides spectators, 2 reloads when an admin says so, 3 has weather and sets it and the time when told)
+        ws.send(JSON.stringify({ t: 'world', id: worldId, dim, token: account.token, haves, mine, spec: spec || undefined, caps: 10 }));   // (caps: 10 knows missile silos, 9 knows missile turrets, 8 knows planes and turrets, 7 knows pandas and polar bears, 6 knows sports cars and supercars, 5 knows cars, 4 keeps what is in bundles, 1 hides spectators, 2 reloads when an admin says so, 3 has weather and sets it and the time when told)
       };
       ws.onerror = () => {};
       ws.onclose = () => {
@@ -736,6 +737,7 @@ export class Net {
       case 'bo': {
         if (!a || !w || ![d.x, d.y, d.z, d.yaw].every(Number.isFinite) || Math.hypot(d.x - a.pos.x, d.y - a.pos.y, d.z - a.pos.z) > 8) return;
         if (d.t === 'turret' || d.t === 'missile_turret') { spawnTurret(d.x, d.y, d.z, d.yaw, a.name || 'player', d.t); break; }
+        if (d.t === 'missile_silo') { spawnSilo(d.x, d.y, d.z, d.yaw, a.name || 'player'); break; }
         const m = G.entities.spawnMob(CARS[d.t] || 'boat', d.x, d.y, d.z);
         m.yaw = d.yaw;
         break;
@@ -806,6 +808,8 @@ export class Net {
         break;
       // a guest's plane's slots, or a turret's list, as they set them
       case 'pinv': { const m = this.mobIndex.get(d.id); if (m && m.riderId === from) takePlaneInv(m, d.inv); break; }
+      // a guest loads, unloads or launches a missile silo near them
+      case 'silo': { const m = this.mobIndex.get(d.id); if (m && a && Math.hypot(m.pos.x - a.pos.x, m.pos.z - a.pos.z) < 10) siloMsg(m, d, a.name); break; }
       case 'tlist': { const m = this.mobIndex.get(d.id); if (m && a && Math.hypot(m.pos.x - a.pos.x, m.pos.z - a.pos.z) < 10) takeTurretList(m, d.off); break; }
       case 'boom':
         explosionFx(d.x, d.y, d.z, d.pw);

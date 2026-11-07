@@ -2282,7 +2282,7 @@ export class Entities {
   keepable(e) {
     if (e.removed || e.proxy) return false;
     if (e instanceof ItemEntity) return true;
-    return !e.dead && (!e.def.hostile || e.persistent) && e.type !== 'gloomwing';
+    return !e.dead && (!e.def.hostile || e.persistent) && e.type !== 'gloomwing' && !e.def.icbm;   // (a silo's missile in flight is never kept)
   }
 
   entityData(e) {
@@ -2316,7 +2316,7 @@ export class Entities {
   // Called just before a chunk unloads
   storeChunk(c) {
     const inside = (e) => (Math.floor(e.pos.x) >> 4) === c.cx && (Math.floor(e.pos.z) >> 4) === c.cz;
-    for (const m of this.mobs) if (!m.removed && inside(m)) this.stash(m);
+    for (const m of this.mobs) if (!m.removed && !m.def.icbm && inside(m)) this.stash(m);   // (a silo's missile flies on over unloaded land)
     for (const it of this.items) if (!it.removed && inside(it)) this.stash(it);
   }
 
@@ -2603,6 +2603,7 @@ export class Entities {
       if (m.removed) continue;
       let d = Infinity;
       for (const q of ps) d = Math.min(d, Math.hypot(m.pos.x - q.pos.x, m.pos.y - q.pos.y, m.pos.z - q.pos.z));
+      if (m.def.icbm) continue;   // (a silo's missile flies on wherever it goes)
       // wandered out of the loaded world: kept for when that area loads again
       if (!w.getChunk(Math.floor(m.pos.x) >> 4, Math.floor(m.pos.z) >> 4)) { this.stash(m); continue; }
       if (m.persistent) continue;

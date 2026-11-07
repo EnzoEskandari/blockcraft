@@ -529,6 +529,12 @@ item(453, 'missile', 'Missile', { stack: 16 });
 item(454, 'flare', 'Flare', { stack: 32 });
 item(455, 'turret', 'Gun Turret', { stack: 1 });
 item(456, 'missile_turret', 'Missile Turret', { stack: 1 });   // (1.11.8)
+// 1.11.10: missile silos, what they fire, and the Targeting System that marks where (see silo.js)
+item(457, 'missile_silo', 'Missile Silo', { stack: 1 });
+item(458, 'short_range_missile', 'Short-Range Missile', { stack: 4 });
+item(459, 'medium_range_missile', 'Medium-Range Missile', { stack: 4 });
+item(460, 'long_range_missile', 'Long-Range Missile', { stack: 4 });
+item(461, 'targeting_system', 'Targeting System', { stack: 1 });
 // (1.10.5) spawn eggs, in the creative inventory: one for every creature in the game, with its name and the
 // colours of the egg (shell, spots). Use one on a block and the creature hatches there; use one on a spawner and the spawner
 // makes that creature from then on. The numbers are kept forever, so new creatures go on the end.
@@ -715,6 +721,11 @@ const RECIPE_DEFS = [
   { shape: ['G', 'P'], key: { G: 'gunpowder', P: 'paper' }, out: ['flare', 4] },
   { shape: ['IDI', 'RBR', 'OOO'], key: { I: 'iron_block', D: 'diamond', R: 'redstone_block', B: 'tnt', O: 'obsidian' }, out: ['turret', 1] },
   { shape: ['IMI', 'RDR', 'OOO'], key: { I: 'iron_block', M: 'missile', R: 'redstone_block', D: 'diamond_block', O: 'obsidian' }, out: ['missile_turret', 1] },
+  { shape: ['I I', 'ORO', 'OOO'], key: { I: 'iron_block', R: 'redstone_block', O: 'obsidian' }, out: ['missile_silo', 1] },
+  { shape: ['M', 'T', 'I'], key: { M: 'missile', T: 'tnt', I: 'iron_block' }, out: ['short_range_missile', 1] },
+  { shape: ['T', 'S', 'R'], key: { T: 'tnt', S: 'short_range_missile', R: 'redstone_block' }, out: ['medium_range_missile', 1] },
+  { shape: ['D', 'S', 'R'], key: { D: 'diamond_block', S: 'medium_range_missile', R: 'redstone_block' }, out: ['long_range_missile', 1] },
+  { shape: ['RGR', 'IDI', 'III'], key: { R: 'redstone', G: 'glass', I: 'iron_ingot', D: 'diamond' }, out: ['targeting_system', 1] },
   { in: ['iron_ingot', 'flint'], out: ['flint_and_steel', 1] },
   { shape: ['#I#', '###', ' # '], key: { '#': '#planks', I: 'iron_ingot' }, out: ['shield', 1] },
   { in: ['cobblestone', 'oak_leaves'], out: ['mossy_cobblestone', 1] },

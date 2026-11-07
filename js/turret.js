@@ -69,10 +69,14 @@ export const TURRETS = ['turret', 'missile_turret'];
 export const turretKey = (e) => (e.isPlayer || e.remote ? 'player:' + (e.isPlayer && !e.remote ? myName() : e.name) : 'mob:' + e.type);
 const isPlayer = (e) => !!(e.isPlayer || e.remote);
 // Which group a creature is in, for the list's switches for a whole group
-const groupOf = (e) => (isPlayer(e) ? 'all:players' : e.def && (e.def.hostile || e.def.bear) ? 'all:monsters' : 'all:animals');
-function allowed(t, e) { const off = t.gear.off; return !off.includes(turretKey(e)) && !off.includes(groupOf(e)); }
+const groupOf = (e) => (isPlayer(e) ? 'all:players' : e.def && e.def.icbm ? 'all:missiles' : e.def && (e.def.hostile || e.def.bear) ? 'all:monsters' : 'all:animals');
+function allowed(t, e) {
+  const off = t.gear.off;
+  if (e.def && e.def.icbm && e.gear && e.gear.by && off.includes('player:' + e.gear.by)) return false;   // (a silo missile from someone it leaves alone)
+  return !off.includes(turretKey(e)) && !off.includes(groupOf(e));
+}
 // (vehicles and other turrets are never aimed at themselves: their riders are)
-const shootable = (t, m) => m !== t && !m.dead && !m.removed && !m.def.turret && !m.def.mount && !m.def.villagerProxy;
+const shootable = (t, m) => m !== t && !m.dead && !m.removed && !m.def.turret && !m.def.mount && !m.def.villagerProxy && !m.def.silo;
 
 function turretAI(t, dt) {
   t.age += dt; t.hurtTime -= dt; t.invul -= dt;
@@ -204,13 +208,14 @@ function choices(t) {
   const players = knownPlayers(t).map((n) => ({ key: 'player:' + n, label: n + (n === myName() ? ' (you)' : '') }));
   const monsters = [], animals = [];
   for (const [type, def] of Object.entries(MOB_TYPES)) {
-    if (def.turret || def.mount || def.plane) continue;
+    if (def.turret || def.mount || def.plane || def.silo || def.icbm) continue;
     (def.hostile || def.bear ? monsters : animals).push({ key: 'mob:' + type, label: def.name });
   }
   return [
     { title: 'Players', all: { key: 'all:players', label: 'All players' }, items: players },
     { title: 'Monsters', all: { key: 'all:monsters', label: 'All monsters' }, items: monsters },
     { title: 'Animals and villagers', all: { key: 'all:animals', label: 'All animals and villagers' }, items: animals },
+    { title: 'Missiles from silos (shooting them down)', all: { key: 'all:missiles', label: 'Missiles from silos' }, items: [] },
   ];
 }
 let section = null;

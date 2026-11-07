@@ -165,7 +165,7 @@ function findThing(word, blocksOnly) {
 }
 function findMob(word) {
   const k = norm(word);
-  for (const [type, def] of Object.entries(MOB_TYPES)) if (type === k || norm(def.name) === k) return def.villagerProxy || def.turret ? null : type;
+  for (const [type, def] of Object.entries(MOB_TYPES)) if (type === k || norm(def.name) === k) return def.villagerProxy || def.turret || def.silo || def.icbm ? null : type;
   return null;
 }
 // A name that may be several words ('polar bear', 'Block of Gold') at the start of the words: what it is and

@@ -280,18 +280,22 @@ const tailGlowMat = () => new THREE.SpriteMaterial({ map: glowTexture(), ...add,
 // The flash as a missile lights: a burst of light, and fire and smoke blasted out behind it
 const BLASTS = [];
 const smokeShade = () => 0.3 + 0.7 * Math.min(1, Math.max(0, G.daylight ?? 1));   // (smoke is dark at night, not glowing)
-function launchFlash(x, y, z, dx, dy, dz) {
+// A flash of light: starting `size` across, growing by `grow`, gone in `life` seconds
+export function flashAt(x, y, z, size = 4, grow = 5, life = 0.35) {
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), ...add, opacity: 1 }));
-  s.position.set(x - dx * 1.5, y - dy * 1.5, z - dz * 1.5);
-  s.scale.setScalar(4);
+  s.position.set(x, y, z);
+  s.scale.setScalar(size);
   R.scene.add(s);
-  BLASTS.push({ s, age: 0 });
+  BLASTS.push({ s, age: 0, size, grow, life });
+}
+export function launchFlash(x, y, z, dx, dy, dz, big = 1) {
+  flashAt(x - dx * 1.5, y - dy * 1.5, z - dz * 1.5, 4 * big, 5 * big, 0.35 * Math.sqrt(big));
   const P = G.entities.particles;
-  for (let i = 0; i < 34; i++) {   // fire, out of the back
+  for (let i = 0; i < 34 * big; i++) {   // fire, out of the back
     const k = 6 + rand() * 14, sx = (rand() - 0.5) * 5, sy = (rand() - 0.5) * 3, sz = (rand() - 0.5) * 5;
     P.spawn(x - dx * 1.2, y - dy * 1.2, z - dz * 1.2, -dx * k + sx, -dy * k + sy + 1, -dz * k + sz, 1, 0.45 + rand() * 0.45, 0.08, 0.22 + rand() * 0.2, 0.25 + rand() * 0.3, -0.2);
   }
-  for (let i = 0; i < 26; i++) {   // and a cloud of smoke
+  for (let i = 0; i < 26 * big; i++) {   // and a cloud of smoke
     const k = 2 + rand() * 6;
     const v = (0.5 + rand() * 0.25) * smokeShade();
     P.spawn(x - dx * 1.5 + (rand() - 0.5), y - dy * 1.5 + (rand() - 0.5), z - dz * 1.5 + (rand() - 0.5), -dx * k + (rand() - 0.5) * 3, 0.6 + rand(), -dz * k + (rand() - 0.5) * 3, v, v, v, 0.5 + rand() * 0.4, 1.4 + rand() * 1.2, -0.15, 0.4);
@@ -301,9 +305,9 @@ function tickBlasts(dt) {
   for (let i = BLASTS.length - 1; i >= 0; i--) {
     const b = BLASTS[i];
     b.age += dt;
-    const k = b.age / 0.35;
+    const k = b.age / b.life;
     b.s.material.opacity = Math.max(0, 1 - k);
-    b.s.scale.setScalar(4 + k * 5);
+    b.s.scale.setScalar(b.size + k * b.grow);
     if (k >= 1) { R.scene.remove(b.s); b.s.material.dispose(); BLASTS.splice(i, 1); }
   }
 }

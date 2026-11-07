@@ -103,6 +103,20 @@ const BAMBOO_ROAD = {
 export const UPDATES = [
   {
     // a small update: it keeps the Fast & Wild picture
+    version: '1.11.10', name: 'Silos', date: '2026-11-07',
+    splashes: ['Bang!', 'Reload!', 'Vroom!', 'Nine guns!', 'Zoom zoom!', 'Racing stripes!', 'Steady aim!', 'Pandas!', 'Bear hug!', 'Bamboo!',
+      'Rocket science!', 'Beep beep!', 'Mind the bear!', 'Supercar!', 'Cold paws!', 'Fox two!', 'Flares!', 'Lock on!', 'Bandit, six o\'clock!', 'Wheels up!', 'Turret online!', 'Afterburner!', 'Hot stuff!', 'Eat up!', 'Hold the line!', 'Thrust vectoring!', 'Supercruise!', 'Tracers!', 'Command blocks!', 'Clean shot!', 'Incoming!', 'Ignition!', 'Target locked!', 'Launch!'],
+    scene: BAMBOO_ROAD,
+    notes: [
+      'New: the Missile Silo. Put it down and use it: load a missile from your inventory, choose where it lands, and press LAUNCH. The blast doors open and the missile climbs out of the pit on a column of fire, arcs over and comes down on the target.',
+      'Each launch uses one missile, so load another for the next. Short-Range Missiles reach 250 blocks, Medium-Range 600, and Long-Range 1500, each with a bigger blast.',
+      'They land in a huge explosion that hurts and throws everything near it, but breaks no blocks.',
+      'The Targeting System: hold it and click a spot (up to 600 blocks away) to mark it. A silo offers your marked spot as its target. You can also type a place, or pick where you are standing.',
+      'Turrets shoot at incoming missiles. A missile has to be hit enough before it blows up in the air: a gun turret on its own will barely scratch one, but a missile turret often can, and the two together usually do. Turrets leave alone missiles from players they are set to leave alone, and their list has a switch for all silo missiles.',
+      'Recipes: the silo is two iron blocks on top, obsidian, a block of redstone and obsidian in the middle, and three obsidian below. A Short-Range Missile is a missile over TNT over an iron block; each bigger one is made from the one before.',
+    ],
+  },
+  {
     version: '1.11.9', name: 'Ignition', date: '2026-11-07',
     splashes: ['Bang!', 'Reload!', 'Vroom!', 'Nine guns!', 'Zoom zoom!', 'Racing stripes!', 'Steady aim!', 'Pandas!', 'Bear hug!', 'Bamboo!',
       'Rocket science!', 'Beep beep!', 'Mind the bear!', 'Supercar!', 'Cold paws!', 'Fox two!', 'Flares!', 'Lock on!', 'Bandit, six o\'clock!', 'Wheels up!', 'Turret online!', 'Afterburner!', 'Hot stuff!', 'Eat up!', 'Hold the line!', 'Thrust vectoring!', 'Supercruise!', 'Tracers!', 'Command blocks!', 'Clean shot!', 'Incoming!', 'Ignition!'],
