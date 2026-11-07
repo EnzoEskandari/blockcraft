@@ -1448,8 +1448,7 @@ export class Player {
     if (G.sleeping) G.game.wakeUp();
     this.invul = HURT_TIME;
     this.hurtTime = HURT_TIME;
-    this.exhaustion += 0.1;
-    this.eating = null;
+    this.exhaustion += 0.1;   // (being hit doesn't stop you eating, as in the original game: under fire you could never finish)
     sfx('hurt');
     this.hurtRoll = Math.random() < 0.5 ? 1 : -1;
     if (fromX != null) {
