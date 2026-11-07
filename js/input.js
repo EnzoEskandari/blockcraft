@@ -13,6 +13,7 @@ export const input = {
   usePressed: false, useHeld: false, tap: false,
   drop: false, dropAll: false, pick: false,
   flare: false,   // X: a plane's flares
+  missile: false,   // R: a plane's missile
   aim: null,   // touch aiming point in normalised screen coordinates, or null for the crosshair
 };
 const IS_MAC = /Mac/.test(navigator.platform || '') || /Mac OS X/.test(navigator.userAgent);
@@ -84,6 +85,7 @@ export function initInput() {
       if (code === 'KeyE') { if (!(G.openPlaneInv && G.openPlaneInv())) G.ui.openScreen(G.player.creative ? 'creative' : 'inventory'); return; }   // (in a plane: its slots)
       if ((code === 'KeyT' || code === 'Enter') && (G.net || (G.account && G.account.admin))) { e.preventDefault(); G.ui.openScreen('chat'); return; }
       if (code === 'KeyX') input.flare = true;
+      if (code === 'KeyR') input.missile = true;
       if (code === 'KeyQ') { input.drop = true; input.dropAll = e.ctrlKey || e.metaKey; }
       if (code === 'KeyF') input.swapHands = true;
       if (code === 'KeyL') { G.ui.openScreen('adv'); return; }
@@ -317,7 +319,7 @@ export function pollInput(dt) {
 export function endFrame() {
   input.lookX = input.lookY = 0;
   input.jumpPressed = input.attackPressed = input.usePressed = input.tap = false;
-  input.drop = input.dropAll = input.pick = input.swapHands = input.flare = false;
+  input.drop = input.dropAll = input.pick = input.swapHands = input.flare = input.missile = false;
 }
 
 export function resetTouch() {

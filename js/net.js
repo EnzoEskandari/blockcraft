@@ -8,7 +8,7 @@ import { R, itemModel, tintModel } from './render.js';
 import { buildModel, holdInHand, lightAt, explosionFx, explosionDamage, spawnBlockParticles } from './entities.js';
 import { decideUse, applyUse, CARS } from './mounts.js';
 import { takePlaneInv } from './planes.js';
-import { takeTurretList, spawnTurret } from './turret.js';
+import { takeTurretList, spawnTurret, rememberPlayer } from './turret.js';
 import { decideTie } from './leads.js';
 import { hatch } from './eggs.js';
 import { BLOCKS, B, ITEMS } from './blocks.js';
@@ -445,6 +445,7 @@ export class Net {
   }
 
   addPlayer(id, name, slot, skin) {
+    if (this.role === 'host' && G.world && name) rememberPlayer(name);   // (for turrets' lists)
     let a = this.players.get(id);
     skin = validSkin(skin);
     if (a && a.name === name && (a.skin || '') === skin) return a;

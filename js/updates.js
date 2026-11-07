@@ -103,6 +103,19 @@ const BAMBOO_ROAD = {
 export const UPDATES = [
   {
     // a small update: it keeps the Fast & Wild picture
+    version: '1.11.2', name: 'Afterburner', date: '2026-11-06',
+    splashes: ['Bang!', 'Reload!', 'Vroom!', 'Nine guns!', 'Zoom zoom!', 'Racing stripes!', 'Steady aim!', 'Pandas!', 'Bear hug!', 'Bamboo!',
+      'Rocket science!', 'Beep beep!', 'Mind the bear!', 'Supercar!', 'Cold paws!', 'Fox two!', 'Flares!', 'Lock on!', 'Bandit, six o\'clock!', 'Wheels up!', 'Turret online!', 'Afterburner!'],
+    scene: BAMBOO_ROAD,
+    notes: [
+      'The Fighter Jet looks like one now: a long pointed nose, a bubble canopy, swept wings with missiles on the tips and under them, twin tails and two glowing nozzles, painted in greys.',
+      'Each weapon has its own key: guns on click or Space, missiles on right-click or R, flares on X or F. The keys are shown at the top of the screen while you fly, and on a touch screen the Guns, Missile and Flares buttons are bigger and coloured.',
+      'Missiles blow craters in the ground where they hit.',
+      'A turret\'s list now has every player who has ever been in the world, and switches for all players, all monsters, or all animals and villagers at once.',
+    ],
+  },
+  {
+    // a small update: it keeps the Fast & Wild picture
     version: '1.11.1', name: 'Dogfight', date: '2026-11-06',
     splashes: ['Bang!', 'Reload!', 'Vroom!', 'Nine guns!', 'Zoom zoom!', 'Racing stripes!', 'Steady aim!', 'Pandas!', 'Bear hug!', 'Bamboo!',
       'Rocket science!', 'Beep beep!', 'Mind the bear!', 'Supercar!', 'Cold paws!', 'Fox two!', 'Flares!', 'Lock on!', 'Bandit, six o\'clock!', 'Wheels up!', 'Turret online!'],

@@ -15,7 +15,7 @@ import { R } from './render.js';
 import { moveBox, raycast, rayBox } from './physics.js';
 import { BLOCKS } from './blocks.js';
 import { cleanEnch } from './enchant.js';
-import { MOB_TYPES, MODELS, Entities, rect, explosionFx, explosionDamage } from './entities.js';
+import { MOB_TYPES, MODELS, Entities, rect, explosionFx, explode } from './entities.js';
 import { AMMO } from './guns.js';
 import { rideable } from './mounts.js';
 
@@ -48,24 +48,43 @@ MODELS.plane = (v) => {
     ...gearParts([[-8, 8], [8, 8]]), { name: 'tailwheel', size: [2, 3, 3], pos: [0, 8, -20], color: TYRE },
   ];
 };
+// A fighter jet: a long pointed nose, a bubble canopy, swept wings with missiles at their tips and under them,
+// twin tails leaning out, and two nozzles that glow on full throttle. Greys and a navy, as real ones are painted.
+const JET_PAINT = [[128, 134, 140], [104, 112, 122], [72, 82, 98], [150, 150, 144], [96, 104, 84], [118, 124, 136]];
 MODELS.fighter_jet = (v) => {
-  const c = PAINT[gearOf(v).coat % PAINT.length], l = shade(c, 1.1), d = shade(c, 0.7);
-  const missile = (x, z) => [{ name: 'ms' + x, size: [2, 2, 14], pos: [x, 7, z], color: [236, 236, 236] }, { name: 'mt' + x, size: [2, 2, 2], pos: [x, 7, z + 8], color: [200, 40, 30] }];
+  const c = JET_PAINT[gearOf(v).coat % JET_PAINT.length], l = shade(c, 1.12), d = shade(c, 0.72);
+  const missile = (x, y, z, len = 12) => [
+    { name: 'ms' + x + z, size: [1.6, 1.6, len], pos: [x, y, z], color: [232, 232, 228] },
+    { name: 'mt' + x + z, size: [1.6, 1.6, 2], pos: [x, y, z + len / 2 + 1], color: [190, 40, 30] },
+    { name: 'mf' + x + z, size: [4, 0.4, 2], pos: [x, y, z - len / 2 + 1], color: [200, 200, 196] },
+  ];
+  const sides = (f) => [-1, 1].flatMap(f);
   return [
-    { name: 'body', size: [10, 8, 72], pos: [0, 10, 0], color: c, paint: { all: (g, x, y, w, h) => rect(g, x, y + h - 2, w, 2, d) } },
-    { name: 'nose', size: [6, 6, 10], pos: [0, 10, 41], color: d },
-    { name: 'tip', size: [3, 3, 5], pos: [0, 10, 48.5], color: DARK },
-    { name: 'canopy', size: [6, 5, 14], pos: [0, 15.5, 20], color: [50, 70, 92] },
-    { name: 'intake0', size: [4, 6, 12], pos: [-7, 9, 10], color: d }, { name: 'intake1', size: [4, 6, 12], pos: [7, 9, 10], color: d },
-    { name: 'wing', size: [66, 2, 24], pos: [0, 9, -6], color: l },
-    { name: 'strake', size: [34, 2, 10], pos: [0, 9, 10], color: l },
-    { name: 'fin0', size: [2, 14, 12], pos: [-5, 19, -29], rot: [0, 0, 0.25], color: c },
-    { name: 'fin1', size: [2, 14, 12], pos: [5, 19, -29], rot: [0, 0, -0.25], color: c },
-    { name: 'tailwing', size: [32, 2, 10], pos: [0, 10, -31], color: l },
-    { name: 'exhaust', size: [8, 8, 3], pos: [0, 10, -37], color: DARK },
-    { name: 'burner', size: [6, 6, 1], pos: [0, 10, -38.7], color: [255, 150, 40] },
-    ...missile(-18, -4), ...missile(18, -4), ...missile(-27, -8), ...missile(27, -8),
-    ...gearParts([[-6, 4], [6, 4], [0, 30]], 2),
+    // the fuselage, tapering to the nose
+    { name: 'body', size: [9, 8, 58], pos: [0, 11, -2], color: c, paint: { all: (g, x, y, w, h) => rect(g, x, y + h - 2, w, 2, d) } },
+    { name: 'spine', size: [6, 3, 34], pos: [0, 16, 0], color: l },
+    { name: 'nose0', size: [7, 6, 8], pos: [0, 11, 31], color: c },
+    { name: 'nose1', size: [5, 4, 7], pos: [0, 11, 38], color: c },
+    { name: 'tip', size: [2, 2, 6], pos: [0, 11, 44], color: d },
+    { name: 'probe', size: [0.6, 0.6, 4], pos: [0, 11, 49], color: DARK },
+    { name: 'canopy', size: [5, 4, 13], pos: [0, 16.5, 23], color: [70, 96, 120], paint: { all: (g, x, y, w, h) => rect(g, x, y, w, 1, [150, 190, 220]) } },
+    { name: 'frame', size: [5.4, 0.6, 1], pos: [0, 18.6, 20], color: d },
+    // the air intake under it
+    { name: 'intake', size: [8, 6, 16], pos: [0, 5.5, 8], color: d },
+    { name: 'mouth', size: [7, 5, 1], pos: [0, 5.5, 16.2], color: [16, 16, 18] },
+    // swept wings, and the strakes running forward from them
+    ...sides((k) => [
+      { name: 'wing' + k, size: [26, 1.5, 15], pos: [k * 15, 10, -6], rot: [0, k * 0.5, 0], color: l, paint: { top: (g, x, y, w, h) => rect(g, x, y + h - 2, w, 2, d) } },
+      { name: 'strake' + k, size: [4, 1.5, 18], pos: [k * 6, 11, 11], rot: [0, k * 0.22, 0], color: l },
+      { name: 'stab' + k, size: [13, 1.2, 9], pos: [k * 9.5, 10, -31], rot: [0, k * 0.45, 0], color: l },
+      { name: 'tail' + k, size: [1.5, 13, 11], pos: [k * 4.6, 19, -26], rot: [0, 0, -k * 0.28], color: c },
+      { name: 'nozzle' + k, size: [4.6, 4.6, 5], pos: [k * 2.6, 11, -33.5], color: [44, 44, 48] },
+      { name: 'burner' + k, size: [3.4, 3.4, 1], pos: [k * 2.6, 11, -36.2], color: [255, 150, 40] },
+      ...missile(k * 28, 9.4, -9),
+      { name: 'pylon' + k, size: [1, 2, 6], pos: [k * 16, 8.4, -4], color: d },
+      ...missile(k * 16, 6.6, -4, 14),
+    ]),
+    ...gearParts([[-5, 0], [5, 0], [0, 32]], 2),
   ];
 };
 
@@ -98,8 +117,9 @@ const planeGear = (saved) => {
 };
 const flyer = (key, name, o) => ({ name, hp: 60, w: 3, h: 1.6, speed: 0, sound: 'boat', pitch: 0.5, drops: [drop(key, 1, 1)], anim: 'plane', plane: true, fireImmune: true, noFall: true,
   seat: 0.45, ride: {}, xp: [0, 0], ai: parked, animate: flying, gear: planeGear, fly, flight: FLIGHT[key], ...rideable, ...o });
-MOB_TYPES.plane = flyer('plane', 'Plane', {});
-MOB_TYPES.fighter_jet = flyer('fighter_jet', 'Fighter Jet', { hp: 80, w: 3, h: 1.5, seat: 0.4 });
+// (`scale`: drawn larger than the usual sixteenth of a block to a pixel, so a jet is as big next to you as a real one)
+MOB_TYPES.plane = flyer('plane', 'Plane', { scale: 1.3, h: 2, seat: 1 });
+MOB_TYPES.fighter_jet = flyer('fighter_jet', 'Fighter Jet', { hp: 80, w: 3.4, h: 2.2, seat: 1.05, scale: 1.6 });
 
 // Nobody in it: it rolls to a stop, or falls out of the sky
 function parked(m, dt) {
@@ -120,11 +140,12 @@ function parked(m, dt) {
 // It noses up and down and banks into its turns; the propeller turns with the throttle
 function flying(m, dt) {
   const inner = m.model.inner;
+  if (m.def.scale) inner.scale.setScalar(m.def.scale / 16);
   inner.rotation.x = -(m.fp || 0);
   inner.rotation.z = -(m.roll || 0);
   const P = m.model.parts;
   if (P.prop) P.prop.rotation.z += dt * (m.ridden ? 6 + 50 * (m.thr || 0) : 0);
-  if (P.burner) P.burner.visible = (m.thr || 0) > 0.6;
+  for (const b of [P.burner, P['burner-1'], P.burner1]) if (b) b.visible = (m.thr || 0) > 0.6;
 }
 
 // ---------------------------------------------------------------- flying it
@@ -179,6 +200,7 @@ function crash(p, m) {
 
 // ---------------------------------------------------------------- flares and missiles
 const FLARES = [], MISSILES = [];
+const MISSILE_BOOM = 3.2;   // (a little smaller than TNT's 4)
 const hash = (a, b) => { let h = (a * 73856093) ^ (b * 19349663); h = (h ^ (h >>> 13)) * 1274126177; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
 const myName = () => (G.net ? G.net.name : (G.account && G.account.name) || 'me');
 function addFlare(x, y, z, vx, vz, id) {
@@ -261,16 +283,12 @@ class Missile {
   // It goes off: a blast that hurts what is near (breaking no blocks), and a hard knock to what it hit
   blast(direct) {
     const { x, y, z } = this.pos;
-    explosionFx(x, y, z, 2.5);
     if (this.owner !== 'fx') {
       if (direct) { direct.invul = 0; direct.hurt(16, x, z, this.owner === 'player', 1, null, null); }
-      // (the pilot of a plane that is hit goes down with it; the one who fired is spared their own blast's damage to their plane)
-      explosionDamage(x, y, z, 3, null, true, this.spare);
-      if (this.owner === 'player' && G.net && G.net.role === 'client') for (const a of G.net.players.values()) {
-        const dd = Math.hypot(a.pos.x - x, a.pos.y + 0.9 - y, a.pos.z - z);
-        if (a.ready && !a.dead && dd < 5) G.net.pvp(a, Math.round(16 * (1 - dd / 6)), x, z);
-      }
-    }
+      // a real explosion: it blows a crater in the ground and hurts everything near (the pilot of a plane that is
+      // hit goes down with it)
+      explode(x, y, z, MISSILE_BOOM);
+    } else explosionFx(x, y, z, MISSILE_BOOM);   // (somebody else's: the blocks it breaks come from them)
     this.removed = true;
   }
   dispose() { R.scene.remove(this.mesh); }
@@ -366,9 +384,9 @@ export function planeFrame(p, input, dt) {
   L.beep -= dt;
   if (L.target && L.beep <= 0) { L.beep = L.locked ? 0.12 : 0.3; sfx('click', null, { vol: L.locked ? 0.5 : 0.25 }); }
   // guns: the attack button, held
-  if ((input.mine || input.attackPressed || touchHeld.guns) && m.gunCd <= 0) {
+  if ((input.mine || input.attackPressed || input.jump || touchHeld.guns) && m.gunCd <= 0) {   // (click or Space)
     const i = slotOf(inv, isBullet);
-    if (i < 0 && !p.creative) { if (input.attackPressed) p.hint('No bullets: press E and load some'); }
+    if (i < 0 && !p.creative) { if (input.attackPressed || input.jumpPressed) p.hint('No bullets: press E and load some'); }
     else {
       const a = AMMO[i >= 0 ? ITEMS[inv[i].id].key : 'bullet'];
       const rx = Math.cos(m.fy), rz = -Math.sin(m.fy);   // (to the right of where it points)
@@ -387,7 +405,7 @@ export function planeFrame(p, input, dt) {
     }
   }
   // a missile: the use button
-  if ((input.usePressed || touchPressed.missile) && m.misCd <= 0) {
+  if ((input.usePressed || input.missile || touchPressed.missile) && m.misCd <= 0) {   // (right-click or R)
     const i = slotOf(inv, (s) => s.id === ID.missile);
     if (i < 0 && !p.creative) p.hint('No missiles: press E and load some');
     else {
@@ -400,7 +418,7 @@ export function planeFrame(p, input, dt) {
     }
   }
   // flares: X
-  if ((input.flare || touchPressed.flare) && m.flareCd <= 0) {
+  if ((input.flare || input.swapHands || touchPressed.flare) && m.flareCd <= 0) {   // (X or F)
     const i = slotOf(inv, (s) => s.id === ID.flare);
     if (i < 0 && !p.creative) p.hint('No flares: press E and load some');
     else { dropFlares(p.pos.x, p.pos.y, p.pos.z, p.vel.x, p.vel.z); if (i >= 0) useUp(p, m, i); m.flareCd = 1.5; }
@@ -448,24 +466,25 @@ function makeHud() {
     stats: el('left:16px;bottom:120px;line-height:1.15;white-space:pre'),
     ammo: el('right:16px;bottom:120px;line-height:1.15;white-space:pre;text-align:right'),
     warn: el('left:50%;top:22%;transform:translateX(-50%);font-size:34px;color:#ff4a3a;display:none', 'MISSILE'),
+    keys: el('left:50%;top:calc(12px + env(safe-area-inset-top, 0px));transform:translateX(-50%);font-size:19px;white-space:nowrap;color:#e8ffe8;background:rgba(0,0,0,0.45);padding:3px 10px', 'Guns: click or Space  ·  Missile: right-click or R  ·  Flares: X or F  ·  Load ammo: E  ·  Throttle: W/S'),
     buttons: document.createElement('div'),
   };
   // touch: buttons of its own while flying
-  H.buttons.style.cssText = 'position:absolute;right:16px;top:38%;display:flex;flex-direction:column;gap:10px;pointer-events:auto';
-  const btn = (label, down, up) => {
+  H.buttons.style.cssText = 'position:absolute;right:calc(16px + env(safe-area-inset-right, 0px));top:30%;display:flex;flex-direction:column;gap:12px;pointer-events:auto';
+  const btn = (label, colour, down, up) => {
     const b = document.createElement('button');
     b.type = 'button'; b.textContent = label; b.className = 'btn';
-    b.style.cssText = 'min-width:96px;padding:12px 10px;font-size:20px;opacity:0.85';
+    b.style.cssText = `min-width:118px;height:58px;font-size:24px;opacity:0.9;background:${colour};color:#fff`;
     b.addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); down(); }, { passive: false });
     b.addEventListener('touchend', (e) => { e.preventDefault(); if (up) up(); }, { passive: false });
     b.addEventListener('mousedown', (e) => { e.preventDefault(); down(); });
     b.addEventListener('mouseup', (e) => { e.preventDefault(); if (up) up(); });
     H.buttons.appendChild(b);
   };
-  btn('Guns', () => { touchHeld.guns = true; }, () => { touchHeld.guns = false; });
-  btn('Missile', () => { touchPressed.missile = true; });
-  btn('Flares', () => { touchPressed.flare = true; });
-  btn('Ammo', () => { G.openPlaneInv(); });
+  btn('Guns', 'rgba(150,40,30,0.8)', () => { touchHeld.guns = true; }, () => { touchHeld.guns = false; });
+  btn('Missile', 'rgba(170,110,20,0.8)', () => { touchPressed.missile = true; });
+  btn('Flares', 'rgba(200,170,30,0.8)', () => { touchPressed.flare = true; });
+  btn('Ammo', 'rgba(60,60,60,0.8)', () => { G.openPlaneInv(); });
   root.appendChild(H.buttons);
   (document.getElementById('hud') || document.body).appendChild(root);
 }
@@ -504,6 +523,7 @@ function hud(p, m) {
   H.warn.style.display = warn && Math.floor(performance.now() / 250) % 2 ? '' : 'none';
   if (warn) { m.warnT = (m.warnT || 0) - 1 / 60; if (m.warnT <= 0) { m.warnT = 0.4; sfx('click', null, { vol: 0.9 }); } }
   H.buttons.style.display = G.touchMode ? 'flex' : 'none';
+  H.keys.style.display = G.touchMode ? 'none' : '';
 }
 
 // The turret uses the same missiles (see turret.js)

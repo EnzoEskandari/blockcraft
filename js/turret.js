@@ -43,7 +43,10 @@ MOB_TYPES.turret = { name: 'Turret', hp: 150, w: 2.8, h: 3, speed: 0, sound: 'go
 
 // What it may shoot at: a creature by its kind, a player by name (the player inside a vehicle, not the vehicle)
 export const turretKey = (e) => (e.isPlayer || e.remote ? 'player:' + (e.isPlayer && !e.remote ? myName() : e.name) : 'mob:' + e.type);
-function allowed(t, e) { return !t.gear.off.includes(turretKey(e)); }
+const isPlayer = (e) => !!(e.isPlayer || e.remote);
+// Which group a creature is in, for the list's switches for a whole group
+const groupOf = (e) => (isPlayer(e) ? 'all:players' : e.def && (e.def.hostile || e.def.bear) ? 'all:monsters' : 'all:animals');
+function allowed(t, e) { const off = t.gear.off; return !off.includes(turretKey(e)) && !off.includes(groupOf(e)); }
 // (vehicles and other turrets are never aimed at themselves: their riders are)
 const shootable = (t, m) => m !== t && !m.dead && !m.removed && !m.def.turret && !m.def.mount && !m.def.villagerProxy;
 
@@ -56,6 +59,7 @@ function turretAI(t, dt) {
   const seen = (x, y, z) => { const dx = x - eye.x, dy = y - eye.y, dz = z - eye.z, d = Math.hypot(dx, dy, dz); return !raycast(G.world, eye.x, eye.y, eye.z, dx / d, dy / d, dz / d, d - 0.8, (id) => BLOCKS[id].solid); };
   if (t.retarget <= 0) {
     t.retarget = 0.3;
+    if (t.age % 10 < 0.3) knownPlayers(null);   // (now and then: who is here, for its list)
     let best = null, bd = Infinity;
     const consider = (e, air) => {
       const d = Math.hypot(e.pos.x - eye.x, e.pos.y - eye.y, e.pos.z - eye.z);
@@ -98,14 +102,33 @@ MOB_TYPES.turret.animate = (t) => {
 
 // ---------------------------------------------------------------- its list
 // Everything it could shoot at, for the list: the players here (you first) and every kind of creature
-function choices() {
-  const names = [myName(), ...(G.net ? [...G.net.players.values()].filter((a) => !a.hidden).map((a) => a.name) : [])];
-  const out = [...new Set(names)].filter(Boolean).map((n) => ({ key: 'player:' + n, label: n + (n === myName() ? ' (you)' : '') + ' — player' }));
+// The world remembers the name of everyone who has been in it, for turrets' lists
+export function rememberPlayer(name) {
+  const flags = G.world.flags || (G.world.flags = {});
+  const seen = Array.isArray(flags.players) ? flags.players : (flags.players = []);
+  if (typeof name === 'string' && name && !seen.includes(name) && seen.length < 500) seen.push(name.slice(0, 40));
+}
+// The names of everyone who has been in this world, and everyone here now
+export function knownPlayers(t) {
+  const w = G.world, flags = w.flags || (w.flags = {});
+  const seen = Array.isArray(flags.players) ? flags.players : (flags.players = []);
+  const here = [myName(), ...(G.net ? [...G.net.players.values()].filter((a) => !a.hidden).map((a) => a.name) : [])].filter(Boolean);
+  for (const n of here) if (!seen.includes(n) && seen.length < 500) seen.push(n);
+  const listed = t ? t.gear.off.filter((k) => k.startsWith('player:')).map((k) => k.slice(7)) : [];
+  return [...new Set([myName(), ...here, ...seen, ...listed])].filter(Boolean);
+}
+function choices(t) {
+  const players = knownPlayers(t).map((n) => ({ key: 'player:' + n, label: n + (n === myName() ? ' (you)' : '') }));
+  const monsters = [], animals = [];
   for (const [type, def] of Object.entries(MOB_TYPES)) {
     if (def.turret || def.mount || def.plane) continue;
-    out.push({ key: 'mob:' + type, label: def.name });
+    (def.hostile || def.bear ? monsters : animals).push({ key: 'mob:' + type, label: def.name });
   }
-  return out;
+  return [
+    { title: 'Players', all: { key: 'all:players', label: 'All players' }, items: players },
+    { title: 'Monsters', all: { key: 'all:monsters', label: 'All monsters' }, items: monsters },
+    { title: 'Animals and villagers', all: { key: 'all:animals', label: 'All animals and villagers' }, items: animals },
+  ];
 }
 let section = null;
 // Use a turret: its list, ticked for what it shoots at
@@ -124,13 +147,14 @@ export function openTurret(t) {
   section.appendChild(h2);
   const note = document.createElement('div');
   note.className = 'hint';
-  note.textContent = 'Untick anything it should leave alone.';
+  note.textContent = 'Untick anything it should leave alone. Unticking a whole group leaves all of it alone, whatever is ticked below.';
   section.appendChild(note);
   const list = document.createElement('div');
-  list.style.cssText = 'max-height:60vh;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:4px 16px;padding:8px 16px;background:rgba(0,0,0,0.35);margin:8px auto;max-width:720px;font-size:20px';
-  const row = (c, onAll) => {
+  list.style.cssText = 'max-height:62vh;overflow:auto;padding:8px 16px;background:rgba(0,0,0,0.35);margin:8px auto;width:min(760px,100%);box-sizing:border-box;font-size:20px;touch-action:pan-y';
+  let grid = null;
+  const row = (c, strong) => {
     const lab = document.createElement('label');
-    lab.style.cssText = 'display:flex;gap:8px;align-items:center;cursor:pointer';
+    lab.style.cssText = 'display:flex;gap:8px;align-items:center;cursor:pointer;min-height:30px' + (strong ? ';font-size:22px;color:#ffe14a' : '');
     const box = document.createElement('input');
     box.type = 'checkbox';
     box.checked = !t.gear.off.includes(c.key);
@@ -139,10 +163,22 @@ export function openTurret(t) {
       if (!box.checked) off.push(c.key);
       setOff(t, off);
     });
+    box.style.cssText = 'width:20px;height:20px';
     lab.append(box, document.createTextNode(c.label));
-    list.appendChild(lab);
+    (strong ? list : grid).appendChild(lab);
   };
-  for (const c of choices()) row(c);
+  // each group: its heading, a switch for the whole group, and one for each in it
+  for (const g of choices(t)) {
+    const head = document.createElement('div');
+    head.textContent = g.title;
+    head.style.cssText = 'margin:10px 0 4px;font:400 13px var(--title-font);color:#ddd';
+    list.appendChild(head);
+    row(g.all, true);
+    grid = document.createElement('div');
+    grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:2px 16px;padding-left:12px';
+    list.appendChild(grid);
+    for (const c of g.items) row(c);
+  }
   section.appendChild(list);
   const btns = document.createElement('div');
   btns.className = 'row';

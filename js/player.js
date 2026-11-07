@@ -357,7 +357,7 @@ export class Player {
     if (m.dead || m.removed || !G.entities.mobs.includes(m)) { this.dismount(); return; }
     if (!input.sneak) this.rideSneak = false;
     if (input.sneak && !this.rideSneak) { this.dismount(); return; }
-    if (input.swapHands && !this.dead) this.swapHands();
+    if (input.swapHands && !this.dead && !m.def.plane) this.swapHands();   // (in a plane F drops flares)
     this.sprinting = this.sneaking = this.swimming = this.flying = false;
     if (canSteer(m)) rideMove(this, dt, input);
     else {
