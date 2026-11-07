@@ -9,6 +9,7 @@ import { buildModel, holdInHand, lightAt, explosionFx, explosionDamage, spawnBlo
 import { decideUse, applyUse, CARS } from './mounts.js';
 import { takePlaneInv } from './planes.js';
 import { takeTurretList, spawnTurret, rememberPlayer } from './turret.js';
+import { setCmd, takeCmd, triggerCmd, applyToMe } from './cmdblocks.js';
 import { decideTie } from './leads.js';
 import { hatch } from './eggs.js';
 import { BLOCKS, B, ITEMS } from './blocks.js';
@@ -783,6 +784,9 @@ export class Net {
       }
       // a guest wants the bed a villager is sleeping in
       case 'vw': G.entities.wakeVillagerAt(d.x | 0, d.y | 0, d.z | 0); break;
+      // command blocks: only someone in Creative may set one up or try it out; anyone may set one off
+      case 'cbset': if (a && a.mode === 'creative') setCmd(d.x | 0, d.y | 0, d.z | 0, d.d, from); break;
+      case 'cbrun': if (a && ['click', 'plate', 'test'].includes(d.why)) triggerCmd(d.x | 0, d.y | 0, d.z | 0, d.why, a.mode === 'creative'); break;
       case 'sign':
         G.game.setSign(d.x | 0, d.y | 0, d.z | 0, d.l, true);
         this.sendExcept(from, { k: 'sign', x: d.x | 0, y: d.y | 0, z: d.z | 0, l: G.game.signText(d.x | 0, d.y | 0, d.z | 0) });
@@ -905,8 +909,10 @@ export class Net {
       }
       case 'chat': this.chat(d.sys ? null : d.n, String(d.t || '')); break;
       case 'sign': G.game.setSign(d.x | 0, d.y | 0, d.z | 0, d.l, true); break;
+      case 'cbset': takeCmd(d.x | 0, d.y | 0, d.z | 0, d.d); break;
+      case 'cbx': applyToMe(d); break;
       case 'boom': explosionFx(d.x, d.y, d.z, d.pw); break;
-      case 'ar': { const a = d.a; G.entities.spawnArrow(a[0], a[1], a[2], a[3], a[4], a[5], 'fx', { effect: a[6] ? 'slow' : null, bullet: a[7] ? 'bullet' : null }); break; }
+      case 'ar': { const a = d.a; G.entities.spawnArrow(a[0], a[1], a[2], a[3], a[4], a[5], 'fx', { effect: a[6] ? 'slow' : null, bullet: a[7] ? 'bullet' : null, tracer: a[7] === 2 }); break; }
       case 'vfx': if (G.onVfx) G.onVfx(d.t, d.a); break;
       case 'th': { const a = d.a; G.entities.spawnPotion(a[0], a[1], a[2], a[3], a[4], a[5], a[6], true); break; }
       case 'fb': case 'ac': case 'cb': case 'sk': G.entities.projectileFx(d.k, d.a); break;

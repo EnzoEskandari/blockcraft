@@ -67,6 +67,10 @@ How it works:
 - **Inventory doll** (`js/doll.js`): the player model drawn into a render target by the game's renderer, read back into a canvas in the panel, only while the inventory is open.
 - **Depth on flat tiles** (`DEPTH` / `addDepth` in `js/textures.js`): after a tile is painted, some are made lighter or darker in places from a random stream of their own, never recoloured. Only obsidian keeps the `GLOSS` glints. The dragon egg is a model (`boxes`) with a `pick` box, and the block outline uses `pickBox`.
 
+## Command blocks (1.11.6)
+
+`js/cmdblocks.js`: block 246 `command_block` (unbreakable outside Creative, not craftable, in the Creative palette). What each runs is `{ c: command, m: mode, r: reach, s: seconds, out: last result }` in `world.flags.cmds["x,y,z"]`, saved with the world and sent to guests in the join snapshot. Modes: `click` (used outside Creative; in Creative using it opens its screen, `openCmdBlock`), `plate` (`pressPlate` calls `plateCmds` for the blocks under and beside a plate), `near` and `repeat` (`tickCmds`, on the host). Everything runs on the host: guests send `cbset` (only accepted from someone in Creative) and `cbrun`; the host sends `cbset` back to everyone, and `cbx` to the guest a command acts on (`applyToMe`). `runCommand` knows only world commands (say, time, weather, give, tp, effect, heal, summon, setblock, fill, spawnpoint), never admin ones. `fill` is capped at 8000 blocks and `summon` stops at 300 creatures.
+
 ## Planes and the turret (1.11.1)
 
 `js/planes.js`: `plane` and `fighter_jet` (items and mobs 451, 452) are mounts flown by `fly` (hooked into `rideMove` with `def.fly`): the plane's own heading (`fy`, `fp`) turns after the pilot's look at `flight.turn`, `thr` is the throttle, below `stall` it sinks, and hitting something fast is `crash`. Each plane's `gear.inv` holds nine slots of ammunition (the `plane` container in ui.js, opened with E; a guest sends `pinv`). `planeFrame` runs instead of `interact` while flying: the lock (nearest lockable thing within 0.2 rad, held for `flight.lock` seconds), the guns (Arrows), `launchMissile` and flares, and the cockpit HUD. A plane's missiles blow up with `explode` (craters, like TNT; somebody else's copy only shows the blast); a turret's hurt as much but break no blocks. Missiles and flares are sent to everyone as `vfx` (through the host, `VFX_RANGE`); only the one who fired a missile works out its damage, and `hash(missile, flare)` decides the same decoys everywhere.
@@ -74,6 +78,8 @@ How it works:
 `js/turret.js`: the `turret` mob (item 455) aims and fires on the host: Arrows with `owner: 'turret'` and an `allow` test, and missiles at what is up in the air. `gear.off` is the list of what it leaves alone (`player:Name`, `mob:type`, or a whole group: `all:players`, `all:monsters`, `all:animals`; its owner to start with). The world remembers every player's name in `flags.players` (`rememberPlayer`), so the list can offer them all, changed with `openTurret` (a guest sends `tlist`). Guests place one with `bo` and `t: 'turret'`. `caps` and `MIN_PAGE` are 8.
 
 Cars no longer use gas (their saved `fuel` is kept, unused); boats on ice reach `ICE_SPEED` 30 and barely slow down.
+
+1.11.6: the fighter jet is modelled on the F-22 (missiles inside, bay doors `m.bay`, nozzle paddles following `m.stick`) and flies at up to 150 blocks a second (`FLIGHT.fighter_jet`: `climb`, `slow`, `bank`). `outrun` slows any plane that gets ahead of the land being built, and `updateChunks` builds round a point up to 1.5 chunks ahead of a fast plane, with 12 ms a frame instead of 7. Missiles' top speed is at least 70 more than what fired them. Turrets fire tracer rounds (`opts.tracer`, sent as `ar` with 2) every 0.05 s for 4 damage, with a muzzle flash.
 
 ## Pandas, polar bears and bamboo (1.11)
 

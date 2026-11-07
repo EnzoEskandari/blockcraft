@@ -1106,6 +1106,15 @@ Object.assign(PAINTERS, {
     p.set(7, 12, [14, 14, 14]); p.set(8, 12, [14, 14, 14]);
     for (let x = 5; x < 11; x += 2) p.set(x, 14, [14, 14, 14]);
   },
+  // a copper-brown case with rivets round a little dark screen showing a green prompt
+  command_block: (p) => {
+    const n = vnoise(p.r, 4);
+    p.each((x, y) => { const v = n(x, y) * 18; const edge = x === 0 || y === 0 || x === 15 || y === 15; return edge ? [70 + v, 44 + v, 30] : [156 + v, 98 + v, 62 + v * 0.5]; });
+    for (const [x, y] of [[2, 2], [13, 2], [2, 13], [13, 13]]) p.set(x, y, [214, 170, 120]);
+    for (let y = 4; y < 12; y++) for (let x = 4; x < 12; x++) p.set(x, y, x === 4 || y === 4 || x === 11 || y === 11 ? [40, 40, 44] : [14, 22, 18]);
+    for (const [x, y] of [[5, 6], [6, 7], [5, 8]]) p.set(x, y, [110, 255, 130]);
+    for (let x = 7; x < 10; x++) p.set(x, 9, [110, 255, 130]);
+  },
   beacon: (p) => {
     const n = vnoise(p.r, 4);
     p.each((x, y) => { const d = Math.hypot(x - 7.5, y - 7.5) / 9; return mix([220, 255, 255], [96, 214, 230], Math.min(1, d + n(x, y) * 0.25)); });

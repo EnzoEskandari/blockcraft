@@ -2,6 +2,7 @@
 // alike, except what is switched off on its list (use it to see the list). Whoever sets it down is off the
 // list to start with. Bullets for what is on the ground; homing missiles (see planes.js) for what flies,
 // which flares can draw off. It needs no ammunition. It lives where the world lives (the host).
+import * as THREE from 'three';
 import { G } from './game.js';
 import { BLOCKS } from './blocks.js';
 import { sfx } from './audio.js';
@@ -78,13 +79,19 @@ function turretAI(t, dt) {
   t.yaw = Math.atan2(ax, az);
   t.aimPitch = Math.asin(ay / d);
   const air = (e.def && e.def.flies) || airborne(e);
+  // a stream of glowing tracer rounds, twenty a second from its two barrels in turn. Each hits for less than it
+  // used to (what is hit can't be hurt again for a moment anyway, so it does a little less harm than before)
   if (t.gunCd <= 0 && (!air || d < 60)) {
-    t.gunCd = 0.13;
-    const sp = 110, s = 0.02;
+    t.gunCd = 0.05;
+    t.shots = (t.shots || 0) + 1;
+    const side = t.shots & 1 ? 1 : -1, cs = Math.cos(t.yaw), sn = Math.sin(t.yaw);
+    const ox = cs * side * 0.5, oz = -sn * side * 0.5;   // (the barrel it comes from)
+    const sp = 120, s = 0.035;
     const dx = ax / d + (rand() - 0.5) * s, dy = ay / d + (rand() - 0.5) * s, dz = az / d + (rand() - 0.5) * s;
-    G.entities.spawnArrow(eye.x + ax / d * 2, eye.y + ay / d * 2, eye.z + az / d * 2, dx * sp, dy * sp, dz * sp, 'turret',
-      { bullet: 'bullet', damage: 5, keep: true, shooter: t, allow: (x) => (x.isPlayer || x.remote ? allowed(t, x) : shootable(t, x) && allowed(t, x)) });
-    sfx('gun_light', t.pos, { vol: 0.8 });
+    G.entities.spawnArrow(eye.x + ox + ax / d * 2.2, eye.y + ay / d * 2.2, eye.z + oz + az / d * 2.2, dx * sp, dy * sp, dz * sp, 'turret',
+      { bullet: 'bullet', tracer: true, damage: 4, keep: true, shooter: t, allow: (x) => (x.isPlayer || x.remote ? allowed(t, x) : shootable(t, x) && allowed(t, x)) });
+    t.flash = 0.04; t.flashSide = side;
+    if (t.shots % 2) sfx('gun_light', t.pos, { vol: 0.7 });
   }
   if (air && t.misCd <= 0) {
     t.misCd = 3;
@@ -94,9 +101,44 @@ function turretAI(t, dt) {
   t.animate(dt, 0, 99);
 }
 // The head follows its aim
-MOB_TYPES.turret.animate = (t) => {
+// A muzzle flash that lights up the night: a bright core in a wide orange glow at the barrel that fired
+const flashCore = new THREE.MeshBasicMaterial({ color: 0xfff4c0, fog: false });
+const flashGlow = new THREE.MeshBasicMaterial({ color: 0xff8a1e, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
+const flashGeo = [new THREE.BoxGeometry(7, 7, 10), new THREE.BoxGeometry(26, 26, 22)];
+// (and the ground round it flickers orange while it fires)
+let groundGlow = null;
+const groundGeo = new THREE.PlaneGeometry(14, 14).rotateX(-Math.PI / 2);
+function glowMat() {
+  if (groundGlow) return groundGlow;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d'), grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0, 'rgba(255,150,50,0.9)'); grad.addColorStop(0.4, 'rgba(255,110,30,0.4)'); grad.addColorStop(1, 'rgba(255,90,20,0)');
+  g.fillStyle = grad; g.fillRect(0, 0, 64, 64);
+  groundGlow = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
+  return groundGlow;
+}
+MOB_TYPES.turret.animate = (t, dt) => {
   const h = t.model.parts.head;
   if (h) h.rotation.x = -(t.aimPitch || 0);
+  if (h && (!t.flashMesh || t.flashMesh.parent !== h)) {   // (and again if its model is made anew)
+    const g = new THREE.Group();
+    g.add(new THREE.Mesh(flashGeo[0], flashCore), new THREE.Mesh(flashGeo[1], flashGlow));
+    g.visible = false;
+    h.add(g);
+    t.flashMesh = g;
+    const glow = new THREE.Mesh(groundGeo, glowMat());
+    glow.position.y = 0.05;
+    glow.visible = false;
+    t.model.root.add(glow);
+    t.glowMesh = glow;
+  }
+  if (t.flashMesh) {
+    t.flash = (t.flash || 0) - (dt || 0);
+    t.flashMesh.visible = t.flash > 0;
+    t.glowMesh.visible = t.flash > -0.15;   // (it stays lit between shots)
+    if (t.flash > 0) { t.flashMesh.position.set(t.flashSide * 5, 0, 42); t.flashMesh.rotation.z = rand() * 3; const k = 0.8 + rand() * 0.5; t.flashMesh.scale.setScalar(k); }
+  }
   if (t.model.parts.radar) t.model.parts.radar.rotation.y = t.age * 3;
 };
 

@@ -103,6 +103,23 @@ const BAMBOO_ROAD = {
 export const UPDATES = [
   {
     // a small update: it keeps the Fast & Wild picture
+    version: '1.11.6', name: 'Raptor', date: '2026-11-06',
+    splashes: ['Bang!', 'Reload!', 'Vroom!', 'Nine guns!', 'Zoom zoom!', 'Racing stripes!', 'Steady aim!', 'Pandas!', 'Bear hug!', 'Bamboo!',
+      'Rocket science!', 'Beep beep!', 'Mind the bear!', 'Supercar!', 'Cold paws!', 'Fox two!', 'Flares!', 'Lock on!', 'Bandit, six o\'clock!', 'Wheels up!', 'Turret online!', 'Afterburner!', 'Hot stuff!', 'Eat up!', 'Hold the line!', 'Thrust vectoring!', 'Supercruise!', 'Tracers!', 'Command blocks!'],
+    scene: BAMBOO_ROAD,
+    notes: [
+      'The Fighter Jet is now built like an F-22: a flat, pointed nose, a gold canopy, diamond wings, twin fins leaning out, and flat nozzles that tilt as you steer.',
+      'Its missiles are carried inside now. The doors under the jet open when you fire one.',
+      'It flies like one too: more than twice as fast as before (top speed about 540 km/h), it turns much tighter, still turns hard when slow, and climbs straight up hardly slowing.',
+      'If you fly faster than the land ahead can load, the jet slows down by itself instead of crashing into it. Land now loads ahead of a fast plane.',
+      'Missiles fly faster, so they can catch a jet.',
+      'Turrets fire a stream of glowing tracer rounds, twenty a second, with a bright muzzle flash. At night it lights up the sky. Each round hits a little softer, to make up for it.',
+      'New: the Command Block, for Creative. Put one down and click it: type a command (or tap one of the examples), pick when it runs (when clicked, when a pressure plate on or beside it is stepped on, when a player comes near, or over and over), and press Save.',
+      'Command blocks know say, time, weather, give, tp, effect, heal, summon, setblock, fill and spawnpoint. A command about a player is about whoever is nearest, and ~ means "from this block", so tp ~ ~10 ~ sends you ten blocks above it.',
+      'Command blocks can only be set up in Creative and can\'t be broken outside it, so a map you make stays as you made it.',
+    ],
+  },
+  {
     version: '1.11.5', name: 'Hold the Line', date: '2026-11-06',
     splashes: ['Bang!', 'Reload!', 'Vroom!', 'Nine guns!', 'Zoom zoom!', 'Racing stripes!', 'Steady aim!', 'Pandas!', 'Bear hug!', 'Bamboo!',
       'Rocket science!', 'Beep beep!', 'Mind the bear!', 'Supercar!', 'Cold paws!', 'Fox two!', 'Flares!', 'Lock on!', 'Bandit, six o\'clock!', 'Wheels up!', 'Turret online!', 'Afterburner!', 'Hot stuff!', 'Eat up!', 'Hold the line!'],

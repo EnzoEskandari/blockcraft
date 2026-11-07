@@ -1640,6 +1640,10 @@ class ItemEntity {
 const arrowGeo = new THREE.BoxGeometry(0.05, 0.05, 0.55);
 const arrowHeadGeo = new THREE.BoxGeometry(0.09, 0.09, 0.1);
 const bulletGeo = new THREE.BoxGeometry(0.05, 0.05, 0.35);
+// A tracer round (a turret's): a long white-hot core in a wide orange glow, bright even at night
+// (long enough to join up into a stream at the speed it flies, trailing behind the round itself)
+const tracerGeo = [new THREE.BoxGeometry(0.12, 0.12, 4.2).translate(0, 0, -2), new THREE.BoxGeometry(0.5, 0.5, 4.8).translate(0, 0, -2.1)];
+const tracerGlow = new THREE.MeshBasicMaterial({ color: 0xff6410, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
 const GRAVITY = { bullet: 3, shell: 6, rocket: 4 };   // (how fast each kind of shot drops)
 const tridentGeo = [new THREE.BoxGeometry(0.06, 0.06, 1.4), new THREE.BoxGeometry(0.42, 0.06, 0.06), new THREE.BoxGeometry(0.06, 0.06, 0.38)];
 class Arrow {
@@ -1660,12 +1664,13 @@ class Arrow {
     this.trident = opts.trident || null;   // a thrown trident: the stack itself, picked up again where it lands
     this.bullet = opts.bullet || null;   // fired from a gun ('bullet', 'shell' or 'rocket'): flies almost straight and is gone when it hits
     this.boom = opts.boom || 0;
-    this.allow = opts.allow || null;     // (a turret's: what it may hit; the rest it passes)          // (and blows up there: rockets and explosive bullets, which don't break blocks)
+    this.allow = opts.allow || null;
+    this.tracer = !!opts.tracer;     // (a turret's: what it may hit; the rest it passes)          // (and blows up there: rockets and explosive bullets, which don't break blocks)
     this.stuck = false;
     this.age = 0;
     this.removed = false;
     const g = new THREE.Group();
-    this.mat = new THREE.MeshBasicMaterial({ color: this.bullet === 'rocket' ? 0x5a7a4a : this.bullet === 'shell' ? 0xcfcfcf : this.bullet ? 0xffe08a : this.trident ? 0x4fb8aa : this.effect === 'slow' ? 0x6a7a8a : 0x8a6a3a });
+    this.mat = this.tracer ? new THREE.MeshBasicMaterial({ color: 0xfff0b0, fog: false }) : new THREE.MeshBasicMaterial({ color: this.bullet === 'rocket' ? 0x5a7a4a : this.bullet === 'shell' ? 0xcfcfcf : this.bullet ? 0xffe08a : this.trident ? 0x4fb8aa : this.effect === 'slow' ? 0x6a7a8a : 0x8a6a3a });
     this.headMat = new THREE.MeshBasicMaterial({ color: this.trident ? 0x8fe6da : 0x9a9a9a });
     if (this.trident) {
       // a long shaft with a crossbar and three prongs
@@ -1680,6 +1685,8 @@ class Arrow {
       const body = new THREE.Mesh(bulletGeo, this.mat);
       body.scale.set(3, 3, 1.5);
       g.add(body, head);
+    } else if (this.tracer) {
+      g.add(new THREE.Mesh(tracerGeo[0], this.mat), new THREE.Mesh(tracerGeo[1], tracerGlow));
     } else if (this.bullet) {
       g.add(new THREE.Mesh(bulletGeo, this.mat));
     } else {
@@ -2347,7 +2354,7 @@ export class Entities {
 
   spawnArrow(x, y, z, vx, vy, vz, owner, opts) {
     this.arrows.push(new Arrow(x, y, z, vx, vy, vz, owner, opts));
-    if ((owner === 'mob' || owner === 'turret') && G.net) G.net.projectile('ar', [x, y, z, vx, vy, vz, opts && opts.effect === 'slow' ? 1 : 0, opts && opts.bullet ? 1 : 0]);
+    if ((owner === 'mob' || owner === 'turret') && G.net) G.net.projectile('ar', [x, y, z, vx, vy, vz, opts && opts.effect === 'slow' ? 1 : 0, opts && opts.tracer ? 2 : opts && opts.bullet ? 1 : 0]);
   }
   spawnPotion(x, y, z, vx, vy, vz, kind, fx = false) {
     this.thrown.push(new Thrown(x, y, z, vx, vy, vz, kind, ID.potion, fx));

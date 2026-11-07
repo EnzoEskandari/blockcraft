@@ -362,6 +362,8 @@ block(243, 'cherry_sapling', 'Cherry Sapling', { ...plant, support: GROUND, sapl
 // (1.10.3) netherite: ancient debris lies deep in the Nether's rock, takes a diamond pickaxe, and shrugs off explosions
 block(244, 'ancient_debris', 'Ancient Debris', { tex: { top: 'ancient_debris_top', bottom: 'ancient_debris_top', side: 'ancient_debris_side' }, hardness: 30, tool: 'pickaxe', level: 3, blastProof: true, fireproof: true });
 block(245, 'netherite_block', 'Block of Netherite', { hardness: 50, tool: 'pickaxe', level: 3, sound: 'metal', blastProof: true, fireproof: true });
+// (1.11.6: for Creative. Nothing breaks it outside Creative, and it can't be made; see cmdblocks.js)
+block(246, 'command_block', 'Command Block', { hardness: -1, sound: 'metal', blastProof: true, fireproof: true });
 
 export const JOB_BLOCKS = {};   // profession -> block id
 for (const b of BLOCKS) if (b && b.job) JOB_BLOCKS[b.job] = b.id;

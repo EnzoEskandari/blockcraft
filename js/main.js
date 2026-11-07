@@ -1,6 +1,7 @@
 // Boot, main loop, chunk streaming, block updates, saving.
 import { G, loadSettings, saveSettings, store, load, remove, isTouchDevice } from './game.js';
 import { cleanSign, signMesh, disposeSignMesh } from './signs.js';
+import { plateCmds, tickCmds, forgetCmd, allCmds, takeAllCmds } from './cmdblocks.js';
 import { buildTextures, buildIcons } from './textures.js';
 import { BLOCKS, ITEMS, B, ID, RENDER, SMELTING, fuelValue, maxStack, canHarvest } from './blocks.js';
 import { World, ckey, CH, GEN } from './world.js';
@@ -74,6 +75,7 @@ function pressPlate(x, y, z) {
   S.plates.set(key, G.clock);
   if (last !== undefined && G.clock - last < 0.6) return;   // still held down
   const w = G.world;
+  plateCmds(x, y, z);   // (command blocks under it or beside it)
   sfx('click', { x, y, z }, { vol: 0.5, pitch: 0.7 });
   // TNT touching the plate, or under the block it lies on (and the ones round that)
   for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) for (let dy = -2; dy <= 0; dy++) {
@@ -194,6 +196,11 @@ function updateChunks(budget) {
   const t0 = performance.now();
   const pcx = Math.floor(p.pos.x) >> 4, pcz = Math.floor(p.pos.z) >> 4;
   const rd = G.settings.renderDist;
+  // in a fast plane, the land is built round a point a chunk and a half ahead of it, so it is there in time (no further: the ring
+  // built round it must stay inside the ring kept round the player)
+  const fast = p.riding && p.riding.def.plane && Math.hypot(p.vel.x, p.vel.z) > 30 ? p.vel : null;
+  const lead = fast ? Math.min(1.5, Math.hypot(fast.x, fast.z) / 40) / Math.hypot(fast.x, fast.z) : 0;
+  const acx = fast ? Math.floor(p.pos.x / 16 + fast.x * lead) : pcx, acz = fast ? Math.floor(p.pos.z / 16 + fast.z * lead) : pcz;
 
   for (const k of S.urgent) {
     const c = w.chunks.get(k);
@@ -224,7 +231,7 @@ function updateChunks(budget) {
   let ops = 0;
   for (const [dx, dz, d] of S.offsets) {
     if (ops > 0 && performance.now() - t0 > budget) break;
-    const cx = pcx + dx, cz = pcz + dz;
+    const cx = acx + dx, cz = acz + dz;
     const c = w.getChunk(cx, cz);
     if (!c) { w.generate(cx, cz); ops++; continue; }
     if (c.dirty && d <= rd + 0.5 && neighborsReady(c)) { meshChunk(c); ops++; }
@@ -253,6 +260,7 @@ function onBlockChange(x, y, z, oldId, newId) {
     if (c) { c.simDirty = true; if (dx || dz) c.dirty = true; }
   }
   if (BLOCKS[oldId].sign && !BLOCKS[newId].sign && w.signs.delete(`${x},${y},${z}`)) S.signsDirty = true;
+  if (oldId === B.command_block && newId !== B.command_block) forgetCmd(x, y, z);
   if (G.net) G.net.blockChanged(x, y, z, newId);
   if (isGuest()) return;   // falling sand, water and the rest happen on the host
   S.updates.push(x, y, z);
@@ -791,6 +799,9 @@ export const Game = {
     G.ui.toast({ first: 'First person', third: 'Third person: from behind you', second: 'Second person: facing you' }[G.settings.view]);
   },
 
+  // (for command blocks: the words for the time of day and the weather an admin's commands know)
+  parseTime,
+  weatherWord: (word) => WEATHERS[String(word || '').toLowerCase()] || null,
   teleport(x, y, z) {
     if (G.player.riding) G.player.dismount();
     const p = G.player, w = G.world;
@@ -1308,7 +1319,7 @@ export const Game = {
       k: 'world', host: G.net.spec ? '' : G.net.name, name: G.worldMeta.name, seed: w.seed, mode: G.worldMeta.mode,
       time: G.time, day: G.day || 0, nns: G.nightsNoSleep || 0, weather: weatherState(),
       spawn: w.worldSpawn || p.spawn, edits: packEdits(w), guest: playerRecord(w.guests, account, name),
-      legacy: w.legacy ? [...w.legacy] : null, gens: packGens(w), signs: Object.fromEntries(w.signs),
+      legacy: w.legacy ? [...w.legacy] : null, gens: packGens(w), signs: Object.fromEntries(w.signs), cmds: allCmds(),
     };
   },
 
@@ -1520,6 +1531,7 @@ function startRemoteWorld(snap, onlineId, dim = 'overworld', me = null) {
   for (const [v, list] of Object.entries(snap.gens || {})) if (Array.isArray(list)) for (const k of list) w.gens.set(k, Number(v));   // and chunks from other older versions
   if (snap.signs && typeof snap.signs === 'object') w.signs = new Map(Object.entries(snap.signs).map(([k, v]) => [k, cleanSign(v)]));
   S.signsDirty = true;
+  takeAllCmds(w, snap.cmds);
   w.onChange = onBlockChange;
   w.villagerTrades = new Map();
   w.deadMobs = new Set();
@@ -1790,6 +1802,7 @@ function frame(dt) {
       tickFurnaces(dt);
       tickSaplings();
       tickCrops();
+      tickCmds(dt);
     }
     tickFires(host);
     tickFrost();
@@ -1802,7 +1815,8 @@ function frame(dt) {
     G.net.update(dt);
     if (host) simulateAroundGuests(4);
   }
-  updateChunks(paused ? 14 : 7);
+  // (more time a frame for building land while a fast plane is getting ahead of it)
+  updateChunks(paused ? 14 : G.player.riding && G.player.riding.def.plane && Math.hypot(G.player.vel.x, G.player.vel.z) > 60 ? 12 : 7);
   G.player.updateCamera(dt);
   tickWeather(paused ? 0 : dt, host);
   // Shadows are the dearest thing drawn. Where the game cannot keep up with them (an old tablet), they

@@ -19,6 +19,7 @@ import { useEgg } from './eggs.js';
 import { GUNS, fireGun } from './guns.js';
 import { planeFrame } from './planes.js';
 import { openTurret, placeTurret } from './turret.js';
+import { openCmdBlock, triggerCmd } from './cmdblocks.js';
 
 const GRAVITY = 32;
 const JUMP_V = 9.0;
@@ -974,6 +975,8 @@ export class Player {
       if (BLOCKS[id].door) { G.game.toggleDoor(t.x, t.y, t.z); swingHand(); return true; }
       if (BLOCKS[id].trapdoor) { G.game.toggleTrapdoor(t.x, t.y, t.z); swingHand(); return true; }
       if (BLOCKS[id].sign) { G.ui.openScreen('sign', { x: t.x, y: t.y, z: t.z }); return true; }
+      // a command block: set it up in Creative, set it off otherwise
+      if (id === B.command_block) { if (this.creative) openCmdBlock(t.x, t.y, t.z); else { triggerCmd(t.x, t.y, t.z, 'click'); swingHand(); } return true; }
       if (id === B.crafting_table) { G.ui.openScreen('crafting'); return true; }
       if (id === B.enchanting_table) { G.ui.openScreen('enchant', { x: t.x, y: t.y, z: t.z }); return true; }
       if (id === B.anvil) { G.ui.openScreen('anvil', {}); return true; }

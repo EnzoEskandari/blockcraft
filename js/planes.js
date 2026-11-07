@@ -48,52 +48,74 @@ MODELS.plane = (v) => {
     ...gearParts([[-8, 8], [8, 8]]), { name: 'tailwheel', size: [2, 3, 3], pos: [0, 8, -20], color: TYRE },
   ];
 };
-// A fighter jet: a long pointed nose, a bubble canopy, swept wings with missiles at their tips and under them,
-// twin tails leaning out, and two nozzles that glow on full throttle. Greys and a navy, as real ones are painted.
+// The fighter jet is drawn after the F-22: a flat, chined nose, a frameless gold-tinted canopy, intakes either side
+// of the cockpit, broad diamond wings with all-moving tails close behind, twin fins canted outward, and flat
+// nozzles whose paddles tilt with the stick (thrust vectoring). Its missiles ride inside: the bay doors under
+// it open as one is fired. Greys, as real ones are painted.
 const JET_PAINT = [[128, 134, 140], [104, 112, 122], [72, 82, 98], [150, 150, 144], [96, 104, 84], [118, 124, 136]];
+// A tapering surface from boxes side by side, each `w` wide: for a station s out from the root, its front edge at
+// le(s) and back edge at te(s)
+const surface = (name, k, n, w, x0, y, le, te, color, extra = {}) => Array.from({ length: n }, (_, i) => {
+  const s = (i + 0.5) * w, f = le(s), t = te(s);
+  return { name: name + k + '_' + i, size: [w + 0.1, extra.th || 1.4, f - t], pos: [k * (x0 + s), y, (f + t) / 2], color, ...(extra.paint ? { paint: extra.paint } : {}) };
+});
 MODELS.fighter_jet = (v) => {
-  const c = JET_PAINT[gearOf(v).coat % JET_PAINT.length], l = shade(c, 1.12), d = shade(c, 0.72);
-  const missile = (x, y, z, len = 12) => [
-    { name: 'ms' + x + z, size: [1.6, 1.6, len], pos: [x, y, z], color: [232, 232, 228] },
-    { name: 'mt' + x + z, size: [1.6, 1.6, 2], pos: [x, y, z + len / 2 + 1], color: [190, 40, 30] },
-    { name: 'mf' + x + z, size: [4, 0.4, 2], pos: [x, y, z - len / 2 + 1], color: [200, 200, 196] },
-  ];
+  const c = JET_PAINT[gearOf(v).coat % JET_PAINT.length], l = shade(c, 1.1), d = shade(c, 0.78), dd = shade(c, 0.6);
+  const GOLD = [150, 126, 72], NOZ = [58, 58, 62], panel = { top: (g, x, y, w, h) => rect(g, x, y + h - 1, w, 1, d) };
   const sides = (f) => [-1, 1].flatMap(f);
   return [
-    // the fuselage, tapering to the nose
-    { name: 'body', size: [9, 8, 58], pos: [0, 11, -2], color: c, paint: { all: (g, x, y, w, h) => rect(g, x, y + h - 2, w, 2, d) } },
-    { name: 'spine', size: [6, 3, 34], pos: [0, 16, 0], color: l },
-    { name: 'nose0', size: [7, 6, 8], pos: [0, 11, 31], color: c },
-    { name: 'nose1', size: [5, 4, 7], pos: [0, 11, 38], color: c },
-    { name: 'tip', size: [2, 2, 6], pos: [0, 11, 44], color: d },
-    { name: 'probe', size: [0.6, 0.6, 4], pos: [0, 11, 49], color: DARK },
-    { name: 'canopy', size: [5, 4, 13], pos: [0, 16.5, 23], color: [70, 96, 120], paint: { all: (g, x, y, w, h) => rect(g, x, y, w, 1, [150, 190, 220]) } },
-    { name: 'frame', size: [5.4, 0.6, 1], pos: [0, 18.6, 20], color: d },
-    // the air intake under it
-    { name: 'intake', size: [8, 6, 16], pos: [0, 5.5, 8], color: d },
-    { name: 'mouth', size: [7, 5, 1], pos: [0, 5.5, 16.2], color: [16, 16, 18] },
-    // swept wings, and the strakes running forward from them
+    // the fuselage: broad and flat, with a chine running along each side of the nose
+    { name: 'body', size: [12, 6, 54], pos: [0, 11, -8], color: c },
+    { name: 'deck', size: [17, 2.4, 40], pos: [0, 14.6, -12], color: l, paint: { top: (g, x, y, w, h) => { rect(g, x + 2, y + 4, 3, h - 8, c); rect(g, x + w - 5, y + 4, 3, h - 8, c); } } },
+    { name: 'belly', size: [14, 3, 36], pos: [0, 7.5, -6], color: c, paint: { bottom: (g, x, y, w, h) => rect(g, x + 2, y + 6, w - 4, h - 12, [28, 28, 32]) } },
+    { name: 'spine', size: [7, 3, 18], pos: [0, 16, 6], color: l },
+    { name: 'fore', size: [10, 7, 14], pos: [0, 11.5, 22], color: c },
+    { name: 'chine0', size: [15, 1.5, 14], pos: [0, 10, 21], color: c },
+    { name: 'nose0', size: [8, 5.5, 8], pos: [0, 11, 33], color: c },
+    { name: 'chine1', size: [10.5, 1.2, 8], pos: [0, 10.2, 33], color: c },
+    { name: 'nose1', size: [5.5, 4, 6], pos: [0, 10.8, 40], color: c },
+    { name: 'chine2', size: [7, 1, 6], pos: [0, 10.4, 40], color: c },
+    { name: 'tip', size: [2.6, 2.2, 4], pos: [0, 10.6, 45], color: d },
+    // the bubble canopy, with no frame
+    { name: 'canopy', size: [6, 4.5, 15], pos: [0, 16.8, 23], color: GOLD, paint: { all: (g, x, y, w, h) => rect(g, x, y, w, 1, [214, 190, 120]) } },
+    { name: 'bubble', size: [4.4, 1.6, 8], pos: [0, 19.6, 22], color: GOLD, paint: { top: (g, x, y, w, h) => rect(g, x + 1, y, 1, h, [214, 190, 120]) } },
     ...sides((k) => [
-      { name: 'wing' + k, size: [26, 1.5, 15], pos: [k * 15, 10, -6], rot: [0, k * 0.5, 0], color: l, paint: { top: (g, x, y, w, h) => rect(g, x, y + h - 2, w, 2, d) } },
-      { name: 'strake' + k, size: [4, 1.5, 18], pos: [k * 6, 11, 11], rot: [0, k * 0.22, 0], color: l },
-      { name: 'stab' + k, size: [13, 1.2, 9], pos: [k * 9.5, 10, -31], rot: [0, k * 0.45, 0], color: l },
-      { name: 'tail' + k, size: [1.5, 13, 11], pos: [k * 4.6, 19, -26], rot: [0, 0, -k * 0.28], color: c },
-      { name: 'nozzle' + k, size: [4.6, 4.6, 5], pos: [k * 2.6, 11, -33.5], color: [44, 44, 48] },
-      { name: 'burner' + k, size: [3.4, 3.4, 1], pos: [k * 2.6, 11, -36.2], color: [255, 150, 40] },
-      ...missile(k * 28, 9.4, -9),
-      { name: 'pylon' + k, size: [1, 2, 6], pos: [k * 16, 8.4, -4], color: d },
-      ...missile(k * 16, 6.6, -4, 14),
+      // the intakes beside the cockpit, their mouths raked back
+      { name: 'intake' + k, size: [5, 7, 26], pos: [k * 8.5, 10.5, 2], color: c },
+      { name: 'mouth' + k, size: [4.6, 6.6, 1.2], pos: [k * 8.6, 10.5, 15.2], rot: [0, k * 0.35, 0], color: [16, 16, 18] },
+      { name: 'lip' + k, size: [5.4, 0.8, 2], pos: [k * 8.5, 14.2, 14.4], rot: [0, k * 0.35, 0], color: d },
+      // diamond wings: the front edge swept back, the back edge swept forward a little
+      ...surface('wing', k, 6, 4, 9.5, 10, (s) => 8 - 0.9 * s, (s) => -24 + 0.3 * s, l, { paint: panel }),
+      // the all-moving tails, right behind the wings
+      ...surface('stab', k, 4, 4, 6, 10.6, (s) => -25 - 0.55 * s, (s) => -40 + 0.1 * s, l, { th: 1.2 }),
+      // twin fins, canted outward, swept back as they rise
+      { name: 'fin' + k, size: [1.4, 5, 15], pos: [k * 7.5, 18, -24], rot: [0, 0, -k * 0.48], color: c },
+      { name: 'finB' + k, parent: 'fin' + k, size: [1.3, 5, 11], pos: [0, 4.8, -2.8], color: c },
+      { name: 'finC' + k, parent: 'fin' + k, size: [1.2, 4, 7], pos: [0, 9.2, -5.4], color: c, paint: { all: (g, x, y, w, h) => rect(g, x, y, w, 1, dd) } },
+      // flat nozzles; their paddles tilt with the stick, and glow on full throttle
+      { name: 'nozzle' + k, size: [6, 4.2, 5], pos: [k * 4, 11, -37], color: NOZ },
+      { name: 'flapU' + k, parent: 'nozzle' + k, size: [6, 0.8, 4], pos: [0, 1.7, -2.5], off: [0, 0, -2], color: [70, 70, 74] },
+      { name: 'flapD' + k, parent: 'nozzle' + k, size: [6, 0.8, 4], pos: [0, -1.7, -2.5], off: [0, 0, -2], color: [70, 70, 74] },
+      { name: 'burner' + k, parent: 'nozzle' + k, size: [4.8, 2.4, 1], pos: [0, 0, -3], color: [255, 150, 40] },
+      // the weapons bay doors under the belly (hinged on their outer edges)
+      { name: 'bay' + k, size: [5, 0.6, 18], pos: [k * 5.4, 5.8, -4], off: [-k * 2.6, 0, 0], color: d },
     ]),
-    ...gearParts([[-5, 0], [5, 0], [0, 32]], 2),
+    ...gearParts([[-6, -6], [6, -6], [0, 26]], 2),
   ];
 };
 
 // ---------------------------------------------------------------- what they are
 // max: top speed; stall: below this it can't stay up; lift: speed it leaves the ground at; turn: how fast it
-// turns (radians a second); gun: its guns' damage (with iron bullets), wait between shots and bullet speed
+// turns (radians a second); gun: its guns' damage (with iron bullets), wait between shots and bullet speed.
+// climb: speed lost climbing straight up, a second; slow: how much of its turn it keeps at low speed; bank: how
+// hard and fast it rolls into a turn.
+// The jet flies like an F-22: it has more thrust than weight, so it climbs straight up hardly slowing, and its
+// thrust vectoring keeps it turning hard even slow. (A real one's top speed, some 670 metres a second, is far
+// faster than the world can be built around it, so it is the fastest thing here instead, and slows itself if
+// it gets ahead of the land still being built: see `outrun`.)
 const FLIGHT = {
-  plane: { max: 34, stall: 11, lift: 14, accel: 7, turn: 1.15, lock: 1.4, gun: { dmg: 4, cd: 0.1, speed: 150 } },
-  fighter_jet: { max: 64, stall: 18, lift: 22, accel: 13, turn: 1.7, lock: 0.9, jet: true, gun: { dmg: 6, cd: 0.07, speed: 200 } },
+  plane: { max: 34, stall: 11, lift: 14, accel: 7, turn: 1.15, lock: 1.4, climb: 9, slow: 0.35, bank: [1.1, 4], gun: { dmg: 4, cd: 0.1, speed: 150 } },
+  fighter_jet: { max: 150, stall: 16, lift: 24, accel: 34, turn: 2.5, lock: 0.9, jet: true, climb: 3, slow: 0.7, bank: [1.45, 8], pitch: 1.5, gun: { dmg: 6, cd: 0.07, speed: 260 } },
 };
 export const PLANE_SLOTS = 9;
 // What can be loaded into a plane: bullets (any kind), missiles and flares
@@ -137,7 +159,8 @@ function parked(m, dt) {
   if (m.onGround) { m.fp = 0; m.roll = 0; }
   m.animate(dt, 0, 99);
 }
-// It noses up and down and banks into its turns; the propeller turns with the throttle
+// It noses up and down and banks into its turns; the propeller turns with the throttle; a jet's nozzles tilt
+// with the stick and its bay doors open while a missile goes
 function flying(m, dt) {
   const inner = m.model.inner;
   if (m.def.scale) inner.scale.setScalar(m.def.scale / 16);
@@ -145,7 +168,25 @@ function flying(m, dt) {
   inner.rotation.z = -(m.roll || 0);
   const P = m.model.parts;
   if (P.prop) P.prop.rotation.z += dt * (m.ridden ? 6 + 50 * (m.thr || 0) : 0);
-  for (const b of [P.burner, P['burner-1'], P.burner1]) if (b) b.visible = (m.thr || 0) > 0.6;
+  m.bay = Math.max(0, (m.bay || 0) - dt);
+  const door = m.bay > 0 ? Math.min(1, (0.9 - m.bay) * 6, m.bay * 4) * 1.3 : 0;
+  m.vec = (m.vec || 0) + (clamp((m.stick || 0) * 0.5, -0.4, 0.4) - (m.vec || 0)) * Math.min(1, dt * 10);
+  for (const k of [-1, 1]) {
+    if (P['burner' + k]) P['burner' + k].visible = (m.thr || 0) > 0.6;
+    if (P['flapU' + k]) P['flapU' + k].rotation.x = P['flapD' + k].rotation.x = m.vec;
+    if (P['bay' + k]) P['bay' + k].rotation.z = k * door;
+  }
+}
+// Whether the land along where it is going hasn't been built yet: nothing is there at all (it would fly into an
+// unseen wall) within `near` seconds, or nothing is drawn within `far`
+function outrun(p, vx, vz, near, far) {
+  const w = G.world;
+  for (let t = 0.25; t <= far; t += 0.25) {
+    const c = w.getChunk(Math.floor(p.pos.x + vx * t) >> 4, Math.floor(p.pos.z + vz * t) >> 4);
+    if (!c) return t <= near ? 2 : 1;
+    if (!c.meshed) return 1;
+  }
+  return 0;
 }
 
 // ---------------------------------------------------------------- flying it
@@ -156,23 +197,33 @@ function fly(p, dt, input) {
   m.thr = clamp(m.thr + (input.moveZ > 0.3 ? 0.6 : input.moveZ < -0.3 ? -0.8 : 0) * dt, 0, 1);
   // it turns after the view, as fast as it can (slowly when it is slow)
   const grounded = p.onGround;
-  const agility = S.turn * dt * (0.35 + 0.65 * Math.min(1, m.spd / (S.max * 0.6)));
+  // (how fast it turns: its best from about 40% of top speed up for a jet, 60% for the plane)
+  const agility = S.turn * dt * (S.slow + (1 - S.slow) * Math.min(1, m.spd / (S.max * (S.jet ? 0.4 : 0.6))));
   const dyaw = clamp(wrap(p.yaw - m.fy), -agility, agility);
   m.fy = wrap(m.fy + dyaw);
-  m.fp += clamp(clamp(p.pitch, -1.3, 1.3) - m.fp, -agility, agility);
-  if (grounded && m.spd < S.lift) m.fp = 0;   // (it can't lift off until it is fast enough)
-  m.roll += (clamp(-dyaw / Math.max(dt, 1e-3) * 0.6, -1.1, 1.1) - m.roll) * Math.min(1, dt * 4);
+  const lim = S.pitch || 1.3, want = clamp(p.pitch, -lim, lim);
+  m.stick = clamp((want - m.fp) * 3, -1, 1);
+  m.fp += clamp(want - m.fp, -agility, agility);
+  if (grounded && m.spd < S.lift) { m.fp = 0; m.stick = 0; }   // (it can't lift off until it is fast enough)
+  m.roll += (clamp(-dyaw / Math.max(dt, 1e-3) * 0.6, -S.bank[0], S.bank[0]) - m.roll) * Math.min(1, dt * S.bank[1]);
   // speed: the throttle, less when climbing and more when diving
   m.spd += clamp(m.thr * S.max - m.spd, -S.accel * dt, S.accel * dt);
-  m.spd -= Math.sin(m.fp) * 9 * dt;
+  m.spd -= Math.sin(m.fp) * S.climb * dt;
   if (grounded && m.thr < 0.05) m.spd -= 8 * dt;   // (brakes)
-  m.spd = clamp(m.spd, 0, S.max * 1.3);
+  m.spd = clamp(m.spd, 0, S.max * 1.15);
+  // too fast for the land to be built ahead of it: it eases off (hard, if the land ahead isn't there at all)
+  if (m.spd > 40) {
+    const hx = -Math.sin(m.fy) * m.spd, hz = -Math.cos(m.fy) * m.spd, o = outrun(p, hx, hz, 0.75, 1.5);
+    if (o) { m.spd = Math.max(40, m.spd - (o === 2 ? 120 : 30) * dt); p.hint('Slowing down: the land ahead is still loading'); }
+  }
   const cp = Math.cos(m.fp);
   let vx = -Math.sin(m.fy) * cp * m.spd, vy = Math.sin(m.fp) * m.spd, vz = -Math.cos(m.fy) * cp * m.spd;
   // too slow to fly: it sinks, nose down
   const lift = clamp((m.spd - S.stall * 0.6) / (S.stall * 0.4), 0, 1);
   if (!grounded && lift < 1) { m.sink = Math.min(30, m.sink + 22 * (1 - lift) * dt); m.fp -= (1 - lift) * 0.7 * dt; } else m.sink = Math.max(0, m.sink - 30 * dt);
   vy -= m.sink;
+  // the air thins out high up: above 200 it climbs less and less, and no higher than 256
+  if (vy > 0 && p.pos.y > 200) { vy *= clamp((256 - p.pos.y) / 56, 0, 1); if (p.pos.y > 240) p.hint('Too high: the air is too thin to climb'); }
   if (grounded && m.spd < S.lift) vy = -2;
   if (!grounded && lift < 0.3) p.hint('Stalling! Speed up');
   const before = vy;
@@ -215,6 +266,7 @@ class Missile {
     this.pos = { x, y, z }; this.dir = { x: dx, y: dy, z: dz }; this.speed = speed;
     this.owner = owner; this.target = target; this.id = id; this.age = 0; this.tried = new Set();
     this.spare = o.spare || null; this.allow = o.allow || null; this.shooter = o.shooter || null;
+    this.top = Math.max(95, speed + 70);   // (always faster than what fired it, so a jet's own missiles get ahead of it)
     const g = new THREE.Group();
     const body = new THREE.Mesh(missileGeo, missileMat), tip = new THREE.Mesh(tipGeo, tipMat);
     tip.position.z = 0.62;
@@ -258,7 +310,7 @@ class Missile {
       if (l < 2.6 && !this.target.flare) { this.blast(); return; }
       if (l < 1.5 && this.target.flare) { this.blast(); return; }
     }
-    this.speed = Math.min(95, this.speed + 60 * dt);
+    this.speed = Math.min(this.top, this.speed + (this.top > 95 ? 140 : 60) * dt);
     const len = this.speed * dt, d = this.dir;
     // what it flies into
     if (this.owner !== 'fx') {
@@ -416,6 +468,7 @@ export function planeFrame(p, input, dt) {
       const tgt = L.locked ? L.target : null;
       const remote = tgt && G.net && [...G.net.players.values()].includes(tgt) ? { isRemotePlayer: true, name: tgt.name } : tgt;
       launchMissile(p.pos.x + f.x * 3, p.eyeY - 1 + f.y * 3, p.pos.z + f.z * 3, f.x, f.y, f.z, m.spd + 20, 'player', remote, { spare: m });
+      m.bay = 0.9;
       if (i >= 0) useUp(p, m, i);
       m.misCd = 0.7;
       if (!tgt) p.hint('Fired without a lock: it flies straight');
