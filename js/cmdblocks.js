@@ -4,7 +4,7 @@
 // one outside Creative.
 //
 // The commands are the world's own, the kind a map maker wants (say, time, weather, give, tp, effect, heal,
-// summon, setblock, fill, spawnpoint), never an admin's: nobody can be kicked, banned, made an admin or killed
+// summon, setblock, fill, spawnpoint, tick), never an admin's: nobody can be kicked, banned, made an admin or killed
 // by one. Commands about a player are about whoever is nearest the block, and ~ in a place means "from this
 // block" (~ ~3 ~ is three blocks above it).
 //
@@ -26,6 +26,7 @@ export const EXAMPLES = [
   ['say Welcome to my world!', 'show a message to everyone'],
   ['time day', 'make it day (or night, noon, midnight)'],
   ['weather clear', 'change the weather (clear, rain, thunder)'],
+  ['tick freeze', 'freeze the world: nothing moves but the players (tick unfreeze lets it go, tick step 2 runs it 2 seconds)'],
   ['give diamond 5', 'give the nearest player something'],
   ['tp ~ ~10 ~', 'move the nearest player (here, ten blocks above the block)'],
   ['effect speed 30', 'give the nearest player an effect for 30 seconds'],
@@ -227,6 +228,11 @@ export function runCommand(x, y, z, text) {
       G.game.setWeatherNow(k, 0);
       return 'The weather is now ' + k;
     }
+    case 'tick': {
+      let said = '';
+      G.game.tickCommand(args, (m) => { said = m; });
+      return said;
+    }
     case 'give': {
       const [id, rest] = lead(args, (s) => findThing(s, false));
       if (id == null) return `There is no item called "${args.join(' ')}"`;
@@ -308,7 +314,7 @@ export function runCommand(x, y, z, text) {
       return `Filled ${done} block${done === 1 ? '' : 's'} with ${id ? BLOCKS[id].name : 'air'}`;
     }
     case '': return 'There is no command in it yet';
-    default: return `"${cmd}" is not a command block command. Try: say, time, weather, give, tp, effect, heal, summon, setblock, fill, spawnpoint`;
+    default: return `"${cmd}" is not a command block command. Try: say, time, weather, tick, give, tp, effect, heal, summon, setblock, fill, spawnpoint`;
   }
 }
 

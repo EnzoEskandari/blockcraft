@@ -405,7 +405,7 @@ async function flushRecord(world, account) {
 const rooms = new Map();   // world id -> { host, peers: Map(id -> ws), next }
 const send = (ws, msg) => { if (ws && ws.readyState === 1) ws.send(typeof msg === 'string' ? msg : JSON.stringify(msg)); };
 
-const MIN_PAGE = 10;   // the oldest page that may join (see `caps`): an older one would not know missile silos (10), missile turrets (9), planes (8), pandas (7), sports cars (6) or cars (5) or would empty any bundle it handled (4)
+const MIN_PAGE = 11;   // the oldest page that may join (see `caps`): an older one would not know warheads' craters, /tick or rewinding (11), missile silos (10), missile turrets (9), planes (8), pandas (7), sports cars (6) or cars (5) or would empty any bundle it handled (4)
 // Someone opening an online world: they run it if nobody is in that dimension yet, otherwise they join whoever does
 async function enterWorld(ws, m) {
   if (!store || stopping) { send(ws, { t: 'error', msg: stopping ? 'Blockcraft is updating. Reconnecting…' : notReady(), retry: true }); return; }
@@ -621,6 +621,17 @@ async function command(ws, text) {
     send(room.host, { t: 'admin', a: 'weather', v: k, secs: Math.round(mins * 60) });
     return `The weather is now ${k === 'thunder' ? 'a thunderstorm' : k}${mins ? ` for ${mins} minute${mins === 1 ? '' : 's'}` : ''}.`;
   }
+  // /tick freeze, unfreeze or step: whoever runs the world does it, and it reaches everyone from there
+  if (c === 'tick') {
+    const room = ws.room && rooms.get(ws.room);
+    if (!room) return 'Join a world first.';
+    if (!(room.host.caps >= 11)) return `${room.host.name || 'Whoever is running this world'} has an old page open and needs to reload before this works.`;
+    const a = String(name || '').toLowerCase();
+    if (a === 'freeze' || a === 'stop') { send(room.host, { t: 'admin', a: 'tick', v: 'freeze' }); return 'The world is frozen: nothing moves but the players. /tick unfreeze lets it go again.'; }
+    if (['unfreeze', 'resume', 'go', 'play'].includes(a)) { send(room.host, { t: 'admin', a: 'tick', v: 'unfreeze' }); return 'The world is moving again.'; }
+    if (a === 'step') { const n = Math.max(0.05, Math.min(60, parseFloat(rest[0]) || 1)); send(room.host, { t: 'admin', a: 'tick', v: 'step', n }); return `The world runs for ${n} second${n === 1 ? '' : 's'} (if it is frozen).`; }
+    return 'Say /tick freeze, /tick unfreeze, or /tick step and a number of seconds.';
+  }
   // every dropped item in the world goes (whoever runs it does that)
   if (c === 'clearitems' || (c === 'clear' && /^items?$/i.test(name || ''))) {
     const room = ws.room && rooms.get(ws.room);
@@ -650,7 +661,7 @@ async function command(ws, text) {
   }
   // everyone in every online world saves, loads the newest version of the game and comes straight back in
   if (c === 'reload') return reloadEveryone();
-  if (c === 'help') return 'Admin commands: /time day|noon|night|15, /weather clear|cloudy|rain|thunder, /tp x y z, /clearitems (every dropped item), /reload (everyone gets the newest version), /where name, /tp name, /bring name, /creative, /survival, /kill name, /kick name, /ban name [reason], /unban name, /op name, /deop name, /players (everyone online), /accounts (every account), /list';
+  if (c === 'help') return 'Admin commands: /time day|noon|night|15, /weather clear|cloudy|rain|thunder, /tick freeze|unfreeze|step, /tp x y z, /clearitems (every dropped item), /reload (everyone gets the newest version), /where name, /tp name, /bring name, /creative, /survival, /kill name, /kick name, /ban name [reason], /unban name, /op name, /deop name, /players (everyone online), /accounts (every account), /list';
   if (c === 'players') {
     const on = playerList().filter((x) => x.online.length);
     return on.length ? 'Online: ' + on.map((x) => `${x.name} in ${x.online.join(', ')}`).join('; ') : 'Nobody is in an online world.';

@@ -2180,6 +2180,7 @@ export function explosionDamage(x, y, z, r, skip = null, mobs = true, spare = nu
 
 export function explode(x, y, z, power) {
   const w = G.world, E = G.entities;
+  if (G.game.rewindPoint) G.game.rewindPoint('Before an explosion');   // (at most one a minute: see rewind.js)
   explosionFx(x, y, z, power);
   if (G.net) G.net.explosion(x, y, z, power);
   const r = power;
@@ -2427,6 +2428,12 @@ export class Entities {
       }
       arr.length = n;
     };
+    // (/tick freeze: everything stands still but the players, and whatever a player is riding)
+    if (G.frozenNow) {
+      const me = G.player && G.player.riding;
+      for (const m of this.mobs) if (!m.removed && (m === me || m.riderId != null || m.ridden)) m.update(dt);
+      return;
+    }
     sweep(this.mobs);
     sweep(this.items);
     sweep(this.arrows);

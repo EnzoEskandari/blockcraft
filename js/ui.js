@@ -19,6 +19,7 @@ import { requestLock, exitLock, setTouchMode, resetTouch } from './input.js';
 import { sfx, setVolume, initAudio } from './audio.js';
 import { BIOME_NAMES } from './world.js';
 import { DIM_BIOME_NAMES } from './dims.js';
+import { openRewind } from './rewind.js';
 
 const $ = (id) => document.getElementById(id);
 const h = (tag, cls, text) => {
@@ -222,6 +223,7 @@ export class UI {
     on('b-pause-spec', () => { G.game.toggleSpectator(); this.closeAll(); requestLock(); });
     on('b-adv-close', () => this.back());
     on('b-quit', () => G.game.quitToTitle());
+    on('b-pause-rewind', () => openRewind());
     on('b-respawn', () => G.game.respawn());
     on('b-death-title', () => G.game.quitToTitle());
 
@@ -295,7 +297,7 @@ export class UI {
     box.hidden = true;
     if (text[0] !== '/') return;
     const admin = !!(G.account && G.account.admin);
-    const CMDS = admin ? [['time', 'set the time of day', ['day', 'noon', 'sunset', 'night', 'midnight', 'sunrise']], ['weather', 'change the weather', ['clear', 'cloudy', 'rain', 'thunder']], ['clearitems', 'remove every dropped item'],
+    const CMDS = admin ? [['time', 'set the time of day', ['day', 'noon', 'sunset', 'night', 'midnight', 'sunrise']], ['weather', 'change the weather', ['clear', 'cloudy', 'rain', 'thunder']], ['clearitems', 'remove every dropped item'], ['tick', 'freeze the world, or let it go', ['freeze', 'unfreeze', 'step']],
       ['where', 'where a player is', 1], ['tp', 'go to a player, or to x y z', 1], ['bring', 'fetch a player to you', 1], ['creative', 'creative mode'], ['survival', 'survival mode'],
       ['kill', 'kill a player', 1], ['kick', 'send a player out', 1], ['ban', 'ban a player', 1], ['unban', 'let a player back', 1], ['op', 'make a player an admin', 1], ['deop', 'take admin away', 1],
       ['reload', 'update the game for everyone'], ['players', 'everyone online'], ['accounts', 'every account'], ['list', 'who is here'], ['help', 'all the commands']]
@@ -1000,6 +1002,7 @@ export class UI {
     const online = !!(meta && meta.online);
     $('mp-box').hidden = !online;
     $('b-quit').textContent = online ? 'Leave World' : 'Save and Quit to Title';
+    $('b-pause-rewind').hidden = !!(meta && meta.remote);   // (the rewind points are kept by whoever runs the world)
     // admins can change mode in any world
     const admin = !!(G.account && G.account.admin);
     $('b-pause-mode').hidden = !admin;

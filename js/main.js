@@ -22,6 +22,8 @@ import { rollLoot, treasureFor } from './structures.js';
 import { hash3 } from './noise.js';
 import { Net, serverURL } from './net.js';
 import './dimmobs.js';
+import { tickWarheads, clearWarheads } from './warheads.js';
+import { savePoint, forgetWorld } from './rewind.js';
 import { startPanorama, stopPanorama, panoramaFrame } from './panorama.js';
 import { tickWeather, resetWeather, weatherState, weatherKind, setWeather } from './weather.js';
 import { adoptAccountLook, accountLook, lookSaved, skinSync } from './skins.js';
@@ -261,6 +263,7 @@ function onBlockChange(x, y, z, oldId, newId) {
   }
   if (BLOCKS[oldId].sign && !BLOCKS[newId].sign && w.signs.delete(`${x},${y},${z}`)) S.signsDirty = true;
   if (oldId === B.command_block && newId !== B.command_block) forgetCmd(x, y, z);
+  S.rwDirty = true;
   if (G.net) G.net.blockChanged(x, y, z, newId);
   if (isGuest()) return;   // falling sand, water and the rest happen on the host
   S.updates.push(x, y, z);
@@ -859,9 +862,10 @@ export const Game = {
       return say(`Teleported to ${n.map(Math.floor).join(', ')}.`);
     }
     if (c === 'clearitems' || (c === 'clear' && /^items?$/i.test(args[0] || ''))) { const n = Game.clearItems(); return say(`Cleared ${n} dropped item${n === 1 ? '' : 's'}.`); }
+    if (c === 'tick') return Game.tickCommand(args, say);
     if (['creative', 'survival', 'spectator', 'spectate'].includes(c)) return Game.setMode(c === 'spectate' ? 'spectator' : c);
     if (c === 'gamemode' || c === 'gm') return Game.setMode(/^(c|1|creative)$/i.test(args[0] || '') ? 'creative' : /^(sp|3|spectator|spectate)$/i.test(args[0] || '') ? 'spectator' : 'survival');
-    return say('In a world that is not online: /time, /weather, /tp x y z, /clearitems, /creative, /survival, /spectator.');
+    return say('In a world that is not online: /time, /weather, /tick freeze|unfreeze|step, /tp x y z, /clearitems, /creative, /survival, /spectator.');
   },
   // The pause menu's button: through the server in an online world (it checks who is asking)
   toggleMode() {
@@ -1026,6 +1030,7 @@ export const Game = {
   },
 
   deleteWorld(id) {
+    forgetWorld(id);
     store('worlds', this.listWorlds().filter((w) => w.id !== id));
     for (const d of DIMS) remove('world.' + dimKey(id, d));
     remove('world.' + id + '@g');
@@ -1319,11 +1324,118 @@ export const Game = {
       k: 'world', host: G.net.spec ? '' : G.net.name, name: G.worldMeta.name, seed: w.seed, mode: G.worldMeta.mode,
       time: G.time, day: G.day || 0, nns: G.nightsNoSleep || 0, weather: weatherState(),
       spawn: w.worldSpawn || p.spawn, edits: packEdits(w), guest: playerRecord(w.guests, account, name),
-      legacy: w.legacy ? [...w.legacy] : null, gens: packGens(w), signs: Object.fromEntries(w.signs), cmds: allCmds(),
+      legacy: w.legacy ? [...w.legacy] : null, gens: packGens(w), signs: Object.fromEntries(w.signs), cmds: allCmds(), frozen: G.frozen ? 1 : 0,
     };
   },
 
   saveNow() { saveWorld(); },
+
+  // ------------------------------------------------------------ /tick
+  // Freezes the world (or lets it go again), for everyone in it; set where the world runs
+  setFrozen(v, fromNet) {
+    if (!G.world || (isGuest() && !fromNet)) return false;
+    G.frozen = !!v;
+    S.stepLeft = 0;
+    if (!isGuest()) { if (G.frozen) G.world.flags.frozen = 1; else delete G.world.flags.frozen; }
+    if (G.net && !isGuest()) G.net.send({ k: 'frz', v: G.frozen ? 1 : 0 });
+    return true;
+  },
+  // While frozen, lets it run for a few seconds
+  tickStep(secs, fromNet) {
+    if (!G.world || (isGuest() && !fromNet) || !G.frozen) return false;
+    S.stepLeft = Math.max(0.05, Math.min(60, +secs || 1));
+    if (G.net && !isGuest()) G.net.send({ k: 'frz', v: 1, st: S.stepLeft });
+    return true;
+  },
+  tickCommand(args, say) {
+    const a = (args[0] || '').toLowerCase();
+    if (a === 'freeze' || a === 'stop') { this.setFrozen(true); return say('The world is frozen: nothing moves but the players. /tick unfreeze lets it go again.'); }
+    if (a === 'unfreeze' || a === 'resume' || a === 'go' || a === 'play') { this.setFrozen(false); return say('The world is moving again.'); }
+    if (a === 'step') {
+      if (!G.frozen) return say('/tick step only works while the world is frozen.');
+      const n = Math.max(0.05, Math.min(60, parseFloat(args[1]) || 1));
+      this.tickStep(n);
+      return say(`The world runs for ${n} second${n === 1 ? '' : 's'}.`);
+    }
+    if (!a) return say(G.frozen ? 'The world is frozen. Say /tick unfreeze to let it go, or /tick step 2 to run it for 2 seconds.' : 'The world is running. Say /tick freeze to stop everything but the players.');
+    return say('Say /tick freeze, /tick unfreeze, or /tick step and a number of seconds.');
+  },
+
+  // ------------------------------------------------------------ rewinding (rewind.js keeps the points)
+  // Which world and dimension the points belong to
+  rewindKey() { const m = G.worldMeta; return m ? (m.online ? 'online:' : '') + dimKey(m.online || m.id, G.dim) : ''; },
+  // Why this player can't rewind here, if they can't
+  rewindBlocked() {
+    const m = G.worldMeta;
+    if (!m || !G.world) return 'Go into a world first.';
+    if (m.remote) return `Only ${G.net && G.net.hostName ? G.net.hostName : 'whoever is running this world'} can rewind it: the rewind points are kept on their device.`;
+    if (G.net && G.net.players.size > 1 && !(G.account && G.account.admin)) return 'While other players are here, only an admin can rewind this world.';
+    return '';
+  },
+  // Keeps the world as it is now; true once it is kept. (Unless forced, not again within a minute.)
+  async rewindPoint(label, force) {
+    const m = G.worldMeta;
+    if (!m || !G.world || !G.player || m.remote || S.noSave) return false;
+    if (!force && Date.now() - (S.rwLast || 0) < 60000) return false;
+    S.rwLast = Date.now();
+    try {
+      const { data, globals } = buildSave();
+      const key = this.rewindKey();
+      if (m.online) await savePoint(key, label, { what: 'online', data: JSON.stringify({ ...data, time: globals.time, day: globals.day, nightsNoSleep: globals.nightsNoSleep, worldSpawn: globals.worldSpawn }) });
+      else { const { player, ...g } = globals; await savePoint(key, label, { what: 'world', data: JSON.stringify(data), g }); }
+      return true;
+    } catch { return false; }
+  },
+  // Puts the world back as it was at a rewind point; returns what went wrong, if anything
+  rewindTo(point) {
+    const m = G.worldMeta, why = this.rewindBlocked();
+    if (why) return why;
+    if (!point || point.w !== this.rewindKey()) return 'That rewind point is from another world.';
+    let data;
+    try { data = JSON.parse(point.data); } catch { return 'That rewind point is damaged.'; }
+    const when = new Date(point.t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    const me = playerData(G.player);
+    if (m.online) {
+      // the old world goes to the server (everyone keeps their own things), and everyone comes back in to it
+      if (!G.net) return 'You are not connected to the server.';
+      data.guests = G.world.guests || {};
+      S.saveVersion = (S.saveVersion || 0) + 1;
+      const text = JSON.stringify(data);
+      G.net.uploadSave(text, S.saveVersion);
+      G.net.sendMe(me);
+      store('online.' + dimKey(m.online, G.dim), { v: S.saveVersion, meta: { id: m.online, name: m.name, seed: m.seed, mode: m.mode, created: m.created }, data });
+      G.net.send({ k: 'rw', n: G.net.name, at: when });
+      S.noSave = true;
+      store('rewound', { msg: `The world was rewound to ${when}.` });
+      const code = G.net.code;
+      G.ui.back(); G.ui.toast('Rewinding the world…', 5);
+      setTimeout(() => { location.href = location.pathname + (code ? '?world=' + code : ''); }, 1500);
+      return '';
+    }
+    // singleplayer: the old save goes back in place of this one, and the world is loaded again
+    const g = { ...(point.g || {}), player: me, saved: Date.now() };
+    const ok = store('world.' + dimKey(m.id, G.dim), G.dim === 'overworld' ? { ...data, ...g } : data) && store('world.' + m.id + '@g', g);
+    if (!ok) return 'Could not rewind: browser storage is full or blocked.';
+    S.noSave = true;
+    if (G.net) G.net.close();
+    teardown();
+    S.noSave = false;
+    store('rewound', { msg: `The world was rewound to ${when}.` });
+    G.ui.closeAll();
+    this.loadWorld(m.id);
+    return '';
+  },
+  // (someone else rewound the online world: everyone comes back in to it)
+  rewoundByHost(d) {
+    if (!G.net || !isGuest()) return;
+    const code = G.net.code;
+    S.noSave = true;
+    store('rewound', { msg: `${String(d.n || 'The host').slice(0, 16)} rewound the world to ${String(d.at || 'earlier').slice(0, 12)}.` });
+    G.ui.toast(`${String(d.n || 'The host').slice(0, 16)} is rewinding the world. Coming back in…`, 6);
+    setTimeout(() => { location.href = location.pathname + (code ? '?world=' + code : ''); }, 3500);
+  },
+  // (a warhead's crater: its signs go)
+  afterCrater() { S.signsDirty = true; S.rwDirty = true; },
 
   // Sent back to the title screen (signed in somewhere else)
   leaveOnline(msg) {
@@ -1532,6 +1644,7 @@ function startRemoteWorld(snap, onlineId, dim = 'overworld', me = null) {
   if (snap.signs && typeof snap.signs === 'object') w.signs = new Map(Object.entries(snap.signs).map(([k, v]) => [k, cleanSign(v)]));
   S.signsDirty = true;
   takeAllCmds(w, snap.cmds);
+  G.frozen = !!snap.frozen;
   w.onChange = onBlockChange;
   w.villagerTrades = new Map();
   w.deadMobs = new Set();
@@ -1589,6 +1702,9 @@ function teardown() {
   S.frost.clear();
   S.plates.clear(); S.plateDoors.clear();
   G.sleeping = null;
+  G.frozen = false; S.stepLeft = 0;
+  clearWarheads();
+  S.rwLast = 0; S.rwTimer = 0; S.rwDirty = false;
 }
 
 function startWorld(meta, data, opts = {}) {
@@ -1607,6 +1723,7 @@ function startWorld(meta, data, opts = {}) {
   w.stored = new Map(Object.entries((data && data.entities) || {}).map(([k, v]) => [Number(k), v]));
   w.spawned = new Set((data && data.spawned) || []);
   w.flags = (data && data.flags) || {};
+  G.frozen = !!w.flags.frozen;   // (/tick freeze lasts until /tick unfreeze, even through a save)
   w.signs = new Map(Object.entries((data && data.signs) || {}).map(([k, v]) => [k, cleanSign(v)]));
   S.signsDirty = true;
   if (dim === 'overworld' && data) {
@@ -1668,10 +1785,8 @@ function startWorld(meta, data, opts = {}) {
   G.ui.showLoading(0);
 }
 
-function saveWorld(playerOverride) {
-  if (!G.worldMeta || !G.world || !G.player) return;
-  // a guest's world belongs to the host, who keeps their inventory too
-  if (G.worldMeta.remote) { if (G.net) G.net.saveGuest(); return; }
+// What is saved of this dimension (data) and, apart, the time and the player (globals)
+function buildSave(playerOverride) {
   const w = G.world, p = G.player;
   G.entities.saveVillagers();
   const edits = packEdits(w);
@@ -1699,6 +1814,14 @@ function saveWorld(playerOverride) {
     time: G.time, day: G.day || 0, nightsNoSleep: G.nightsNoSleep || 0, weather: weatherState(),
     worldSpawn: w.worldSpawn, player: playerOverride || playerData(p), saved: Date.now(),
   };
+  return { data, globals };
+}
+
+function saveWorld(playerOverride) {
+  if (!G.worldMeta || !G.world || !G.player || S.noSave) return;
+  // a guest's world belongs to the host, who keeps their inventory too
+  if (G.worldMeta.remote) { if (G.net) G.net.saveGuest(); return; }
+  const { data, globals } = buildSave(playerOverride);
   const meta = G.worldMeta;
   if (meta.online) {
     // the server keeps online worlds (and each player's own record); this browser keeps a spare copy
@@ -1748,6 +1871,11 @@ function frame(dt) {
       G.ui.invChanged();
       if (!G.touchMode) requestLock();
       if (S.arrival) { const a = S.arrival; S.arrival = null; arrive(a); if (a.from) G.adv.entered(G.dim, a.from); if (a.type === 'gateway') G.adv.did('gateway'); }
+      // (back from a rewind: out of any blocks that came back where you stand, and the first rewind point)
+      const rw = load('rewound');
+      if (rw) { remove('rewound'); G.player.unstick(); G.ui.toast(rw.msg || 'The world was rewound.', 6); }
+      S.rwTimer = 0;
+      if (!isGuest()) setTimeout(() => { if (G.state === 'playing') Game.rewindPoint('When you came in', true); }, 4000);
       // an online world is on the server from the moment someone is in it
       if (G.worldMeta && G.worldMeta.online && !G.worldMeta.remote) saveWorld();
       if (S.outdated && !S.toldOutdated) {
@@ -1764,9 +1892,14 @@ function frame(dt) {
   // the world keeps going for everyone else while one player has the menu open
   const paused = (G.screen === 'pause' || G.screen === 'options') && !G.net;
   const host = !isGuest();
+  // /tick freeze: the world stands still (the time, creatures, items, missiles, water, fire, smoke) while the
+  // players go on moving and building; /tick step lets it run a few seconds
+  if (S.stepLeft > 0) S.stepLeft -= dt;
+  const frozen = !!G.frozen && !(S.stepLeft > 0);
+  G.frozenNow = frozen;
   if (!paused) {
     const before = G.time;
-    G.time += dt / dayLength();
+    if (!frozen) G.time += dt / dayLength();
     if (G.time >= 1) {
       G.time -= 1;
       G.day = (G.day || 0) + 1;
@@ -1795,17 +1928,22 @@ function frame(dt) {
     }
     G.player.update(dt, input);
     G.entities.update(dt);
-    leafFall(dt);
+    tickWarheads(frozen ? 0 : dt);
+    if (!frozen) leafFall(dt);
     if (host) {
-      processUpdates();
-      processWater();
-      tickFurnaces(dt);
-      tickSaplings();
-      tickCrops();
-      tickCmds(dt);
+      if (!frozen) {
+        processUpdates();
+        processWater();
+        tickFurnaces(dt);
+        tickSaplings();
+        tickCrops();
+      }
+      tickCmds(dt);   // (command blocks still work, so one can unfreeze it)
     }
-    tickFires(host);
-    tickFrost();
+    if (!frozen) {
+      tickFires(host);
+      tickFrost();
+    }
     tickBeacons(dt);
     tickPlates();
     G.adv.tick(dt);
@@ -1818,7 +1956,7 @@ function frame(dt) {
   // (more time a frame for building land while a fast plane is getting ahead of it)
   updateChunks(paused ? 14 : G.player.riding && G.player.riding.def.plane && Math.hypot(G.player.vel.x, G.player.vel.z) > 60 ? 12 : 7);
   G.player.updateCamera(dt);
-  tickWeather(paused ? 0 : dt, host);
+  tickWeather(paused || frozen ? 0 : dt, host);
   // Shadows are the dearest thing drawn. Where the game cannot keep up with them (an old tablet), they
   // are turned down a step at a time, unless the player has set them by hand.
   if (!paused && G.clock > 15 && R.gfx.shadows !== 'off' && !G.settings.shadowsPicked && R.shared.uShadowOn.value && document.visibilityState === 'visible') {
@@ -1840,13 +1978,16 @@ function frame(dt) {
       }
     }
   }
-  updateSky(G.time, paused ? 0 : dt, G.player.camInWater, G.player.camInLava);
+  updateSky(G.time, paused || frozen ? 0 : dt, G.player.camInWater, G.player.camInLava);
   G.ui.update(dt);
   drawLeads();
   render();
   endFrame();
   S.saveTimer += dt;
   if (S.saveTimer > (G.net ? 10 : 30)) { S.saveTimer = 0; saveWorld(); }
+  // a rewind point every few minutes, if anything has changed
+  S.rwTimer = (S.rwTimer || 0) + dt;
+  if (S.rwTimer > 180 && S.rwDirty && host) { S.rwTimer = 0; S.rwDirty = false; Game.rewindPoint('Every few minutes', true); }
 }
 
 // ---------------------------------------------------------------- boot

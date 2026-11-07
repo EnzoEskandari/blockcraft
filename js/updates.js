@@ -103,6 +103,20 @@ const BAMBOO_ROAD = {
 export const UPDATES = [
   {
     // a small update: it keeps the Fast & Wild picture
+    version: '1.11.11', name: 'Fallout', date: '2026-11-07',
+    splashes: ['Bang!', 'Reload!', 'Vroom!', 'Nine guns!', 'Zoom zoom!', 'Racing stripes!', 'Steady aim!', 'Pandas!', 'Bear hug!', 'Bamboo!',
+      'Rocket science!', 'Beep beep!', 'Mind the bear!', 'Supercar!', 'Cold paws!', 'Fox two!', 'Flares!', 'Lock on!', 'Bandit, six o\'clock!', 'Wheels up!', 'Turret online!', 'Afterburner!', 'Hot stuff!', 'Eat up!', 'Hold the line!', 'Thrust vectoring!', 'Supercruise!', 'Tracers!', 'Command blocks!', 'Clean shot!', 'Incoming!', 'Ignition!', 'Target locked!', 'Launch!', 'Duck and cover!', 'Undo!', 'Time stands still!'],
+    scene: BAMBOO_ROAD,
+    notes: [
+      'Warheads: when you launch from a missile silo you now choose the warhead as well as the missile. The missile decides how far it goes; the warhead decides how big the bang is.',
+      'Concussion hurts but breaks nothing, like before. Conventional, High Explosive and Thermobaric blow craters in the land, each bigger than the last. A Tactical Nuke and a Nuke flatten everything for a long way, burn the land around and leave a towering mushroom cloud.',
+      'In Survival a warhead costs TNT, from 1 for Conventional up to 64 for a Nuke. A missile shot down on its way still blows up in the air and breaks nothing.',
+      'New: Rewind World, in the Game Menu. The game keeps a rewind point every few minutes, when you come into a world, and just before any warhead or explosion goes off. Pick one to put the world back the way it was then. You keep what you are carrying and where you are. You can also save a point yourself.',
+      'Command blocks have a new command: tick freeze stops the world. Creatures, items, arrows, missiles, water, fire, smoke and the time of day all stand still, while every player can still move and build. tick step 2 lets it run for 2 seconds, and tick unfreeze lets it go again.',
+    ],
+  },
+  {
+    // a small update: it keeps the Fast & Wild picture
     version: '1.11.10', name: 'Silos', date: '2026-11-07',
     splashes: ['Bang!', 'Reload!', 'Vroom!', 'Nine guns!', 'Zoom zoom!', 'Racing stripes!', 'Steady aim!', 'Pandas!', 'Bear hug!', 'Bamboo!',
       'Rocket science!', 'Beep beep!', 'Mind the bear!', 'Supercar!', 'Cold paws!', 'Fox two!', 'Flares!', 'Lock on!', 'Bandit, six o\'clock!', 'Wheels up!', 'Turret online!', 'Afterburner!', 'Hot stuff!', 'Eat up!', 'Hold the line!', 'Thrust vectoring!', 'Supercruise!', 'Tracers!', 'Command blocks!', 'Clean shot!', 'Incoming!', 'Ignition!', 'Target locked!', 'Launch!'],

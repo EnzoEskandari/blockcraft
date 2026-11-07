@@ -4,6 +4,8 @@
 // with a Targeting System), and launch. The doors open, the missile goes straight up out of the pit in a burst
 // of fire and smoke, arcs over and comes down on the target in a huge explosion that hurts everything near but
 // breaks no blocks. Each launch takes the missile: load another for the next one.
+// (1.11.11) Each launch also carries a warhead, chosen on the screen (warheads.js): Concussion is the blast above;
+// the rest blow a crater in the land, up to a nuke.
 //
 // On the way it is a creature of its own (`ballistic_missile`), so turrets see it and shoot at it (unless they
 // are set to leave alone missiles, or the one who launched it); hit enough, it blows up where it is, with a
@@ -16,8 +18,9 @@ import { G } from './game.js';
 import { ID, B, BLOCKS } from './blocks.js';
 import { sfx } from './audio.js';
 import { raycast } from './physics.js';
-import { MOB_TYPES, MODELS, rect, explosionFx, explosionDamage } from './entities.js';
-import { flashAt, launchFlash } from './planes.js';
+import { MOB_TYPES, MODELS, rect } from './entities.js';
+import { launchFlash } from './planes.js';
+import { WARHEADS, warheadOf, detonate, prepareCrater } from './warheads.js';
 
 const rand = Math.random;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -52,7 +55,7 @@ MODELS.missile_silo = (v) => {
 // gear.coat: what is loaded (0 none, 1 short, 2 medium, 3 long); gear.owner: who set it down
 const siloGear = (saved) => {
   const g = saved && typeof saved === 'object' ? saved : {};
-  return { coat: clamp(g.coat | 0, 0, 3), owner: typeof g.owner === 'string' ? g.owner.slice(0, 40) : '', saddle: false, armor: 0, tame: true, spd: 1, temper: 0, lead: null };
+  return { coat: clamp(g.coat | 0, 0, 3), wh: clamp(g.wh | 0, 0, WARHEADS.length - 1), owner: typeof g.owner === 'string' ? g.owner.slice(0, 40) : '', saddle: false, armor: 0, tame: true, spd: 1, temper: 0, lead: null };
 };
 function siloAI(s, dt) {
   s.age += dt; s.hurtTime -= dt; s.invul -= dt;
@@ -78,12 +81,15 @@ MOB_TYPES.missile_silo = { name: 'Missile Silo', hp: 200, w: 2.9, h: 1.1, speed:
 // ---------------------------------------------------------------- the missile in flight
 const PAINT_W = [236, 236, 236];
 MODELS.ballistic_missile = (v) => {
-  const k = SILO_MISSILES[clamp(+String(v || '0').split('.')[0] || 0, 0, 2)];
+  const sv = String(v || '0').split('.');
+  const k = SILO_MISSILES[clamp(+sv[0] || 0, 0, 2)], W = warheadOf(+sv[2] || 0);
+  // (a nuclear warhead's nose is yellow and black)
+  const nose = W.nuke ? [236, 200, 30] : k.band, np = W.nuke ? { all: (g, x, y, w, h) => { for (let i = 0; i < w; i += 2) rect(g, x + i, y, 1, h, [30, 30, 30]); } } : null;
   return [
     { name: 'body', size: [6, 6, 34], pos: [0, 5, 0], color: PAINT_W, paint: { all: (g, x, y, w, h) => rect(g, x, y + 4, w, 2, [40, 40, 44]) } },
     { name: 'band', size: [6.4, 6.4, 3], pos: [0, 5, 9], color: k.band },
-    { name: 'nose0', size: [5, 5, 4], pos: [0, 5, 19], color: k.band },
-    { name: 'nose1', size: [3, 3, 3], pos: [0, 5, 22.5], color: k.band },
+    { name: 'nose0', size: [5, 5, 4], pos: [0, 5, 19], color: nose, ...(np ? { paint: np } : {}) },
+    { name: 'nose1', size: [3, 3, 3], pos: [0, 5, 22.5], color: nose },
     { name: 'finA', size: [16, 1, 6], pos: [0, 5, -14], color: [200, 200, 196] },
     { name: 'finB', size: [1, 16, 6], pos: [0, 5, -14], color: [200, 200, 196] },
     { name: 'nozzle', size: [5, 5, 2], pos: [0, 5, -18], color: [50, 50, 54] },
@@ -96,8 +102,9 @@ const missileGear = (saved) => {
   const g = saved && typeof saved === 'object' ? saved : {};
   const n = (v) => (Number.isFinite(+v) ? +v : 0);
   const p = g.path && typeof g.path === 'object' ? g.path : {};
-  return { coat: clamp(g.coat | 0, 0, 2), by: typeof g.by === 'string' ? g.by.slice(0, 40) : '', t: n(g.t),
-    path: { sx: n(p.sx), sy: n(p.sy), sz: n(p.sz), tx: n(p.tx), ty: n(p.ty), tz: n(p.tz), T: Math.max(1, n(p.T)), h: n(p.h) }, saddle: false, armor: 0, tame: true, spd: 1, temper: 0, lead: null };
+  const wh = clamp(g.wh | 0, 0, WARHEADS.length - 1);
+  return { coat: clamp(g.coat | 0, 0, 2), wh, by: typeof g.by === 'string' ? g.by.slice(0, 40) : '', t: n(g.t),
+    path: { sx: n(p.sx), sy: n(p.sy), sz: n(p.sz), tx: n(p.tx), ty: n(p.ty), tz: n(p.tz), T: Math.max(1, n(p.T)), h: n(p.h) }, saddle: false, armor: wh, tame: true, spd: 1, temper: 0, lead: null };
 };
 // Where it is along its arc, u from 0 (leaving the silo) to 1 (landing): straight up out of the pit, over in
 // an arc, and steeply down at the end
@@ -105,40 +112,18 @@ function along(P, u) {
   const s = u * u * (3 - 2 * u);
   return { x: P.sx + (P.tx - P.sx) * s, y: P.sy + (P.ty - P.sy) * u + 4 * P.h * u * (1 - u), z: P.sz + (P.tz - P.sz) * s };
 }
-// A huge explosion: it hurts and throws everything near, and breaks nothing
-function megaBlast(x, y, z, r, self = null) {
-  explosionFx(x, y, z, r);
-  if (G.net) G.net.explosion(x, y, z, r);
-  explosionDamage(x, y, z, r, null, true, self);
-  bigBoomFx(x, y, z, r);
-}
-function bigBoomFx(x, y, z, r) {
-  flashAt(x, y + 1, z, r * 2.5, r * 4, 0.9);
-  const P = G.entities.particles;
-  for (let i = 0; i < 90; i++) {   // a fireball
-    const a = rand() * Math.PI * 2, e = rand() * 1.2, sp = 4 + rand() * r * 1.4;
-    P.spawn(x, y + 0.5, z, Math.cos(a) * Math.cos(e) * sp, Math.sin(e) * sp + 2, Math.sin(a) * Math.cos(e) * sp, 1, 0.35 + rand() * 0.5, 0.05, 0.5 + rand() * 0.6, 0.4 + rand() * 0.5, -0.3);
-  }
-  const shade = 0.3 + 0.7 * clamp(G.daylight ?? 1, 0, 1);
-  for (let i = 0; i < 60; i++) {   // and a towering cloud of smoke
-    const v = (0.35 + rand() * 0.2) * shade;
-    P.spawn(x + (rand() - 0.5) * r, y + rand() * r * 0.6, z + (rand() - 0.5) * r, (rand() - 0.5) * 4, 3 + rand() * 6, (rand() - 0.5) * 4, v, v, v, 0.9 + rand() * 0.9, 2.5 + rand() * 2, -0.25, 0.5);
-  }
-  const pd = Math.hypot(G.player.pos.x - x, G.player.pos.y - y, G.player.pos.z - z);
-  G.shake = Math.max(G.shake || 0, Math.max(0, 1 - pd / (r * 10)) * 1.6);
-  sfx('explode', { x, y, z }, { vol: 2, pitch: 0.6 });
-}
 function missileAI(m, dt) {
   m.age += dt; m.hurtTime -= dt; m.invul -= dt;
   const k = SILO_MISSILES[m.gear.coat];
   if (m.dead) {
-    // shot down: it goes off where it is, smaller
-    if (!isGuest()) megaBlast(m.pos.x, m.pos.y + 0.5, m.pos.z, k.blast * 0.45, m);
+    // shot down: it goes off where it is, smaller, and (whatever its warhead) breaks nothing
+    if (!isGuest()) detonate(m.pos.x, m.pos.y + 0.5, m.pos.z, 0, k.blast * 0.45, m);
     m.removed = true;
     return;
   }
   const P = m.gear.path;
   m.gear.t += dt;
+  if (!isGuest() && warheadOf(m.gear.wh).r) prepareCrater(P.tx, P.tz, warheadOf(m.gear.wh).r);
   const u = Math.min(1, m.gear.t / P.T);
   const at = along(P, u), ahead = along(P, Math.min(1, u + 0.01));
   const dx = at.x - m.pos.x, dy = at.y - m.pos.y, dz = at.z - m.pos.z;
@@ -150,7 +135,7 @@ function missileAI(m, dt) {
   // it lands (or flies into something on the way)
   const hitSomething = u > 0.15 && BLOCKS[G.world.getBlock(Math.floor(at.x), Math.floor(at.y + 0.4), Math.floor(at.z))].solid;
   if (u >= 1 || hitSomething) {
-    if (!isGuest()) megaBlast(at.x, at.y + 0.5, at.z, k.blast, m);
+    if (!isGuest()) detonate(at.x, at.y + 0.5, at.z, m.gear.wh, k.blast, m);
     m.removed = true;
     return;
   }
@@ -192,8 +177,9 @@ function groundAt(x, z) {
   if (w.getChunk(X >> 4, Z >> 4)) { for (let y = 127; y > 1; y--) if (BLOCKS[w.getBlock(X, y, Z)].solid) return y + 1; }
   return Math.max(1, w.column(X, Z).h + 1);
 }
-export function launchSilo(s, x, z, by) {
-  if (isGuest()) { G.net.send({ k: 'silo', id: s.netId, a: 'launch', x, z }); return 'Launching…'; }
+export function launchSilo(s, x, z, by, wh = 0) {
+  wh = clamp(wh | 0, 0, WARHEADS.length - 1);
+  if (isGuest()) { G.net.send({ k: 'silo', id: s.netId, a: 'launch', x, z, wh }); return 'Launching…'; }
   if (!s || s.dead || !s.def.silo) return 'There is no silo';
   if (!s.gear.coat) return 'Load a missile first';
   if (!Number.isFinite(x) || !Number.isFinite(z)) return 'Choose a target first';
@@ -201,14 +187,16 @@ export function launchSilo(s, x, z, by) {
   if (dist > k.range) return `Too far: a ${k.name} reaches ${k.range} blocks`;
   const sy = s.pos.y + 0.6, ty = groundAt(x, z);
   const T = 4 + dist / 75, h = clamp(40 + dist * 0.3, 40, Math.max(20, 240 - Math.max(sy, ty)));
-  const m = G.entities.spawnMob('ballistic_missile', s.pos.x, sy, s.pos.z, { stay: true, gear: { coat: s.gear.coat - 1, by: by || '', t: 0, path: { sx: s.pos.x, sy, sz: s.pos.z, tx: Math.floor(x) + 0.5, ty, tz: Math.floor(z) + 0.5, T, h } } });
+  // (a rewind point first, so whatever it blows up can be put back: see rewind.js)
+  if (WARHEADS[wh].r && G.game.rewindPoint) G.game.rewindPoint(`Before a ${WARHEADS[wh].name} launch`, true);
+  const m = G.entities.spawnMob('ballistic_missile', s.pos.x, sy, s.pos.z, { stay: true, gear: { coat: s.gear.coat - 1, wh, by: by || '', t: 0, path: { sx: s.pos.x, sy, sz: s.pos.z, tx: Math.floor(x) + 0.5, ty, tz: Math.floor(z) + 0.5, T, h } } });
   m.hp = m.maxHp = k.hp;
   s.gear.coat = 0; s.vDirty = true;
   s.doors = 2.5;
   launchFlash(s.pos.x, s.pos.y + 2, s.pos.z, 0, 1, 0, 3);
   sfx('rocket', s.pos, { vol: 2, pitch: 0.6 });
   if (G.net) G.net.vfx('sl', [s.pos.x, s.pos.y + 2, s.pos.z]);
-  return `Launched at ${Math.floor(x)}, ${Math.floor(z)} (${Math.round(dist)} blocks away)`;
+  return `${WARHEADS[wh].name} launched at ${Math.floor(x)}, ${Math.floor(z)} (${Math.round(dist)} blocks away)`;
 }
 // (somebody else's launch, seen here)
 export function siloLaunchFx(a) { launchFlash(a[0], a[1], a[2], 0, 1, 0, 3); sfx('rocket', { x: a[0], y: a[1], z: a[2] }, { vol: 2, pitch: 0.6 }); }
@@ -229,7 +217,7 @@ export function siloMsg(s, d, by) {
   if (!s || !s.def || !s.def.silo) return;
   if (d.a === 'load') loadSilo(s, d.kind | 0);
   else if (d.a === 'unload') unloadSilo(s);
-  else if (d.a === 'launch') launchSilo(s, +d.x, +d.z, by);
+  else if (d.a === 'launch') launchSilo(s, +d.x, +d.z, by, d.wh | 0);
 }
 export function placeSilo(x, y, z, yaw) {
   const owner = myName();
@@ -281,7 +269,7 @@ export function openSilo(s, note = '') {
   const loaded = s.gear.coat ? SILO_MISSILES[s.gear.coat - 1] : null;
   // 1. the missile
   box.appendChild(el('div', 'color:#ffd866;margin-bottom:6px', '1. Load a missile'));
-  box.appendChild(el('div', 'margin-bottom:6px', loaded ? `Loaded: ${loaded.name} (reaches ${loaded.range} blocks, blast ${loaded.blast})` : 'Empty. Each launch uses one missile.'));
+  box.appendChild(el('div', 'margin-bottom:6px', loaded ? `Loaded: ${loaded.name} (reaches ${loaded.range} blocks, takes ${loaded.hp} damage to shoot down)` : 'Empty. Each launch uses one missile.'));
   const loads = el('div', 'display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px');
   const creative = p.creative;
   SILO_MISSILES.forEach((k, i) => {
@@ -300,8 +288,35 @@ export function openSilo(s, note = '') {
     loads.appendChild(b);
   }
   box.appendChild(loads);
-  // 2. the target
-  box.appendChild(el('div', 'color:#ffd866;margin-bottom:6px', '2. Choose where it lands'));
+  // 2. the warhead (what it costs in Survival is taken at launch)
+  box.appendChild(el('div', 'color:#ffd866;margin-bottom:6px', '2. Choose the warhead'));
+  const tnt = count(p, ID.tnt);
+  let wh = clamp(s.gear.wh | 0, 0, WARHEADS.length - 1);
+  const whs = el('div', 'display:flex;flex-wrap:wrap;gap:6px;margin-bottom:4px');
+  const whAbout = el('div', 'margin-bottom:10px;min-height:20px');
+  const whBtns = WARHEADS.map((W, i) => {
+    const b = el('button', 'font:15px monospace;padding:6px 10px;color:#fff;cursor:pointer', W.name + (creative || !W.tnt ? '' : ` (${W.tnt} TNT)`));
+    b.type = 'button';
+    b.addEventListener('click', () => { wh = i; s.gear.wh = i; showWh(); });
+    whs.appendChild(b);
+    return b;
+  });
+  const showWh = () => {
+    whBtns.forEach((b, i) => {
+      const W = WARHEADS[i], on = i === wh;
+      b.style.background = on ? (W.nuke ? '#6b5200' : '#3d5a2a') : '#2b2b2b';
+      b.style.border = on ? '2px solid ' + (W.nuke ? '#ffd23a' : '#9f9') : '2px solid #666';
+    });
+    const W = WARHEADS[wh];
+    const short = !creative && W.tnt > tnt;
+    whAbout.textContent = `${W.name}: ${W.about}${W.r ? ` (crater ${W.r * 2} blocks across)` : ''}.` + (creative || !W.tnt ? '' : ` Costs ${W.tnt} TNT, you have ${tnt}.`);
+    whAbout.style.color = short ? '#ff7b6b' : W.nuke ? '#ffd23a' : '#ddd';
+    info();
+  };
+  box.appendChild(whs);
+  box.appendChild(whAbout);
+  // 3. the target
+  box.appendChild(el('div', 'color:#ffd866;margin-bottom:6px', '3. Choose where it lands'));
   const row = el('div', 'display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:6px');
   const inp = (label, v) => { const i = el('input', 'width:110px;font:18px monospace;padding:4px;background:#111;color:#7dff8a;border:2px solid #555'); i.type = 'number'; i.value = v; row.append(el('span', null, label), i); return i; };
   const t0 = s.target || p.mark || null;
@@ -321,12 +336,14 @@ export function openSilo(s, note = '') {
     const dist = Math.round(Math.hypot(x - s.pos.x, z - s.pos.z));
     if (!loaded) { status.textContent = `${dist} blocks away.`; status.style.color = '#ddd'; return null; }
     if (dist > loaded.range) { status.textContent = `${dist} blocks away: too far for this missile (it reaches ${loaded.range}).`; status.style.color = '#ff7b6b'; return null; }
-    status.textContent = `${dist} blocks away: in range.${dist < 25 ? ' Careful: that is right next to the silo!' : ''}`; status.style.color = dist < 25 ? '#ffb347' : '#8f8';
+    const W = WARHEADS[wh], danger = Math.max(25, W.r * (W.nuke ? 4 : 2.5));
+    const me = Math.round(Math.hypot(x - p.pos.x, z - p.pos.z));
+    status.textContent = `${dist} blocks away: in range.${dist < danger ? ' Careful: that is right next to the silo!' : me < danger ? ' Careful: you are standing in the blast!' : ''}`; status.style.color = dist < danger || me < danger ? '#ffb347' : '#8f8';
     return { x, z };
   };
   ix.addEventListener('input', info); iz.addEventListener('input', info);
-  info();
-  box.appendChild(el('div', 'color:#aaa;font-size:14px', 'Turrets can shoot a missile down on its way if they hit it enough. It blows up with a huge blast that hurts everything near it, but breaks no blocks.'));
+  showWh();
+  box.appendChild(el('div', 'color:#aaa;font-size:14px', 'Turrets can shoot a missile down on its way if they hit it enough: then it blows up in the air and breaks nothing. If a warhead wrecks something by mistake, Rewind in the Game Menu puts the world back.'));
   if (note) box.appendChild(el('div', 'color:#ffd866;margin-top:8px', note));
   // 3. launch
   const btns = el('div');
@@ -336,8 +353,13 @@ export function openSilo(s, note = '') {
   go.addEventListener('click', () => {
     const t = info();
     if (!t) { sfx('click', null, { pitch: 0.5 }); return; }
+    const W = WARHEADS[wh];
+    if (!creative && W.tnt) {
+      if (count(p, ID.tnt) < W.tnt) { status.textContent = `A ${W.name} warhead needs ${W.tnt} TNT.`; status.style.color = '#ff7b6b'; sfx('click', null, { pitch: 0.5 }); return; }
+      for (let i = 0; i < W.tnt; i++) takeOne(p, ID.tnt);
+    }
     s.target = { x: Math.floor(t.x), z: Math.floor(t.z) };
-    const msg = launchSilo(s, t.x, t.z, myName());
+    const msg = launchSilo(s, t.x, t.z, myName(), wh);
     G.ui.back();
     p.hint(msg);
   });
