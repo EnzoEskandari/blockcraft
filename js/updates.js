@@ -102,6 +102,21 @@ const BAMBOO_ROAD = {
 
 export const UPDATES = [
   {
+    // a small update: it keeps the Fast & Wild picture
+    version: '1.11.1', name: 'Dogfight', date: '2026-11-06',
+    splashes: ['Bang!', 'Reload!', 'Vroom!', 'Nine guns!', 'Zoom zoom!', 'Racing stripes!', 'Steady aim!', 'Pandas!', 'Bear hug!', 'Bamboo!',
+      'Rocket science!', 'Beep beep!', 'Mind the bear!', 'Supercar!', 'Cold paws!', 'Fox two!', 'Flares!', 'Lock on!', 'Bandit, six o\'clock!', 'Wheels up!', 'Turret online!'],
+    scene: BAMBOO_ROAD,
+    notes: [
+      'Planes! A propeller Plane (glass and four blocks of iron) and a Fighter Jet (diamonds, glass, three blocks of iron and two blocks of redstone), much faster and quicker to turn. Set one on the ground and get in. W opens the throttle and S closes it; look where you want to go and the plane turns after you. It leaves the ground once it is fast enough, and stalls if it gets too slow. Fly into something, or come down too hard, and it crashes. Planes need no fuel.',
+      'Planes fight: the attack button fires the guns, the use button fires a missile, and X drops flares (on a touch screen they have buttons of their own). Press E in a plane to load it: bullets of any kind, Missiles (an iron ingot, TNT and redstone) and Flares (gunpowder and paper).',
+      'Locking on: keep a monster, a flying creature or another player\'s plane in the middle of your view and a box appears round it; hold it there and the box turns red. A missile fired then chases it. When a missile is chasing you, MISSILE flashes: drop flares and it will probably go after them instead.',
+      'The Turret, three blocks across (blocks of iron, a diamond, blocks of redstone, TNT and obsidian), shoots everything in reach: bullets at what is on the ground, missiles at what flies. Use it to see its list of every player and creature, and untick what it should leave alone. It leaves whoever set it down alone to start with.',
+      'Cars need no gas any more.',
+      'Boats slide across ice much faster and further.',
+    ],
+  },
+  {
     // a big update, with a picture of its own: a road through a bamboo jungle
     version: '1.11', name: 'Fast & Wild', date: '2026-11-05',
     splashes: ['Bang!', 'Reload!', 'Vroom!', 'Fill her up!', 'Nine guns!', 'Zoom zoom!', 'Slide!', 'Racing stripes!', 'Steady aim!', 'Pandas!',

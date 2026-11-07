@@ -50,7 +50,7 @@ function equine(v, donkey) {
   return parts;
 }
 const PLANK = [176, 140, 86];
-const ICE = [B.ice, B.packed_ice, B.frosted_ice], ICE_SPEED = 16;
+const ICE = [B.ice, B.packed_ice, B.frosted_ice], ICE_SPEED = 30;
 Object.assign(MODELS, {
   horse: (v) => equine(v, false),
   donkey: (v) => equine(v, true),
@@ -140,9 +140,9 @@ const gearFor = (wild) => (saved) => {
   };
 };
 // Can whoever sits on it decide where it goes?
-export const canSteer = (m) => !!m.def.boat || !!m.def.car || (!!m.gear && m.gear.saddle && m.gear.tame);
+export const canSteer = (m) => !!m.def.boat || !!m.def.car || !!m.def.plane || (!!m.gear && m.gear.saddle && m.gear.tame);
 
-const rideable = { persistent: true, mount: true, rideTick, unseat };
+export const rideable = { persistent: true, mount: true, rideTick, unseat };
 Object.assign(MOB_TYPES, {
   horse: { name: 'Horse', hp: 26, w: 1.2, h: 1.6, speed: 1.9, sound: 'horse', pitch: 1, drops: [drop('leather', 0, 2)], anim: 'quad', gear: gearFor(true), seat: 1.3,
     ride: { speed: 9.2, jump: 11.5, step: 1.05 }, xp: [1, 3], leadTick: leadPull, ...rideable },
@@ -151,10 +151,9 @@ Object.assign(MOB_TYPES, {
   boat: { name: 'Boat', hp: 3, w: 1.3, h: 0.55, speed: 0, sound: 'boat', pitch: 1, drops: [drop('boat', 1, 1)], anim: 'boat', boat: true, fireImmune: true, seat: 0.12,
     ride: { speed: 7.6, land: 0.7, float: B.water, sink: 0.12 }, xp: [0, 0], ai: boatAI, animate: rowing, ...rideable },
 });
-// A car keeps its paint and how much gas is in it (0 to FUEL_MAX; a gas can adds FUEL_CAN, and a unit lasts
-// its `fuelDist` blocks: a full tank goes 800 blocks in a car, 1400 in a sports car, 2000 in a supercar)
-export const FUEL_MAX = 100, FUEL_CAN = 25;
-export const CARS = { car: 'car', sports_car: 'sports_car', supercar: 'supercar' };   // (the item that sets each one down)
+// A car keeps its paint (and the gas it had before 1.12, when cars stopped needing it: kept, so nothing saved changes)
+const FUEL_MAX = 100, FUEL_CAN = 25;
+export const CARS = { car: 'car', sports_car: 'sports_car', supercar: 'supercar', plane: 'plane', fighter_jet: 'fighter_jet' };   // (the item that sets each vehicle down)
 const carGear = (saved) => {
   const g = saved && typeof saved === 'object' ? saved : {};
   return { coat: Number.isFinite(g.coat) ? Math.abs(g.coat | 0) % CAR_COLORS.length : Math.floor(rand() * CAR_COLORS.length), fuel: Number.isFinite(g.fuel) ? Math.max(0, Math.min(FUEL_MAX, g.fuel)) : FUEL_CAN,
@@ -162,9 +161,9 @@ const carGear = (saved) => {
 };
 const carType = (key, name, o) => ({ name, hp: 40, w: 1.6, h: 1.4, speed: 0, sound: 'boat', pitch: 0.6, drops: [drop(key, 1, 1)], anim: 'car', car: true, fireImmune: true,
   seat: 0.35, xp: [0, 0], ai: carAI, animate: wheels, gear: carGear, ...rideable, ...o });
-MOB_TYPES.car = carType('car', 'Car', { ride: { speed: 18, step: 1.05 }, fuelDist: 8 });
-MOB_TYPES.sports_car = carType('sports_car', 'Sports Car', { w: 1.7, h: 1.1, seat: 0.25, ride: { speed: 26, step: 1.05, grip: 2.4 }, fuelDist: 14 });
-MOB_TYPES.supercar = carType('supercar', 'Supercar', { w: 1.8, h: 1, hp: 50, seat: 0.2, ride: { speed: 34, step: 1.05, grip: 3 }, fuelDist: 20 });
+MOB_TYPES.car = carType('car', 'Car', { ride: { speed: 18, step: 1.05 } });
+MOB_TYPES.sports_car = carType('sports_car', 'Sports Car', { w: 1.7, h: 1.1, seat: 0.25, ride: { speed: 26, step: 1.05, grip: 2.4 } });
+MOB_TYPES.supercar = carType('supercar', 'Supercar', { w: 1.8, h: 1, hp: 50, seat: 0.2, ride: { speed: 34, step: 1.05, grip: 3 } });
 
 function wheels(m, dt, hs) {
   m.roll = (m.roll || 0) + hs * dt / 0.28;
@@ -214,7 +213,7 @@ function boatAI(m, dt) {
   else if (f.how === 0) m.vel.y = (f.y - m.pos.y) * 10;
   else m.vel.y = Math.max(m.vel.y - 32 * dt, -40);
   const icy = !m.afloat && ICE.includes(w.getBlock(Math.floor(m.pos.x), Math.floor(m.pos.y - 0.2), Math.floor(m.pos.z)));
-  const k = Math.max(0, 1 - dt * (m.afloat ? 1.5 : icy ? 0.3 : 6));
+  const k = Math.max(0, 1 - dt * (m.afloat ? 1.5 : icy ? 0.1 : 6));
   m.vel.x *= k; m.vel.z *= k;
   const res = moveBox(w, m, m.vel.x * dt, m.vel.y * dt, m.vel.z * dt);
   if (res.y) m.vel.y = 0;
@@ -245,18 +244,13 @@ function unseat(m, why) {
 function carry(m, rider, dt) {
   const ox = m.pos.x, oz = m.pos.z;
   m.pos.x = rider.pos.x; m.pos.y = rider.pos.y; m.pos.z = rider.pos.z;
-  let d = rider.yaw + Math.PI - m.yaw;
+  let d = (m.def.plane && m.fy != null ? m.fy : rider.yaw) + Math.PI - m.yaw;   // (a plane faces where it flies)
   d = Math.atan2(Math.sin(d), Math.cos(d));
   m.yaw += d * Math.min(1, dt * 10);
   m.age += dt; m.hurtTime -= dt; m.invul -= dt;
   const hs = dt > 0 ? Math.min(12, Math.hypot(m.pos.x - ox, m.pos.z - oz) / dt) : 0;
   m.vel.x = m.vel.y = m.vel.z = 0;
   m.onGround = true; m.fire = 0; m.angry = false;
-  if (m.def.car && !m.proxy) {
-    const was = Math.ceil(m.gear.fuel);
-    m.gear.fuel = Math.max(0, m.gear.fuel - Math.hypot(m.pos.x - ox, m.pos.z - oz) / m.def.fuelDist);
-    if (Math.ceil(m.gear.fuel) !== was) m.vDirty = true;   // (guests see the gauge go down)
-  }
   m.afloat = !!m.def.boat && G.world.getBlock(Math.floor(m.pos.x), Math.floor(m.pos.y + 0.3), Math.floor(m.pos.z)) === B.water;
   m.animate(dt, hs * 0.6, 0);
 }
@@ -317,14 +311,7 @@ export function decideUse(m, who, item, sneak) {
   if (led) return led;
   if (m.riderId != null && m.riderId !== who) return { did: 'hint', text: 'Someone is already riding it' };
   if (def.boat) return seat(m, who);
-  if (def.car) {
-    if (it && it.key === 'gas_can') {
-      if (g.fuel > FUEL_MAX - 1) return { did: 'hint', text: 'The tank is full' };
-      g.fuel = Math.min(FUEL_MAX, g.fuel + FUEL_CAN); m.vDirty = true;
-      return { did: 'fuel', text: `Gas: ${Math.round(g.fuel / FUEL_MAX * 100)}%` };
-    }
-    return seat(m, who);
-  }
+  if (def.car || def.plane) return seat(m, who);   // (cars and planes need no fuel)
   if (it && it.key === 'saddle' && !g.saddle) {
     if (horse && !g.tame) return { did: 'hint', text: 'It will not take a saddle until it is tame. Sit on it until it stops throwing you' };
     g.saddle = true; m.persistent = true; m.regear();   // (and it is yours now: it stays)
@@ -359,12 +346,7 @@ function seat(m, who) {
 // What the player's own game does with the answer
 export function applyUse(p, m, r) {
   if (!r) return;
-  if (r.did === 'fuel') {
-    if (!p.creative && p.inv.held) { p.inv.held.count--; if (p.inv.held.count <= 0) p.inv.slots[p.inv.selected] = null; }
-    G.ui.invChanged();
-    sfx('refuel', m.pos);
-    p.hint(r.text);
-  } else if (r.did === 'gear' || r.did === 'feed' || r.did === 'lead') {
+  if (r.did === 'gear' || r.did === 'feed' || r.did === 'lead') {
     if (!p.creative && p.inv.held) { p.inv.held.count--; if (p.inv.held.count <= 0) p.inv.slots[p.inv.selected] = null; }
     G.ui.invChanged();
     sfx(r.did === 'feed' ? 'eat' : 'saddle', m.pos);
@@ -376,7 +358,7 @@ export function applyUse(p, m, r) {
     sfx('saddle', m.pos);
   } else if (r.did === 'ungear') sfx('saddle', m.pos);
   else if (r.did === 'hint') p.hint(r.text);
-  else if (r.did === 'mount') { p.mountUp(m); if (m.def.car) p.hint(m.gear.fuel > 0 ? `Gas: ${Math.round(m.gear.fuel / FUEL_MAX * 100)}%` : 'Out of gas. Use a gas can on the car'); else if (m.gear && !m.gear.tame) p.hint('Hold on! It will throw you until it trusts you'); else if (m.gear && !m.gear.saddle) p.hint('Without a saddle it goes where it likes'); }
+  else if (r.did === 'mount') { p.mountUp(m); if (m.def.plane) p.hint('W/S: throttle. Look to steer. E: load ammo'); else if (m.def.car) { /* (nothing to say) */ } else if (m.gear && !m.gear.tame) p.hint('Hold on! It will throw you until it trusts you'); else if (m.gear && !m.gear.saddle) p.hint('Without a saddle it goes where it likes'); }
   else if (r.did === 'off') p.dismount(r.why);
   else if (r.did === 'tamed') { G.ui.toast(`The ${m.def.name.toLowerCase()} is tame. Put a saddle on it to ride where you like`); sfx('levelup', null, { vol: 0.5 }); if (G.adv) G.adv.did('tame'); }
 }
@@ -391,7 +373,7 @@ export function useMount(p, m) {
 export function useLabel(p, m) {
   const it = p.inv.held ? ITEMS[p.inv.held.id] : null, g = m.gear;
   if (m.def.boat) return 'Get in';
-  if (m.def.car) return it && it.key === 'gas_can' ? 'Refuel' : 'Get in';
+  if (m.def.car || m.def.plane) return 'Get in';
   if (canLead(m) && (heldByMe(m) || Array.isArray(g.lead))) return 'Take Off Lead';
   if (canLead(m) && it && it.key === 'lead' && g.lead == null) return 'Put On Lead';
   if (it && it.key === 'saddle' && !g.saddle) return 'Saddle';
@@ -419,6 +401,7 @@ export function placeBoat(x, y, z, yaw, type = 'boat') {
 // boats and striders ride on top of water and lava.
 export function rideMove(p, dt, input) {
   const m = p.riding, R = m.def.ride, w = G.world;
+  if (m.def.fly) { m.def.fly(p, dt, input); return; }   // (a plane: see planes.js)
   let fwd = input.moveZ, str = m.def.car ? 0 : input.moveX * 0.6;   // (a car can't go sideways)
   const len = Math.hypot(fwd, str);
   if (len > 1) { fwd /= len; str /= len; }
@@ -431,16 +414,10 @@ export function rideMove(p, dt, input) {
   const icy = !!m.def.boat && !afloat && ICE.includes(w.getBlock(bx, Math.floor(p.pos.y - 0.2), bz));
   let speed = icy ? ICE_SPEED : R.float ? (afloat ? R.speed : R.land) : R.speed * (m.gear ? m.gear.spd : 1) * (wet ? (m.def.car ? 0.12 : 0.4) : 1);
   if (p.effects.slow > 0) speed *= 0.7;
-  if (m.def.car) {
-    // no gas, no go; the gauge shows as it drops past each tenth
-    const tenth = Math.ceil(m.gear.fuel / FUEL_MAX * 10);
-    if (m.gear.fuel <= 0) { speed = 0; if (fwd) p.hint('Out of gas. Use a gas can on the car'); } else if (tenth !== m.tenth && m.tenth != null) p.hint(`Gas: ${tenth * 10}%`);
-    m.tenth = tenth;
-  }
   const sy = Math.sin(p.yaw), cy = Math.cos(p.yaw);
   const wx = (-sy * fwd + cy * str) * speed, wz = (-cy * fwd - sy * str) * speed;
   // (a boat gathers way and loses it slowly; an animal answers at once)
-  const k = Math.min(1, (m.def.boat ? (icy ? 0.6 : afloat ? 1.6 : 6) : m.def.car ? (p.onGround ? R.grip || 1.8 : 0.3) : p.onGround ? 9 : 3) * dt);
+  const k = Math.min(1, (m.def.boat ? (icy ? 0.3 : afloat ? 1.6 : 6) : m.def.car ? (p.onGround ? R.grip || 1.8 : 0.3) : p.onGround ? 9 : 3) * dt);
   p.vel.x += (wx - p.vel.x) * k;
   p.vel.z += (wz - p.vel.z) * k;
   if (f && f.how === 1) p.vel.y = Math.min(p.vel.y + 30 * dt, 3);

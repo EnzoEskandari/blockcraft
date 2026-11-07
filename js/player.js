@@ -17,6 +17,8 @@ import { useMount, useLabel, leaveMount, placeBoat, rideMove, canSteer, CARS } f
 import { isFence, useFence } from './leads.js';
 import { useEgg } from './eggs.js';
 import { GUNS, fireGun } from './guns.js';
+import { planeFrame } from './planes.js';
+import { openTurret, placeTurret } from './turret.js';
 
 const GRAVITY = 32;
 const JUMP_V = 9.0;
@@ -306,7 +308,8 @@ export class Player {
     }
     if (!this.frozen) { if (this.riding) this.ride(dt, input); else this.move(dt, input); }
     if (!this.frozen && !this.riding) this.portals(dt);
-    this.interact(dt, input);
+    // (in a plane the buttons fire its guns, missiles and flares instead: planes.js)
+    if (!planeFrame(this, input, dt)) this.interact(dt, input);
     if (!this.creative) this.survival(dt);
   }
 
@@ -939,19 +942,20 @@ export class Player {
     const it = held ? ITEMS[held.id] : null;
     const t = target && target.block;
     const mob = target && target.mob;
+    if (mob && mob.def.turret && !mob.dead) { openTurret(mob); return true; }
     if (mob && mob.def.mount && !mob.dead) return useMount(this, mob);
     // a boat is set down on water (or on the ground) where you point
-    if (held && (held.id === ID.boat || CARS[ITEMS[held.id].key]) && !mob) {
-      const car = CARS[ITEMS[held.id].key];
+    if (held && (held.id === ID.boat || held.id === ID.turret || CARS[ITEMS[held.id].key]) && !mob) {
+      const car = held.id === ID.turret ? 'turret' : CARS[ITEMS[held.id].key], big = car === 'turret' || car === 'plane' || car === 'fighter_jet';
       const r = this.pickRay(this.lastInput || {});
       const hit = raycast(G.world, r.ox, r.oy, r.oz, r.dx, r.dy, r.dz, 5.5, (id) => id === B.water || BLOCKS[id].solid);
       if (!hit) return false;
       const onWater = hit.id === B.water;
-      if (car && onWater) { this.hint('A car goes on the ground'); return true; }
+      if (car && onWater) { this.hint('That goes on the ground'); return true; }
       const x = r.ox + r.dx * hit.dist, z = r.oz + r.dz * hit.dist, y = onWater ? hit.y + 0.9 : hit.y + 1.02;
       if (!onWater && hit.ny !== 1) return false;
-      if (boxBlocked(G.world, x, y + (onWater ? 0.15 : 0), z, car ? 0.8 : 0.6, car ? 1.4 : 0.5)) { this.hint(`There is no room for a ${car ? 'car' : 'boat'} there`); return true; }
-      placeBoat(x, y, z, this.yaw + Math.PI, car || 'boat');
+      if (boxBlocked(G.world, x, y + (onWater ? 0.15 : 0), z, big ? 1.4 : car ? 0.8 : 0.6, car === 'turret' ? 3 : car ? 1.4 : 0.5)) { this.hint('There is no room for it there'); return true; }
+      if (car === 'turret') placeTurret(x, y, z, this.yaw + Math.PI); else placeBoat(x, y, z, this.yaw + Math.PI, car || 'boat');
       if (!this.creative) { held.count--; if (held.count <= 0) this.inv.slots[this.inv.selected] = null; G.ui.invChanged(); }
       swingHand();
       return true;
@@ -1541,7 +1545,7 @@ export class Player {
   // back at yourself (second person)
   updateCamera(dt) {
     const cam = R.camera;
-    const car = this.riding && this.riding.def.car && !this.dead;
+    const car = this.riding && (this.riding.def.car || this.riding.def.plane) && !this.dead, plane = car && !!this.riding.def.plane;
     // The sniper rifle's scope: sneak while holding it
     const held = this.inv.held, scoped = !!held && held.id === ID.sniper_rifle && this.sneaking && !this.dead && !G.screen;
     this.scope = Math.max(0, Math.min(1, this.scope + (scoped ? dt : -dt) * 8));
@@ -1572,8 +1576,8 @@ export class Player {
       const d = this.lookDir(), k = view === 'third' ? -1 : 1;
       const ex = this.pos.x, ey = this.dead ? this.pos.y + 0.6 : this.eyeY, ez = this.pos.z;
       // (a car is looked at from further back and from above, so the road ahead shows over its roof)
-      const lift = car ? 1.2 : 0, ly = ey + lift - (car ? this.viewRoom(ex, ey, ez, 0, 1, 0, lift) < lift - 0.2 ? lift : 0 : 0);
-      room = this.viewRoom(ex, ly, ez, d.x * k, d.y * k, d.z * k, car ? 6 : 4);
+      const lift = plane ? 2.6 : car ? 1.2 : 0, ly = ey + lift - (car ? this.viewRoom(ex, ey, ez, 0, 1, 0, lift) < lift - 0.2 ? lift : 0 : 0);
+      room = this.viewRoom(ex, ly, ez, d.x * k, d.y * k, d.z * k, plane ? 11 : car ? 6 : 4);
       cam.position.set(ex + d.x * k * room + shakeX, ly + d.y * k * room + shakeY, ez + d.z * k * room);
       if (view === 'second') cam.rotation.set(-this.pitch, this.yaw + Math.PI, roll);
     }

@@ -28,7 +28,7 @@ const h = (tag, cls, text) => {
   return e;
 };
 
-const CONTAINERS = ['inventory', 'crafting', 'furnace', 'chest', 'trade', 'enchant', 'anvil', 'grind', 'smith', 'beacon'];
+const CONTAINERS = ['inventory', 'crafting', 'furnace', 'chest', 'trade', 'enchant', 'anvil', 'grind', 'smith', 'beacon', 'plane'];
 const TEMP = ['enchant', 'anvil', 'grind', 'smith', 'beacon'];   // screens whose slots only hold things while they are open
 const SPLASHES = ['Now on iPad!', 'Punch a tree!', 'Made of blocks!', 'Mind the Boomers!', '100% procedural!', 'Try the caves!', 'Smooth lighting!', 'Hold to mine!', 'Seeds are fun!'];
 
@@ -238,7 +238,7 @@ export class UI {
 
   // ---------------------------------------------------------------- screens
   section(name) {
-    const map = { inventory: 'container', crafting: 'container', furnace: 'container', chest: 'container', creative: 'container', trade: 'container', enchant: 'container', anvil: 'container', grind: 'container', smith: 'container', beacon: 'container' };
+    const map = { inventory: 'container', crafting: 'container', furnace: 'container', chest: 'container', creative: 'container', trade: 'container', enchant: 'container', anvil: 'container', grind: 'container', smith: 'container', beacon: 'container', plane: 'container' };
     const id = 's-' + (map[name] || name);
     for (const s of document.querySelectorAll('.screen')) s.hidden = s.id !== id;
     const chat = name === 'chat';
@@ -1558,7 +1558,7 @@ export class UI {
     const add = (parent, ref) => { const el = this.slot(ref); parent.appendChild(el); this.container.els.push(el); return el; };
     const grid = (cols, cls) => { const g = h('div', 'grid ' + (cls || '')); g.style.setProperty('--cols', cols); return g; };
 
-    const titles = { inventory: 'Crafting', crafting: 'Crafting', furnace: 'Furnace', chest: 'Chest', enchant: 'Enchant', anvil: 'Repair & Combine', grind: 'Grindstone', smith: 'Upgrade Gear', beacon: 'Beacon' };
+    const titles = { inventory: 'Crafting', crafting: 'Crafting', furnace: 'Furnace', chest: 'Chest', enchant: 'Enchant', anvil: 'Repair & Combine', grind: 'Grindstone', smith: 'Upgrade Gear', beacon: 'Beacon', plane: data && data.title };
     const head = h('div', 'panel-head');
     head.appendChild(h('div', 'panel-title', titles[kind]));
     const close = h('button', 'close', '✕');
@@ -1762,6 +1762,13 @@ export class UI {
       const g = grid(9);
       for (let i = 0; i < 27; i++) add(g, { kind: 'normal', arr: data.slots, i });
       panel.appendChild(g);
+    } else if (kind === 'plane') {
+      // (1.11.1) a plane's nine slots: bullets for its guns, missiles and flares
+      this.craft = null;
+      const g = grid(9);
+      for (let i = 0; i < data.slots.length; i++) add(g, { kind: 'normal', arr: data.slots, i, ok: data.ok });
+      panel.appendChild(g);
+      panel.appendChild(h('div', 'hint', 'Bullets for the guns (attack button), missiles (use button) and flares (X).'));
     }
 
     panel.appendChild(h('div', 'panel-title', 'Inventory'));
@@ -2348,6 +2355,7 @@ export class UI {
       else left = this.moveInto(s, inv.slots, ref.i < 9 ? range(9, 36) : range(0, 9));
     } else if (ref.arr === inv.slots) {
       if (c && c.kind === 'chest') left = this.moveInto(s, c.data.slots, range(0, 27));
+      else if (c && c.kind === 'plane' && c.data.ok(s)) left = this.moveInto(s, c.data.slots, range(0, c.data.slots.length));
       else if (c && c.kind === 'furnace') {
         if (SMELTING.has(s.id)) left = this.moveInto(s, c.data.slots, [0]);
         else if (fuelValue(s.id)) left = this.moveInto(s, c.data.slots, [1]);
@@ -2412,6 +2420,7 @@ export class UI {
     this.cursor = null;
     this.renderCursor();
     if (this.container && this.container.kind === 'chest') sfx('chest');
+    if (this.container && this.container.kind === 'plane' && this.container.data.onClose) this.container.data.onClose();
     this.container = null;
     this.book = null;
     $('recipe-panel').hidden = true;

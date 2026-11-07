@@ -67,6 +67,14 @@ How it works:
 - **Inventory doll** (`js/doll.js`): the player model drawn into a render target by the game's renderer, read back into a canvas in the panel, only while the inventory is open.
 - **Depth on flat tiles** (`DEPTH` / `addDepth` in `js/textures.js`): after a tile is painted, some are made lighter or darker in places from a random stream of their own, never recoloured. Only obsidian keeps the `GLOSS` glints. The dragon egg is a model (`boxes`) with a `pick` box, and the block outline uses `pickBox`.
 
+## Planes and the turret (1.11.1)
+
+`js/planes.js`: `plane` and `fighter_jet` (items and mobs 451, 452) are mounts flown by `fly` (hooked into `rideMove` with `def.fly`): the plane's own heading (`fy`, `fp`) turns after the pilot's look at `flight.turn`, `thr` is the throttle, below `stall` it sinks, and hitting something fast is `crash`. Each plane's `gear.inv` holds nine slots of ammunition (the `plane` container in ui.js, opened with E; a guest sends `pinv`). `planeFrame` runs instead of `interact` while flying: the lock (nearest lockable thing within 0.2 rad, held for `flight.lock` seconds), the guns (Arrows), `launchMissile` and flares, and the cockpit HUD. Missiles and flares are sent to everyone as `vfx` (through the host, `VFX_RANGE`); only the one who fired a missile works out its damage, and `hash(missile, flare)` decides the same decoys everywhere.
+
+`js/turret.js`: the `turret` mob (item 455) aims and fires on the host: Arrows with `owner: 'turret'` and an `allow` test, and missiles at what is up in the air. `gear.off` is the list of what it leaves alone (`player:Name`, `mob:type`; its owner to start with), changed with `openTurret` (a guest sends `tlist`). Guests place one with `bo` and `t: 'turret'`. `caps` and `MIN_PAGE` are 8.
+
+Cars no longer use gas (their saved `fuel` is kept, unused); boats on ice reach `ICE_SPEED` 30 and barely slow down.
+
 ## Pandas, polar bears and bamboo (1.11)
 
 `js/wildlife.js` adds `panda` and `polar_bear` (models, mob types, spawn eggs 449 and 450: the egg numbers after 426 were taken, so `LATE_EGGS` gives them their own). `pickWild` chooses them for a chunk's first animals in bamboo jungles, jungles and snowy biomes (`Entities.wildGround` / `wildCount` let bears stand on snow and ice and come in ones and twos), and `tickWild` lets a few wander in near players on land already seen. A polar bear is `bear`: `pickTarget` sends it after whoever hit it until they are 20 blocks away. Bamboo is `solid` (a full block to walk into). `caps` and `MIN_PAGE` are 7.

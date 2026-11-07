@@ -7,6 +7,8 @@ import { validSkin, mySkin } from './skins.js';
 import { R, itemModel, tintModel } from './render.js';
 import { buildModel, holdInHand, lightAt, explosionFx, explosionDamage, spawnBlockParticles } from './entities.js';
 import { decideUse, applyUse, CARS } from './mounts.js';
+import { takePlaneInv } from './planes.js';
+import { takeTurretList, spawnTurret } from './turret.js';
 import { decideTie } from './leads.js';
 import { hatch } from './eggs.js';
 import { BLOCKS, B, ITEMS } from './blocks.js';
@@ -18,7 +20,8 @@ import { followWeather, weatherKind, weatherQuick } from './weather.js';
 
 const r2 = (v) => Math.round(v * 100) / 100;
 const MOB_RANGE = 72;          // guests see the host's mobs this far away
-const FX_RANGE = 64;           // and arrows, potions and explosions this far
+const FX_RANGE = 64;
+const VFX_RANGE = 220;         // (missiles are seen from much further off)           // and arrows, potions and explosions this far
 const ITEM_RANGE = 48;         // and dropped items this far
 const CONTAINER_BLOCKS = new Set([B.chest, B.furnace, B.furnace_lit]);
 
@@ -283,7 +286,7 @@ export class Net {
       let timer = setTimeout(() => fail('The multiplayer server did not answer. Check your connection and try again.', true), 25000);
       ws.onopen = () => {
         onStatus('Joining…');
-        ws.send(JSON.stringify({ t: 'world', id: worldId, dim, token: account.token, haves, mine, spec: spec || undefined, caps: 7 }));   // (caps: 7 knows pandas and polar bears, 6 knows sports cars and supercars, 5 knows cars, 4 keeps what is in bundles, 1 hides spectators, 2 reloads when an admin says so, 3 has weather and sets it and the time when told)
+        ws.send(JSON.stringify({ t: 'world', id: worldId, dim, token: account.token, haves, mine, spec: spec || undefined, caps: 8 }));   // (caps: 8 knows planes and turrets, 7 knows pandas and polar bears, 6 knows sports cars and supercars, 5 knows cars, 4 keeps what is in bundles, 1 hides spectators, 2 reloads when an admin says so, 3 has weather and sets it and the time when told)
       };
       ws.onerror = () => {};
       ws.onclose = () => {
@@ -536,6 +539,13 @@ export class Net {
     else this.sendNear(x, z, FX_RANGE, d);
   }
 
+  // A missile or flares, from whoever fired them, to everyone in sight of them
+  vfx(t, a) {
+    const d = { k: 'vfx', t, a: a.map((v) => (typeof v === 'number' ? r2(v) : v)) };
+    if (this.role === 'host') this.sendNear(a[0], a[2], VFX_RANGE, d);
+    else this.send(d);
+  }
+
   projectile(kind, a) {
     if (this.role !== 'host') return;
     this.sendNear(a[0], a[2], FX_RANGE, { k: kind, a: a.map((v) => (typeof v === 'number' ? r2(v) : v)) });
@@ -722,6 +732,7 @@ export class Net {
       }
       case 'bo': {
         if (!a || !w || ![d.x, d.y, d.z, d.yaw].every(Number.isFinite) || Math.hypot(d.x - a.pos.x, d.y - a.pos.y, d.z - a.pos.z) > 8) return;
+        if (d.t === 'turret') { spawnTurret(d.x, d.y, d.z, d.yaw, a.name || 'player'); break; }
         const m = G.entities.spawnMob(CARS[d.t] || 'boat', d.x, d.y, d.z);
         m.yaw = d.yaw;
         break;
@@ -781,6 +792,15 @@ export class Net {
         else { this.chat(a.name, t); this.sendExcept(from, { k: 'chat', n: a.name, t }); }
         break;
       }
+      // a guest's missile or flares: seen here, and passed on to everyone near
+      case 'vfx':
+        if (!a || !Array.isArray(d.a) || (d.t !== 'ms' && d.t !== 'fl')) return;
+        if (G.onVfx) G.onVfx(d.t, d.a);
+        this.sendNear(+d.a[0] || 0, +d.a[2] || 0, VFX_RANGE, { k: 'vfx', t: d.t, a: d.a.slice(0, 9) }, from);
+        break;
+      // a guest's plane's slots, or a turret's list, as they set them
+      case 'pinv': { const m = this.mobIndex.get(d.id); if (m && m.riderId === from) takePlaneInv(m, d.inv); break; }
+      case 'tlist': { const m = this.mobIndex.get(d.id); if (m && a && Math.hypot(m.pos.x - a.pos.x, m.pos.z - a.pos.z) < 10) takeTurretList(m, d.off); break; }
       case 'boom':
         explosionFx(d.x, d.y, d.z, d.pw);
         explosionDamage(d.x, d.y, d.z, d.pw, a, false);
@@ -884,7 +904,8 @@ export class Net {
       case 'chat': this.chat(d.sys ? null : d.n, String(d.t || '')); break;
       case 'sign': G.game.setSign(d.x | 0, d.y | 0, d.z | 0, d.l, true); break;
       case 'boom': explosionFx(d.x, d.y, d.z, d.pw); break;
-      case 'ar': { const a = d.a; G.entities.spawnArrow(a[0], a[1], a[2], a[3], a[4], a[5], 'fx', { effect: a[6] ? 'slow' : null }); break; }
+      case 'ar': { const a = d.a; G.entities.spawnArrow(a[0], a[1], a[2], a[3], a[4], a[5], 'fx', { effect: a[6] ? 'slow' : null, bullet: a[7] ? 'bullet' : null }); break; }
+      case 'vfx': if (G.onVfx) G.onVfx(d.t, d.a); break;
       case 'th': { const a = d.a; G.entities.spawnPotion(a[0], a[1], a[2], a[3], a[4], a[5], a[6], true); break; }
       case 'fb': case 'ac': case 'cb': case 'sk': G.entities.projectileFx(d.k, d.a); break;
       default: break;

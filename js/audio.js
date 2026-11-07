@@ -360,6 +360,7 @@ export function sfx(name, pos, opts = {}) {
     case 'gun_light': noise(d, t, 0.12, 'lowpass', 3200, 0.7, 0.6, 500); tone(d, t, 0.06, 'square', 200, 70, 0.22); break;
     case 'gun_heavy': noise(d, t, 0.5, 'lowpass', 1800, 0.7, 1, 160); tone(d, t, 0.2, 'square', 110, 35, 0.45); break;
     case 'rocket': noise(d, t, 0.7, 'bandpass', 900, 0.8, 0.7, 300); tone(d, t, 0.25, 'sawtooth', 220, 60, 0.2); break;
+    case 'jet': noise(d, t, 0.2, 'bandpass', 900, 0.6, 0.2, 1400); tone(d, t, 0.18, 'sawtooth', 110, 116, 0.06); break;
     case 'engine': tone(d, t, 0.22, 'sawtooth', 70, 64, 0.12); noise(d, t, 0.2, 'lowpass', 300, 1, 0.15); break;
     case 'refuel': noise(d, t, 0.6, 'bandpass', 700, 3, 0.35, 1200); break;
     case 'gun': noise(d, t, 0.3, 'lowpass', 2600, 0.7, 0.9, 260); tone(d, t, 0.12, 'square', 150, 45, 0.35); break;

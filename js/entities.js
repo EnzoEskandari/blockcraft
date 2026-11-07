@@ -1651,7 +1651,8 @@ class Arrow {
     this.shot = opts.shot || 0;       // which shot it belongs to (one crossbow shot can kill several)
     this.trident = opts.trident || null;   // a thrown trident: the stack itself, picked up again where it lands
     this.bullet = opts.bullet || null;   // fired from a gun ('bullet', 'shell' or 'rocket'): flies almost straight and is gone when it hits
-    this.boom = opts.boom || 0;          // (and blows up there: rockets and explosive bullets, which don't break blocks)
+    this.boom = opts.boom || 0;
+    this.allow = opts.allow || null;     // (a turret's: what it may hit; the rest it passes)          // (and blows up there: rockets and explosive bullets, which don't break blocks)
     this.stuck = false;
     this.age = 0;
     this.removed = false;
@@ -1710,7 +1711,7 @@ class Arrow {
     const dmg = (this.damage || Math.round(speed * 0.2) + 1) * this.mul;
     for (const m of G.entities.mobs) {
       if (this.owner === 'fx' || this.spent) break;
-      if (m.dead || m === this.shooter || m === (this.shooter && this.shooter.mount) || (this.owner === 'player' && m === p.riding) || (this.hits && this.hits.has(m))) continue;
+      if (m.dead || m === this.shooter || m === (this.shooter && this.shooter.mount) || (this.owner === 'player' && m === p.riding) || (this.allow && !this.allow(m)) || (this.hits && this.hits.has(m))) continue;
       const t = rayBox(this.pos.x, this.pos.y, this.pos.z, dx, dy, dz, m.pos.x - m.hw, m.pos.y, m.pos.z - m.hw, m.pos.x + m.hw, m.pos.y + m.h, m.pos.z + m.hw);
       if (t >= 0 && t <= len) {
         const mine = this.owner === 'player';
@@ -1744,7 +1745,7 @@ class Arrow {
     }
     if (this.owner !== 'player') {
       for (const q of this.owner === 'fx' ? [p] : players()) {
-        if (q.dead) continue;
+        if (q.dead || (this.allow && !this.allow(q))) continue;
         const t = rayBox(this.pos.x, this.pos.y, this.pos.z, dx, dy, dz, q.pos.x - q.hw, q.pos.y, q.pos.z - q.hw, q.pos.x + q.hw, q.pos.y + q.h, q.pos.z + q.hw);
         if (t >= 0 && t <= len) {
           if (this.owner !== 'fx') {
@@ -2338,7 +2339,7 @@ export class Entities {
 
   spawnArrow(x, y, z, vx, vy, vz, owner, opts) {
     this.arrows.push(new Arrow(x, y, z, vx, vy, vz, owner, opts));
-    if (owner === 'mob' && G.net) G.net.projectile('ar', [x, y, z, vx, vy, vz, opts && opts.effect === 'slow' ? 1 : 0]);
+    if ((owner === 'mob' || owner === 'turret') && G.net) G.net.projectile('ar', [x, y, z, vx, vy, vz, opts && opts.effect === 'slow' ? 1 : 0, opts && opts.bullet ? 1 : 0]);
   }
   spawnPotion(x, y, z, vx, vy, vz, kind, fx = false) {
     this.thrown.push(new Thrown(x, y, z, vx, vy, vz, kind, ID.potion, fx));
@@ -2418,6 +2419,7 @@ export class Entities {
     sweep(this.thrown);
     sweep(this.projectiles);
     sweep(this.orbs);
+    if (this.tickAir) this.tickAir(dt);   // (missiles and flares: planes.js)
     if (orbMat) { const k = 0.5 + 0.5 * Math.sin(performance.now() / 160); orbMat.color.setRGB(0.55 + 0.45 * k, 1, 0.25 * (1 - k)); }
     this.particles.update(dt);
     this.spawnTimer -= dt;
@@ -2610,6 +2612,7 @@ export class Entities {
 
   clear() {
     for (const arr of [this.mobs, this.items, this.arrows, this.tnts, this.thrown, this.projectiles, this.orbs]) { arr.forEach((e) => e.dispose()); arr.length = 0; }
+    if (this.clearAir) this.clearAir();
     this.bobber = null;
     this.particles.clear();
   }
