@@ -103,6 +103,16 @@ const BAMBOO_ROAD = {
 export const UPDATES = [
   {
     // a small update: it keeps the Fast & Wild picture
+    version: '1.11.5', name: 'Hold the Line', date: '2026-11-06',
+    splashes: ['Bang!', 'Reload!', 'Vroom!', 'Nine guns!', 'Zoom zoom!', 'Racing stripes!', 'Steady aim!', 'Pandas!', 'Bear hug!', 'Bamboo!',
+      'Rocket science!', 'Beep beep!', 'Mind the bear!', 'Supercar!', 'Cold paws!', 'Fox two!', 'Flares!', 'Lock on!', 'Bandit, six o\'clock!', 'Wheels up!', 'Turret online!', 'Afterburner!', 'Hot stuff!', 'Eat up!', 'Hold the line!'],
+    scene: BAMBOO_ROAD,
+    notes: [
+      'A turret\'s missiles no longer break blocks. Missiles fired from planes still blow craters.',
+    ],
+  },
+  {
+    // a small update: it keeps the Fast & Wild picture
     version: '1.11.4', name: 'Eat Up', date: '2026-11-06',
     splashes: ['Bang!', 'Reload!', 'Vroom!', 'Nine guns!', 'Zoom zoom!', 'Racing stripes!', 'Steady aim!', 'Pandas!', 'Bear hug!', 'Bamboo!',
       'Rocket science!', 'Beep beep!', 'Mind the bear!', 'Supercar!', 'Cold paws!', 'Fox two!', 'Flares!', 'Lock on!', 'Bandit, six o\'clock!', 'Wheels up!', 'Turret online!', 'Afterburner!', 'Hot stuff!', 'Eat up!'],

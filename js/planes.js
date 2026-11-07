@@ -15,7 +15,7 @@ import { R } from './render.js';
 import { moveBox, raycast, rayBox } from './physics.js';
 import { BLOCKS } from './blocks.js';
 import { cleanEnch } from './enchant.js';
-import { MOB_TYPES, MODELS, Entities, rect, explosionFx, explode } from './entities.js';
+import { MOB_TYPES, MODELS, Entities, rect, explosionFx, explosionDamage, explode } from './entities.js';
 import { AMMO } from './guns.js';
 import { rideable } from './mounts.js';
 
@@ -285,9 +285,13 @@ class Missile {
     const { x, y, z } = this.pos;
     if (this.owner !== 'fx') {
       if (direct) { direct.invul = 0; direct.hurt(16, x, z, this.owner === 'player', 1, null, null); }
-      // a real explosion: it blows a crater in the ground and hurts everything near (the pilot of a plane that is
-      // hit goes down with it)
-      explode(x, y, z, MISSILE_BOOM);
+      // a plane's missile is a real explosion: it blows a crater in the ground and hurts everything near (the pilot
+      // of a plane that is hit goes down with it). A turret's hurts just the same but breaks no blocks.
+      if (this.owner === 'turret') {
+        explosionFx(x, y, z, MISSILE_BOOM);
+        if (G.net) G.net.explosion(x, y, z, MISSILE_BOOM);
+        explosionDamage(x, y, z, MISSILE_BOOM, null, true, this.shooter);
+      } else explode(x, y, z, MISSILE_BOOM);
     } else explosionFx(x, y, z, MISSILE_BOOM);   // (somebody else's: the blocks it breaks come from them)
     this.removed = true;
   }
