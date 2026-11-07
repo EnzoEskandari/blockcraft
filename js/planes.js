@@ -257,8 +257,56 @@ const myName = () => (G.net ? G.net.name : (G.account && G.account.name) || 'me'
 function addFlare(x, y, z, vx, vz, id) {
   FLARES.push({ id, x, y, z, vx, vy: 2, vz, age: 0 });
 }
-const missileGeo = new THREE.BoxGeometry(0.18, 0.18, 1.1), tipGeo = new THREE.BoxGeometry(0.2, 0.2, 0.22), finGeo = new THREE.BoxGeometry(0.5, 0.04, 0.2);
-const missileMat = new THREE.MeshBasicMaterial({ color: 0xececec }), tipMat = new THREE.MeshBasicMaterial({ color: 0xc8281e });
+// A missile: a long white body with a red nose, four fins, and a roaring flame out of the back (two glowing
+// layers that flicker); it leaves a thick trail of smoke
+const missileGeo = new THREE.BoxGeometry(0.34, 0.34, 2.2), noseGeo = [new THREE.BoxGeometry(0.3, 0.3, 0.3), new THREE.BoxGeometry(0.18, 0.18, 0.2)];
+const finGeo = new THREE.BoxGeometry(0.95, 0.06, 0.45), bandGeo = new THREE.BoxGeometry(0.36, 0.36, 0.12), nozzleGeo = new THREE.BoxGeometry(0.26, 0.26, 0.16);
+const missileMat = new THREE.MeshBasicMaterial({ color: 0xececec }), tipMat = new THREE.MeshBasicMaterial({ color: 0xc8281e }), darkMat = new THREE.MeshBasicMaterial({ color: 0x3a3a3e });
+const add = { transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false };
+const flameGeo = [new THREE.BoxGeometry(0.2, 0.2, 1.1).translate(0, 0, -0.55), new THREE.BoxGeometry(0.46, 0.46, 2.2).translate(0, 0, -1.1)];
+const flameMat = [new THREE.MeshBasicMaterial({ color: 0xfff6c8, ...add, opacity: 0.95 }), new THREE.MeshBasicMaterial({ color: 0xff7418, ...add, opacity: 0.6 })];
+// (a soft round glow, for the flash as it lights and the glow round its flame)
+let glowTex = null;
+function glowTexture() {
+  if (glowTex) return glowTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d'), grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0, 'rgba(255,250,220,1)'); grad.addColorStop(0.25, 'rgba(255,190,80,0.85)'); grad.addColorStop(0.6, 'rgba(255,110,30,0.35)'); grad.addColorStop(1, 'rgba(255,80,20,0)');
+  g.fillStyle = grad; g.fillRect(0, 0, 64, 64);
+  return (glowTex = new THREE.CanvasTexture(c));
+}
+const tailGlowMat = () => new THREE.SpriteMaterial({ map: glowTexture(), ...add, opacity: 0.8 });
+// The flash as a missile lights: a burst of light, and fire and smoke blasted out behind it
+const BLASTS = [];
+const smokeShade = () => 0.3 + 0.7 * Math.min(1, Math.max(0, G.daylight ?? 1));   // (smoke is dark at night, not glowing)
+function launchFlash(x, y, z, dx, dy, dz) {
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), ...add, opacity: 1 }));
+  s.position.set(x - dx * 1.5, y - dy * 1.5, z - dz * 1.5);
+  s.scale.setScalar(4);
+  R.scene.add(s);
+  BLASTS.push({ s, age: 0 });
+  const P = G.entities.particles;
+  for (let i = 0; i < 34; i++) {   // fire, out of the back
+    const k = 6 + rand() * 14, sx = (rand() - 0.5) * 5, sy = (rand() - 0.5) * 3, sz = (rand() - 0.5) * 5;
+    P.spawn(x - dx * 1.2, y - dy * 1.2, z - dz * 1.2, -dx * k + sx, -dy * k + sy + 1, -dz * k + sz, 1, 0.45 + rand() * 0.45, 0.08, 0.22 + rand() * 0.2, 0.25 + rand() * 0.3, -0.2);
+  }
+  for (let i = 0; i < 26; i++) {   // and a cloud of smoke
+    const k = 2 + rand() * 6;
+    const v = (0.5 + rand() * 0.25) * smokeShade();
+    P.spawn(x - dx * 1.5 + (rand() - 0.5), y - dy * 1.5 + (rand() - 0.5), z - dz * 1.5 + (rand() - 0.5), -dx * k + (rand() - 0.5) * 3, 0.6 + rand(), -dz * k + (rand() - 0.5) * 3, v, v, v, 0.5 + rand() * 0.4, 1.4 + rand() * 1.2, -0.15, 0.4);
+  }
+}
+function tickBlasts(dt) {
+  for (let i = BLASTS.length - 1; i >= 0; i--) {
+    const b = BLASTS[i];
+    b.age += dt;
+    const k = b.age / 0.35;
+    b.s.material.opacity = Math.max(0, 1 - k);
+    b.s.scale.setScalar(4 + k * 5);
+    if (k >= 1) { R.scene.remove(b.s); b.s.material.dispose(); BLASTS.splice(i, 1); }
+  }
+}
 // owner: 'player' (fired by you: it does the damage), 'turret' (a turret's, on the host) or 'fx' (somebody
 // else's, seen here). target: { mob } or { name } or null; spec is how it is told to others.
 class Missile {
@@ -268,13 +316,23 @@ class Missile {
     this.spare = o.spare || null; this.allow = o.allow || null; this.shooter = o.shooter || null;
     this.top = Math.max(95, speed + 70);   // (always faster than what fired it, so a jet's own missiles get ahead of it)
     const g = new THREE.Group();
-    const body = new THREE.Mesh(missileGeo, missileMat), tip = new THREE.Mesh(tipGeo, tipMat);
-    tip.position.z = 0.62;
+    const body = new THREE.Mesh(missileGeo, missileMat);
+    const n0 = new THREE.Mesh(noseGeo[0], tipMat), n1 = new THREE.Mesh(noseGeo[1], tipMat), band = new THREE.Mesh(bandGeo, tipMat), noz = new THREE.Mesh(nozzleGeo, darkMat);
+    n0.position.z = 1.25; n1.position.z = 1.5; band.position.z = 0.7; noz.position.z = -1.18;
     const f0 = new THREE.Mesh(finGeo, missileMat), f1 = new THREE.Mesh(finGeo, missileMat);
-    f0.position.z = f1.position.z = -0.45; f1.rotation.z = Math.PI / 2;
-    g.add(body, tip, f0, f1);
+    f0.position.z = f1.position.z = -0.85; f1.rotation.z = Math.PI / 2;
+    // the flame, and a glow round it
+    const flame = new THREE.Group();
+    flame.add(new THREE.Mesh(flameGeo[0], flameMat[0]), new THREE.Mesh(flameGeo[1], flameMat[1]));
+    flame.position.z = -1.25;
+    this.glow = new THREE.Sprite(tailGlowMat());
+    this.glow.position.z = -1.6;
+    this.glow.scale.setScalar(2.2);
+    g.add(body, n0, n1, band, noz, f0, f1, flame, this.glow);
+    this.flame = flame;
     this.mesh = g;
     R.scene.add(g);
+    launchFlash(x, y, z, dx, dy, dz);
   }
   // Where what it chases is now, or null
   aim() {
@@ -328,7 +386,12 @@ class Missile {
     const hit = raycast(G.world, this.pos.x, this.pos.y, this.pos.z, d.x, d.y, d.z, len, (id) => BLOCKS[id].solid);
     if (hit) { this.pos.x += d.x * hit.dist; this.pos.y += d.y * hit.dist; this.pos.z += d.z * hit.dist; this.blast(); return; }
     this.pos.x += d.x * len; this.pos.y += d.y * len; this.pos.z += d.z * len;
-    if (Math.random() < 0.9) G.entities.particles.spawn(this.pos.x - d.x * 0.6, this.pos.y - d.y * 0.6, this.pos.z - d.z * 0.6, (rand() - 0.5) * 0.4, 0.2, (rand() - 0.5) * 0.4, 0.75, 0.75, 0.75, 0.14, 0.9, -0.08);
+    // a thick trail of smoke, with sparks of fire at the front of it
+    const P = G.entities.particles, bx = this.pos.x - d.x * 2.4, by = this.pos.y - d.y * 2.4, bz = this.pos.z - d.z * 2.4;
+    for (let i = 0; i < 2; i++) { const v = (0.7 + rand() * 0.15) * smokeShade(), b = rand() * len; P.spawn(bx - d.x * b, by - d.y * b, bz - d.z * b, (rand() - 0.5) * 0.6, 0.3, (rand() - 0.5) * 0.6, v, v, v, 0.32 + rand() * 0.2, 1.2 + rand() * 0.8, -0.08); }
+    if (rand() < 0.7) P.spawn(bx, by, bz, -d.x * 4 + (rand() - 0.5) * 2, -d.y * 4 + (rand() - 0.5) * 2, -d.z * 4 + (rand() - 0.5) * 2, 1, 0.6 + rand() * 0.3, 0.1, 0.16, 0.18, 0);
+    this.flame.scale.set(0.85 + rand() * 0.3, 0.85 + rand() * 0.3, 0.7 + rand() * 0.6);
+    this.glow.material.opacity = 0.6 + rand() * 0.35;
     this.mesh.position.set(this.pos.x, this.pos.y, this.pos.z);
     this.mesh.lookAt(this.pos.x + d.x, this.pos.y + d.y, this.pos.z + d.z);
   }
@@ -345,7 +408,7 @@ class Missile {
     } else explosionFx(x, y, z, MISSILE_BOOM);   // (somebody else's: the blocks it breaks come from them)
     this.removed = true;
   }
-  dispose() { R.scene.remove(this.mesh); }
+  dispose() { R.scene.remove(this.mesh); this.glow.material.dispose(); }
 }
 let nextId = 1;
 const newId = () => ((Date.now() & 0xffff) * 4096 + (nextId++ & 4095)) | 0;
@@ -384,6 +447,7 @@ G.onVfx = (t, a) => {
 Entities.prototype.tickAir = function (dt) {
   for (let i = 0; i < MISSILES.length; i++) { const m = MISSILES[i]; if (!m.removed) m.update(dt); }
   for (let i = MISSILES.length - 1; i >= 0; i--) if (MISSILES[i].removed) { MISSILES[i].dispose(); MISSILES.splice(i, 1); }
+  tickBlasts(dt);
   for (const f of FLARES) {
     f.age += dt; f.vy -= 4 * dt; f.vx *= 1 - dt; f.vz *= 1 - dt;
     f.x += f.vx * dt; f.y += f.vy * dt; f.z += f.vz * dt;
@@ -391,7 +455,11 @@ Entities.prototype.tickAir = function (dt) {
   }
   for (let i = FLARES.length - 1; i >= 0; i--) if (FLARES[i].age > 4) FLARES.splice(i, 1);
 };
-Entities.prototype.clearAir = function () { for (const m of MISSILES) m.dispose(); MISSILES.length = 0; FLARES.length = 0; };
+Entities.prototype.clearAir = function () {
+  for (const m of MISSILES) m.dispose();
+  for (const b of BLASTS) { R.scene.remove(b.s); b.s.material.dispose(); }
+  MISSILES.length = 0; FLARES.length = 0; BLASTS.length = 0;
+};
 
 // ---------------------------------------------------------------- the pilot's controls
 // The plane's slots: the stack of the first kind of ammunition that is wanted, or -1
