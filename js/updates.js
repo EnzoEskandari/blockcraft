@@ -103,6 +103,15 @@ const BAMBOO_ROAD = {
 export const UPDATES = [
   {
     // a small update: it keeps the Fast & Wild picture
+    version: '1.11.7', name: 'Clean Shot', date: '2026-11-06',
+    splashes: ['Bang!', 'Reload!', 'Vroom!', 'Nine guns!', 'Zoom zoom!', 'Racing stripes!', 'Steady aim!', 'Pandas!', 'Bear hug!', 'Bamboo!',
+      'Rocket science!', 'Beep beep!', 'Mind the bear!', 'Supercar!', 'Cold paws!', 'Fox two!', 'Flares!', 'Lock on!', 'Bandit, six o\'clock!', 'Wheels up!', 'Turret online!', 'Afterburner!', 'Hot stuff!', 'Eat up!', 'Hold the line!', 'Thrust vectoring!', 'Supercruise!', 'Tracers!', 'Command blocks!', 'Clean shot!'],
+    scene: BAMBOO_ROAD,
+    notes: [
+      'Missiles fired from planes and jets no longer break blocks. They still hurt everything near where they go off, and they still bring down planes.',
+    ],
+  },
+  {
     version: '1.11.6', name: 'Raptor', date: '2026-11-06',
     splashes: ['Bang!', 'Reload!', 'Vroom!', 'Nine guns!', 'Zoom zoom!', 'Racing stripes!', 'Steady aim!', 'Pandas!', 'Bear hug!', 'Bamboo!',
       'Rocket science!', 'Beep beep!', 'Mind the bear!', 'Supercar!', 'Cold paws!', 'Fox two!', 'Flares!', 'Lock on!', 'Bandit, six o\'clock!', 'Wheels up!', 'Turret online!', 'Afterburner!', 'Hot stuff!', 'Eat up!', 'Hold the line!', 'Thrust vectoring!', 'Supercruise!', 'Tracers!', 'Command blocks!'],
