@@ -126,6 +126,18 @@ const AIRBASE = {
 
 export const UPDATES = [
   {
+    // a small update: it keeps the Arsenal picture
+    version: '1.12.1', name: 'Eyes Front', date: '2026-11-07',
+    splashes: ['Bang!', 'Reload!', 'Nine guns!', 'Steady aim!', 'Fox two!', 'Lock on!', 'Turret online!', 'Tracers!', 'Incoming!', 'Launch!', 'Duck and cover!', 'Keep your stuff!', 'Eyes front!'],
+    scene: AIRBASE,
+    notes: [
+      'Turrets no longer aim at things you can\'t see: nothing further off than your view distance (it used to be up to 90 blocks, deep in the fog), and nothing under water.',
+      'Creatures swimming over deep water no longer count as flying, so turrets don\'t aim at them from far away.',
+      'With nothing to shoot at, a turret\'s guns come back level instead of staying pointed where its last target was.',
+      'Incoming silo missiles are still spotted from far off, their smoke trail showing where they are.',
+    ],
+  },
+  {
     // a big update, with a picture of its own: an airbase
     version: '1.12', name: 'Arsenal', date: '2026-11-07',
     splashes: ['Bang!', 'Reload!', 'Nine guns!', 'Steady aim!', 'Six kinds of bullet!', 'Sniper ready!', 'Rocket science!', 'Fox two!', 'Flares!', 'Lock on!',

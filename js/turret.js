@@ -6,7 +6,7 @@
 // missiles (see planes.js), which flares can draw off; they hurt what is near but break no blocks.
 import * as THREE from 'three';
 import { G } from './game.js';
-import { BLOCKS } from './blocks.js';
+import { B, BLOCKS } from './blocks.js';
 import { sfx } from './audio.js';
 import { raycast } from './physics.js';
 import { MOB_TYPES, MODELS, rect } from './entities.js';
@@ -17,11 +17,16 @@ const players = () => (G.net ? G.net.targets() : G.player ? [G.player] : []);
 const RANGE = 48, AIR_RANGE = 90;
 const MIS_RANGE = 64, MIS_AIR_RANGE = 120, MIS_WAIT = 1.6;   // (the missile turret's reach, and the wait between missiles)
 // Up in the air: nothing solid in the five blocks under it
+// (water and lava count as ground: a fish or a squid over deep water is not flying)
+const LIQUID = (id) => id === B.water || id === B.lava;
 function airborne(e) {
   const x = Math.floor(e.pos.x), z = Math.floor(e.pos.z), y = Math.floor(e.pos.y);
-  for (let i = 1; i <= 5; i++) if (G.world.isSolid(x, y - i, z)) return false;
+  if (LIQUID(G.world.getBlock(x, y, z))) return false;
+  for (let i = 1; i <= 5; i++) if (G.world.isSolid(x, y - i, z) || LIQUID(G.world.getBlock(x, y - i, z))) return false;
   return true;
 }
+// Under water, where its rounds can't reach (fish, squid, a swimmer): not worth aiming at
+const underwater = (e) => G.world.getBlock(Math.floor(e.pos.x), Math.floor(e.pos.y + (e.h || 1) * 0.8), Math.floor(e.pos.z)) === B.water;
 
 const GREY = [112, 116, 112], DARK = [56, 58, 56], STEEL = [150, 154, 150];
 MODELS.turret = () => [
@@ -97,15 +102,19 @@ function turretAI(t, dt) {
       // (an incoming silo missile comes first: it counts as much nearer than it is)
       const score = e.def && e.def.icbm ? d * 0.2 : d;
       // (and it is seen coming from further off, so there is time to bring it down)
-      const reach = e.def && e.def.icbm ? airRange * 1.6 : air ? airRange : range;
+      // (nothing further off than can be seen here, or it seems to aim at nothing in the fog; an incoming silo
+      // missile is the one thing aimed at from further, its smoke trail showing where it is)
+      const sight = (G.settings.renderDist || 5) * 16 - 10;
+      const reach = e.def && e.def.icbm ? airRange * 1.6 : Math.min(air ? airRange : range, sight);
       if (d < reach && score < bd && seen(e.pos.x, e.pos.y + 0.9, e.pos.z)) { bd = score; best = e; }
     };
-    for (const m of G.entities.mobs) if (shootable(t, m) && allowed(t, m)) consider(m, !!m.def.flies || airborne(m));
-    for (const q of players()) if (!q.dead && q.mode !== 'creative' && q.mode !== 'spectator' && allowed(t, q)) consider(q, airborne(q));
+    for (const m of G.entities.mobs) if (shootable(t, m) && allowed(t, m) && !underwater(m)) consider(m, !!m.def.flies || airborne(m));
+    for (const q of players()) if (!q.dead && q.mode !== 'creative' && q.mode !== 'spectator' && allowed(t, q) && !underwater(q)) consider(q, airborne(q));
     t.target = best;
   }
   const e = t.target;
-  if (!e || e.dead || e.removed) { t.target = null; t.animate(dt, 0, 99); return; }
+  // (nothing to shoot at: the guns come back level, instead of staying pointed where the last target was)
+  if (!e || e.dead || e.removed) { t.target = null; t.aimPitch = (t.aimPitch || 0) * Math.max(0, 1 - dt * 2.5); t.animate(dt, 0, 99); return; }
   // aim (a little ahead of what is moving)
   // (by how long a round takes to get there, all the way: something diving straight down needs aiming below it)
   const v = e.vel || { x: 0, y: 0, z: 0 }, lead = Math.hypot(e.pos.x - eye.x, e.pos.y - eye.y, e.pos.z - eye.z) / (mis ? 90 : 120);
