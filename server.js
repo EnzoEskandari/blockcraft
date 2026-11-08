@@ -417,7 +417,14 @@ async function enterWorld(ws, m) {
   ws.caps = m.caps | 0;   // what this player's page knows how to do (1: keeps a spectator out of sight, 2: reloads when told, 3: has weather, and sets it and the time when told)
   // A page older than that is not let into a world: it is told to reload. (Every update restarts this
   // server, which puts everyone out for a moment; whoever is on an old page meets this on the way back in.)
-  if (ws.caps < MIN_PAGE) { send(ws, { t: 'error', msg: 'Blockcraft has been updated. Reload this page to get the new version, then join again.' }); return; }
+  // (1.12.2) a page that knows how is told to reload itself instead, which brings the player straight back into
+  // the world on the new version: nobody is put out to the title screen by an update. Its world and items were
+  // saved already, when the server said it was restarting and again on the way out.
+  if (ws.caps < MIN_PAGE) {
+    if (ws.caps >= 2) { send(ws, { t: 'admin', a: 'reload', by: 'Blockcraft' }); return; }
+    send(ws, { t: 'error', msg: 'Blockcraft has been updated. Reload this page to get the new version, then join again.' });
+    return;
+  }
   const id = String(m.id || '').toUpperCase();
   ws.world = id;
   // already in this world (any dimension) from another tab or device: that one steps aside

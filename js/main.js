@@ -2114,6 +2114,12 @@ function frame(dt) {
   endFrame();
   S.saveTimer += dt;
   if (S.saveTimer > (G.net ? 10 : 30)) { S.saveTimer = 0; saveWorld(); }
+  // (in an online world, a word to the server every few minutes: a free Render server goes to sleep after 15
+  // minutes without any, and the game's own connection may not count, which put everyone out now and then)
+  if (G.net) {
+    S.wakeT = (S.wakeT || 0) + dt;
+    if (S.wakeT > 240) { S.wakeT = 0; fetch('/api/build', { cache: 'no-store' }).then((r) => r.json()).then((b) => noteBuild(b.build)).catch(() => {}); }
+  }
   // a rewind point every few minutes, if anything has changed
   S.rwTimer = (S.rwTimer || 0) + dt;
   if (S.rwTimer > 180 && S.rwDirty && host) { S.rwTimer = 0; S.rwDirty = false; Game.rewindPoint('Every few minutes', true); }

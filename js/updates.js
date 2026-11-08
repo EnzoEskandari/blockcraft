@@ -127,6 +127,16 @@ const AIRBASE = {
 export const UPDATES = [
   {
     // a small update: it keeps the Arsenal picture
+    version: '1.12.2', name: 'Stay Connected', date: '2026-11-07',
+    splashes: ['Bang!', 'Reload!', 'Nine guns!', 'Steady aim!', 'Fox two!', 'Lock on!', 'Turret online!', 'Tracers!', 'Incoming!', 'Launch!', 'Duck and cover!', 'Keep your stuff!', 'Eyes front!', 'Still here!'],
+    scene: AIRBASE,
+    notes: [
+      'When Blockcraft is updated while you are playing online, the game now reloads itself and takes you straight back into your world, instead of sending you out with a message to reload.',
+      'Online worlds no longer drop everyone every so often: the game keeps the server awake while anyone is playing.',
+    ],
+  },
+  {
+    // a small update: it keeps the Arsenal picture
     version: '1.12.1', name: 'Eyes Front', date: '2026-11-07',
     splashes: ['Bang!', 'Reload!', 'Nine guns!', 'Steady aim!', 'Fox two!', 'Lock on!', 'Turret online!', 'Tracers!', 'Incoming!', 'Launch!', 'Duck and cover!', 'Keep your stuff!', 'Eyes front!'],
     scene: AIRBASE,
