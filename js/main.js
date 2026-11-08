@@ -23,7 +23,7 @@ import { hash3 } from './noise.js';
 import { Net, serverURL } from './net.js';
 import './dimmobs.js';
 import { tickWarheads, clearWarheads } from './warheads.js';
-import { savePoint, forgetWorld } from './rewind.js';
+import { savePoint, latestPoint, listPoints, forgetWorld } from './rewind.js';
 import { startPanorama, stopPanorama, panoramaFrame } from './panorama.js';
 import { tickWeather, resetWeather, weatherState, weatherKind, setWeather } from './weather.js';
 import { adoptAccountLook, accountLook, lookSaved, skinSync } from './skins.js';
@@ -863,9 +863,10 @@ export const Game = {
     }
     if (c === 'clearitems' || (c === 'clear' && /^items?$/i.test(args[0] || ''))) { const n = Game.clearItems(); return say(`Cleared ${n} dropped item${n === 1 ? '' : 's'}.`); }
     if (c === 'tick') return Game.tickCommand(args, say);
+    if (c === 'gamerule') return Game.gameruleCommand(args, say);
     if (['creative', 'survival', 'spectator', 'spectate'].includes(c)) return Game.setMode(c === 'spectate' ? 'spectator' : c);
     if (c === 'gamemode' || c === 'gm') return Game.setMode(/^(c|1|creative)$/i.test(args[0] || '') ? 'creative' : /^(sp|3|spectator|spectate)$/i.test(args[0] || '') ? 'spectator' : 'survival');
-    return say('In a world that is not online: /time, /weather, /tick freeze|unfreeze|step, /tp x y z, /clearitems, /creative, /survival, /spectator.');
+    return say('In a world that is not online: /time, /weather, /tick freeze|unfreeze|step, /gamerule keepInventory true|false, /tp x y z, /clearitems, /creative, /survival, /spectator.');
   },
   // The pause menu's button: through the server in an online world (it checks who is asking)
   toggleMode() {
@@ -988,10 +989,13 @@ export const Game = {
     if (!meta) return;
     keepSaves();
     // you come back in whichever dimension you left in
-    const g = loadGlobals(id);
-    const dim = (g && g.player && g.player.dim) || 'overworld';
-    const data = load('world.' + dimKey(id, dim));
-    startWorld({ ...meta, dim }, data, { globals: g });
+    // (nothing runs while the saves are looked through: whatever world was open is gone from now)
+    if (G.world) teardown();
+    G.state = 'switching';
+    newestGlobals(id, loadGlobals(id)).then((g) => {
+      const dim = (g && g.player && g.player.dim) || 'overworld';
+      return loadDim(id, dim, g).then(({ data, globals }) => startWorld({ ...meta, dim }, data, { globals }));
+    }).catch((err) => { console.error(err); G.state = 'title'; G.ui.showTitle(); G.ui.toast('Could not open that world.'); });
   },
 
   // A whole world (every dimension, the player, the time) as one file to keep somewhere safe
@@ -1095,8 +1099,11 @@ export const Game = {
       return;
     }
     saveWorld(carry);
-    startWorld({ ...meta, dim: to }, load('world.' + dimKey(meta.id, to)), { player: carry, globals: loadGlobals(meta.id), arrival });
-    S.travelling = false;
+    G.state = 'switching';
+    loadDim(meta.id, to, loadGlobals(meta.id)).then(({ data, globals }) => {
+      startWorld({ ...meta, dim: to }, data, { player: carry, globals, arrival });
+      S.travelling = false;
+    });
   },
 
   // Stepping into the exit portal after beating the dragon: the ending, then home
@@ -1324,11 +1331,30 @@ export const Game = {
       k: 'world', host: G.net.spec ? '' : G.net.name, name: G.worldMeta.name, seed: w.seed, mode: G.worldMeta.mode,
       time: G.time, day: G.day || 0, nns: G.nightsNoSleep || 0, weather: weatherState(),
       spawn: w.worldSpawn || p.spawn, edits: packEdits(w), guest: playerRecord(w.guests, account, name),
-      legacy: w.legacy ? [...w.legacy] : null, gens: packGens(w), signs: Object.fromEntries(w.signs), cmds: allCmds(), frozen: G.frozen ? 1 : 0,
+      legacy: w.legacy ? [...w.legacy] : null, gens: packGens(w), signs: Object.fromEntries(w.signs), cmds: allCmds(), frozen: G.frozen ? 1 : 0, keepInv: G.keepInv ? 1 : 0,
     };
   },
 
   saveNow() { saveWorld(); },
+
+  // ------------------------------------------------------------ Keep Inventory
+  // Set where the world runs, and sent to everyone in it
+  setKeepInv(v, fromNet) {
+    if (!G.world || (isGuest() && !fromNet)) return false;
+    G.keepInv = !!v;
+    if (!isGuest()) { if (G.keepInv) G.world.flags.keepInventory = true; else delete G.world.flags.keepInventory; }
+    if (G.net && !isGuest()) G.net.send({ k: 'kinv', v: G.keepInv ? 1 : 0 });
+    return true;
+  },
+  // /gamerule keepInventory true|false
+  gameruleCommand(args, say) {
+    if (!/^keepinventory$/i.test(args[0] || '')) return say('The game rule there is: keepInventory (say /gamerule keepInventory true or false).');
+    const v = (args[1] || '').toLowerCase();
+    if (!v) return say(`keepInventory is ${G.keepInv ? 'true' : 'false'}.`);
+    if (!['true', 'false', 'on', 'off'].includes(v)) return say('Say /gamerule keepInventory true or false.');
+    this.setKeepInv(v === 'true' || v === 'on');
+    return say(G.keepInv ? 'Keep Inventory is on: nobody loses their things when they die.' : 'Keep Inventory is off: what you carry drops where you die.');
+  },
 
   // ------------------------------------------------------------ /tick
   // Freezes the world (or lets it go again), for everyone in it; set where the world runs
@@ -1420,15 +1446,17 @@ export const Game = {
     }
     // singleplayer: the old save goes back in place of this one, and the world is loaded again
     const g = { ...(point.g || {}), player: me, saved: Date.now() };
+    data.at = g.saved;
     const ok = store('world.' + dimKey(m.id, G.dim), G.dim === 'overworld' ? { ...data, ...g } : data) && store('world.' + m.id + '@g', g);
-    if (!ok) return 'Could not rewind: browser storage is full or blocked.';
     S.noSave = true;
     if (G.net) G.net.close();
     teardown();
     S.noSave = false;
     store('rewound', { msg: `The world was rewound to ${when}.` });
     G.ui.closeAll();
-    this.loadWorld(m.id);
+    // (with the save storage full, it goes in the backup storage, and the world loads once it is there)
+    if (ok) this.loadWorld(m.id);
+    else savePoint(dimKey(m.id, point.w.split('~')[1] || 'overworld') + '#save', 'Saved', { t: g.saved, what: 'world', data: JSON.stringify(data), g }, 2).then(() => this.loadWorld(m.id), () => this.loadWorld(m.id));
     return '';
   },
   // (someone else rewound the online world: everyone comes back in to it)
@@ -1511,6 +1539,32 @@ function packGens(w) {
   const out = {};
   for (const [k, v] of w.gens) (out[v] || (out[v] = [])).push(k);
   return out;
+}
+
+// The time, the world spawn and the player: from the save storage, or from a copy in the backup storage if newer
+async function newestGlobals(id, g) {
+  try {
+    for (const d of DIMS) {
+      const p = (await listPoints(dimKey(id, d) + '#save'))[0];
+      if (p && p.g && p.g.saved > ((g && g.saved) || 0)) g = p.g;
+    }
+  } catch { /* no backup storage here */ }
+  return g;
+}
+// A dimension's save: the one in the save storage, or (when that was full) the newer one kept in the backup
+// storage. Resolves { data, globals }.
+async function loadDim(id, dim, g) {
+  const data = load('world.' + dimKey(id, dim));
+  const at = (data && (data.at || data.saved)) || (dim === 'overworld' && g && g.saved) || 0;
+  try {
+    const pt = await latestPoint(dimKey(id, dim) + '#save');
+    if (pt && pt.g && pt.t > at) {
+      const d = JSON.parse(pt.data);
+      const globals = g && g.saved > pt.g.saved ? g : pt.g;
+      return { data: dim === 'overworld' ? { ...d, ...globals } : d, globals };
+    }
+  } catch { /* no backup storage here */ }
+  return { data, globals: g };
 }
 
 // Time of day and the player (singleplayer), kept apart from each dimension's blocks
@@ -1607,13 +1661,43 @@ function makeSeed(seedText) {
   return hashString(seedText);
 }
 
+// Each chunk's changed blocks, as runs (1.12): a string of "gap+length:value" in base 36, where the gap is from
+// the end of the run before, the length is left out when it is 1 and the value when it is 0 (air). Blocks next
+// to each other are next to each other in the chunk's order, so a crater or a dug-out room is a few runs, not
+// one entry a block (a nuke went from about a megabyte of save to a few dozen kilobytes). Saves from before
+// 1.12 hold [index, value, index, value…] arrays, still read by unpackEdits.
+function packChunkEdits(m) {
+  const keys = [...m.keys()].sort((a, b) => a - b);
+  const out = [];
+  let end = 0;
+  for (let j = 0; j < keys.length;) {
+    const start = keys[j], v = m.get(start);
+    let n = 1;
+    while (j + n < keys.length && keys[j + n] === start + n && m.get(keys[j + n]) === v) n++;
+    out.push((start - end).toString(36) + (n > 1 ? '+' + n.toString(36) : '') + (v ? ':' + v.toString(36) : ''));
+    end = start + n;
+    j += n;
+  }
+  return out.join(',');
+}
+function unpackChunkEdits(text, m) {
+  let end = 0;
+  for (const tok of text.split(',')) {
+    if (!tok) continue;
+    const c = tok.indexOf(':'), body = c < 0 ? tok : tok.slice(0, c), v = c < 0 ? 0 : parseInt(tok.slice(c + 1), 36);
+    const p = body.indexOf('+'), gap = parseInt(p < 0 ? body : body.slice(0, p), 36), n = p < 0 ? 1 : parseInt(body.slice(p + 1), 36);
+    if (!(gap >= 0) || !(n >= 1) || !(v >= 0)) return;
+    const start = end + gap;
+    for (let i = 0; i < n && start + i < 65536; i++) m.set(start + i, v);
+    end = start + n;
+  }
+}
 function packEdits(w) {
   const edits = {};
   for (const [k, m] of w.edits) {
+    if (!m.size) continue;
     const cx = Math.floor(k / 65536) - 32768, cz = (k % 65536) - 32768;
-    const arr = [];
-    for (const [i, v] of m) arr.push(i, v);
-    edits[cx + ',' + cz] = arr;
+    edits[cx + ',' + cz] = packChunkEdits(m);
   }
   return edits;
 }
@@ -1621,8 +1705,10 @@ function packEdits(w) {
 function unpackEdits(w, edits) {
   for (const [k, arr] of Object.entries(edits || {})) {
     const [cx, cz] = k.split(',').map(Number);
+    if (!Number.isFinite(cx + cz)) continue;
     const m = new Map();
-    for (let i = 0; i < arr.length; i += 2) m.set(arr[i], arr[i + 1]);
+    if (typeof arr === 'string') unpackChunkEdits(arr, m);
+    else if (Array.isArray(arr)) for (let i = 0; i < arr.length; i += 2) m.set(arr[i], arr[i + 1]);
     w.edits.set(ckey(cx, cz), m);
   }
 }
@@ -1674,6 +1760,7 @@ function startRemoteWorld(snap, onlineId, dim = 'overworld', me = null) {
   S.signsDirty = true;
   takeAllCmds(w, snap.cmds);
   G.frozen = !!snap.frozen;
+  G.keepInv = !!snap.keepInv;
   w.onChange = onBlockChange;
   w.villagerTrades = new Map();
   w.deadMobs = new Set();
@@ -1731,7 +1818,7 @@ function teardown() {
   S.frost.clear();
   S.plates.clear(); S.plateDoors.clear();
   G.sleeping = null;
-  G.frozen = false; S.stepLeft = 0;
+  G.frozen = false; S.stepLeft = 0; G.keepInv = false;
   clearWarheads();
   S.rwLast = 0; S.rwTimer = 0; S.rwDirty = false;
 }
@@ -1753,6 +1840,10 @@ function startWorld(meta, data, opts = {}) {
   w.spawned = new Set((data && data.spawned) || []);
   w.flags = (data && data.flags) || {};
   G.frozen = !!w.flags.frozen;   // (/tick freeze lasts until /tick unfreeze, even through a save)
+  // Keep Inventory: chosen when the world was made (a new world has no data yet), or later in the Game Menu
+  if (!data && Game.newKeepInv) w.flags.keepInventory = true;
+  Game.newKeepInv = false;
+  G.keepInv = !!w.flags.keepInventory;
   w.signs = new Map(Object.entries((data && data.signs) || {}).map(([k, v]) => [k, cleanSign(v)]));
   S.signsDirty = true;
   if (dim === 'overworld' && data) {
@@ -1824,6 +1915,7 @@ function buildSave(playerOverride) {
   // this dimension's blocks and creatures
   const data = {
     v: 2,
+    at: Date.now(),   // (when: to tell it from a copy kept in the backup storage)
     dim: G.dim,
     guests: w.guests || {},
     entities: G.entities.savedEntities(),
@@ -1865,7 +1957,15 @@ function saveWorld(playerOverride) {
   const list = Game.listWorlds();
   const m = list.find((x) => x.id === G.worldMeta.id);
   if (m) { m.lastPlayed = Date.now(); store('worlds', list); }
-  if (!ok) G.ui.toast('Could not save: browser storage is full or blocked');
+  if (!ok) {
+    // This browser's save storage is full (it holds only a few megabytes for every world together). Nothing is
+    // lost: the world is kept in its other, much bigger storage instead (where the rewind points are), and
+    // loadWorld takes it from there when it is newer than the save that would not fit.
+    const key = dimKey(meta.id, G.dim) + '#save';
+    savePoint(key, 'Saved', { t: globals.saved, what: 'world', data: JSON.stringify(data), g: globals }, 2)
+      .then(() => { S.backupOk = Date.now(); }, () => G.ui.toast('Could not save this world: browser storage is full or blocked. Delete a world you don\'t need to make room.', 8));
+    if (!S.toldFull || Date.now() - S.toldFull > 300000) { S.toldFull = Date.now(); G.ui.toast('This browser\'s save space is full, so your world is being saved in its backup storage instead. Deleting worlds you don\'t need makes room.', 8); }
+  }
 }
 
 // ---------------------------------------------------------------- loop

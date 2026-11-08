@@ -289,7 +289,7 @@ export class Net {
       let timer = setTimeout(() => fail('The multiplayer server did not answer. Check your connection and try again.', true), 25000);
       ws.onopen = () => {
         onStatus('Joining…');
-        ws.send(JSON.stringify({ t: 'world', id: worldId, dim, token: account.token, haves, mine, spec: spec || undefined, caps: 12 }));   // (caps: 12 keeps its own rewind points, 11 knows warheads, /tick and rewinding, 10 knows missile silos, 9 knows missile turrets, 8 knows planes and turrets, 7 knows pandas and polar bears, 6 knows sports cars and supercars, 5 knows cars, 4 keeps what is in bundles, 1 hides spectators, 2 reloads when an admin says so, 3 has weather and sets it and the time when told)
+        ws.send(JSON.stringify({ t: 'world', id: worldId, dim, token: account.token, haves, mine, spec: spec || undefined, caps: 14 }));   // (caps: 14 reads blocks saved as runs, 13 knows Keep Inventory, 12 keeps its own rewind points, 11 knows warheads, /tick and rewinding, 10 knows missile silos, 9 knows missile turrets, 8 knows planes and turrets, 7 knows pandas and polar bears, 6 knows sports cars and supercars, 5 knows cars, 4 keeps what is in bundles, 1 hides spectators, 2 reloads when an admin says so, 3 has weather and sets it and the time when told)
       };
       ws.onerror = () => {};
       ws.onclose = () => {
@@ -426,6 +426,7 @@ export class Net {
     // (the time and the weather are set by whoever runs the world, and reach everyone else from there)
     if (m.a === 'time') { if (this.role === 'host') G.game.setTime(m.v); return; }
     if (m.a === 'weather') { if (this.role === 'host') G.game.setWeatherNow(m.v, m.secs); return; }
+    if (m.a === 'gamerule') { if (this.role === 'host') G.game.setKeepInv(!!m.v); return; }
     if (m.a === 'tick') { if (this.role === 'host') { if (m.v === 'step') G.game.tickStep(m.n); else G.game.setFrozen(m.v === 'freeze'); } return; }
     if (m.a === 'clearitems') { if (this.role === 'host') { const n = G.game.clearItems(); this.chat(null, `Cleared ${n} dropped item${n === 1 ? '' : 's'}.`); } return; }
     if (m.a === 'kill') {
@@ -922,6 +923,7 @@ export class Net {
       case 'frz': if (d.st) { G.game.setFrozen(true, true); G.game.tickStep(d.st, true); } else G.game.setFrozen(!!d.v, true); break;
       case 'rw': G.game.rewoundByHost(d); break;
       case 'rwp': G.game.keepMyPoint(d.t); break;
+      case 'kinv': G.game.setKeepInv(!!d.v, true); break;
       case 'ar': { const a = d.a; G.entities.spawnArrow(a[0], a[1], a[2], a[3], a[4], a[5], 'fx', { effect: a[6] ? 'slow' : null, bullet: a[7] ? 'bullet' : null, tracer: a[7] === 2 }); break; }
       case 'vfx': if (G.onVfx) G.onVfx(d.t, d.a); break;
       case 'th': { const a = d.a; G.entities.spawnPotion(a[0], a[1], a[2], a[3], a[4], a[5], a[6], true); break; }

@@ -72,7 +72,9 @@ const isPlayer = (e) => !!(e.isPlayer || e.remote);
 const groupOf = (e) => (isPlayer(e) ? 'all:players' : e.def && e.def.icbm ? 'all:missiles' : e.def && (e.def.hostile || e.def.bear) ? 'all:monsters' : 'all:animals');
 function allowed(t, e) {
   const off = t.gear.off;
-  if (e.def && e.def.icbm && e.gear && e.gear.by && off.includes('player:' + e.gear.by)) return false;   // (a silo missile from someone it leaves alone)
+  // A silo missile from someone it leaves alone is let go only while it climbs away from their silo: once it is
+  // coming down, every turret near shoots at it, whoever sent it (so your turrets do bring down your own missiles)
+  if (e.def && e.def.icbm && e.gear && e.gear.by && off.includes('player:' + e.gear.by) && !(e.gear.path && e.gear.t > e.gear.path.T * 0.5)) return false;
   return !off.includes(turretKey(e)) && !off.includes(groupOf(e));
 }
 // (vehicles and other turrets are never aimed at themselves: their riders are)
@@ -92,7 +94,11 @@ function turretAI(t, dt) {
     let best = null, bd = Infinity;
     const consider = (e, air) => {
       const d = Math.hypot(e.pos.x - eye.x, e.pos.y - eye.y, e.pos.z - eye.z);
-      if (d < (air ? airRange : range) && d < bd && seen(e.pos.x, e.pos.y + 0.9, e.pos.z)) { bd = d; best = e; }
+      // (an incoming silo missile comes first: it counts as much nearer than it is)
+      const score = e.def && e.def.icbm ? d * 0.2 : d;
+      // (and it is seen coming from further off, so there is time to bring it down)
+      const reach = e.def && e.def.icbm ? airRange * 1.6 : air ? airRange : range;
+      if (d < reach && score < bd && seen(e.pos.x, e.pos.y + 0.9, e.pos.z)) { bd = score; best = e; }
     };
     for (const m of G.entities.mobs) if (shootable(t, m) && allowed(t, m)) consider(m, !!m.def.flies || airborne(m));
     for (const q of players()) if (!q.dead && q.mode !== 'creative' && q.mode !== 'spectator' && allowed(t, q)) consider(q, airborne(q));
@@ -101,7 +107,8 @@ function turretAI(t, dt) {
   const e = t.target;
   if (!e || e.dead || e.removed) { t.target = null; t.animate(dt, 0, 99); return; }
   // aim (a little ahead of what is moving)
-  const v = e.vel || { x: 0, y: 0, z: 0 }, lead = Math.hypot(e.pos.x - eye.x, e.pos.z - eye.z) / 110;
+  // (by how long a round takes to get there, all the way: something diving straight down needs aiming below it)
+  const v = e.vel || { x: 0, y: 0, z: 0 }, lead = Math.hypot(e.pos.x - eye.x, e.pos.y - eye.y, e.pos.z - eye.z) / (mis ? 90 : 120);
   const ax = e.pos.x + (v.x || 0) * lead - eye.x, ay = e.pos.y + 0.9 + (v.y || 0) * lead - eye.y, az = e.pos.z + (v.z || 0) * lead - eye.z;
   const d = Math.hypot(ax, ay, az) || 1;
   t.yaw = Math.atan2(ax, az);

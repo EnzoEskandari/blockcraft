@@ -113,7 +113,8 @@ function along(P, u) {
   return { x: P.sx + (P.tx - P.sx) * s, y: P.sy + (P.ty - P.sy) * u + 4 * P.h * u * (1 - u), z: P.sz + (P.tz - P.sz) * s };
 }
 function missileAI(m, dt) {
-  m.age += dt; m.hurtTime -= dt; m.invul -= dt;
+  m.age += dt; m.hurtTime -= dt;
+  m.invul = 0;   // (every round that hits it counts: there is no moment after a hit when it can't be hurt)
   const k = SILO_MISSILES[m.gear.coat];
   if (m.dead) {
     // shot down: it goes off where it is, smaller, and (whatever its warhead) breaks nothing

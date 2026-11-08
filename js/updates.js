@@ -91,7 +91,7 @@ const BAMBOO_ROAD = {
     }
     // lamps on the verges
     for (let z = -26; z <= 26; z += 13) for (const x of [-5, 5]) { for (let y = 1; y <= 3; y++) put(x, y, z, 'oak_fence'); put(x, 4, z, 'glowstone'); }
-    put(5, 1, 14, 'sign', 3); sign(5, 1, 14, ['Blockcraft 1.11', 'Fast & Wild', 'Guns, cars,', 'pandas, bears']);
+    put(5, 1, 14, 'sign', 3); sign(5, 1, 14, ['Blockcraft 1.11', 'Fast & Wild', 'Cars, pandas,', 'polar bears']);
     model('supercar', -2, 1, 3, 0.25, '5.0.0');
     model('sports_car', 2, 1, 15, Math.PI - 0.15, '4.0.0');
     model('car', -2, 1, 20, 0.1, '1.0.0');
@@ -100,163 +100,60 @@ const BAMBOO_ROAD = {
   },
 };
 
+// 1.12: an airbase. A runway with a fighter jet and a plane on it, a gun turret and a missile turret guarding it,
+// a loaded missile silo beside it, and lamps along the edges
+const AIRBASE = {
+  seed: 2024, view: [0, 0, 4.2], pitch: -0.16, time: 0.43, rad: 4,
+  build(put, sign, ground, model) {
+    for (let z = -36; z <= 36; z++) for (let x = -22; x <= 22; x++) {
+      const gz = ground(x, z), run = Math.abs(x) <= 4;
+      for (let y = Math.min(gz, 0) - 1; y < 0; y++) put(x, y, z, 'dirt');
+      put(x, 0, z, run ? (Math.abs(x) === 4 ? 'stone_bricks' : x === 0 && ((z % 6) + 6) % 6 < 3 ? 'white_wool' : 'blackstone') : 'grass');
+      for (let y = 1; y <= 24; y++) put(x, y, z, null);
+    }
+    // threshold stripes at both ends, and lamps along the runway (none right by the view)
+    for (const z of [-34, 34]) for (let x = -3; x <= 3; x += 2) put(x, 0, z, 'white_wool');
+    for (let z = -30; z <= 30; z += 12) if (Math.abs(z) > 6) for (const x of [-5, 5]) { put(x, 1, z, 'oak_fence'); put(x, 2, z, 'glowstone'); }
+    put(-5, 1, 6, 'sign', 1); sign(-5, 1, 6, ['Blockcraft 1.12', 'Arsenal', 'Guns, jets,', 'silos, nukes']);
+    model('fighter_jet', 0, 1, 9, Math.PI - 0.25, '0.0.0');
+    model('fighter_jet', -10, 1, -8, 0.7, '0.0.0');
+    model('plane', 1, 1, -12, 0.2, '0.0.0');
+    model('turret', 9, 1, 2, -1.2, '0.0.0');
+    model('missile_turret', -10, 1, 4, 1.9, '0.0.0');
+    model('missile_silo', 10, 1, -8, 0, '3.0.0');
+  },
+};
+
 export const UPDATES = [
   {
-    // a small update: it keeps the Fast & Wild picture
-    version: '1.11.12', name: 'Second Chance', date: '2026-11-07',
-    splashes: ['Bang!', 'Reload!', 'Vroom!', 'Nine guns!', 'Zoom zoom!', 'Racing stripes!', 'Steady aim!', 'Pandas!', 'Bear hug!', 'Bamboo!',
-      'Rocket science!', 'Beep beep!', 'Mind the bear!', 'Supercar!', 'Cold paws!', 'Fox two!', 'Flares!', 'Lock on!', 'Bandit, six o\'clock!', 'Wheels up!', 'Turret online!', 'Afterburner!', 'Hot stuff!', 'Eat up!', 'Hold the line!', 'Thrust vectoring!', 'Supercruise!', 'Tracers!', 'Command blocks!', 'Clean shot!', 'Incoming!', 'Ignition!', 'Target locked!', 'Launch!', 'Duck and cover!', 'Undo!', 'Time stands still!', 'Second chance!'],
-    scene: BAMBOO_ROAD,
+    // a big update, with a picture of its own: an airbase
+    version: '1.12', name: 'Arsenal', date: '2026-11-07',
+    splashes: ['Bang!', 'Reload!', 'Nine guns!', 'Steady aim!', 'Six kinds of bullet!', 'Sniper ready!', 'Rocket science!', 'Fox two!', 'Flares!', 'Lock on!',
+      'Bandit, six o\'clock!', 'Wheels up!', 'Turret online!', 'Afterburner!', 'Thrust vectoring!', 'Supercruise!', 'Tracers!', 'Command blocks!', 'Incoming!', 'Ignition!',
+      'Target locked!', 'Launch!', 'Duck and cover!', 'Undo!', 'Time stands still!', 'Second chance!', 'Keep your stuff!'],
+    scene: AIRBASE,
     notes: [
-      'Rewind World now puts you back too: your items, health and where you stood at that moment. Rewinding after you die brings you back alive with everything you had, instead of leaving you dead with nothing.',
-      'In an online world everyone who is there goes back to how they were at that moment as well, and comes straight back in.',
-      'Rewind points kept before this update don\'t have your items in them: rewinding to one of those keeps what you have now, but always brings you back alive.',
-    ],
-  },
-  {
-    // a small update: it keeps the Fast & Wild picture
-    version: '1.11.11', name: 'Fallout', date: '2026-11-07',
-    splashes: ['Bang!', 'Reload!', 'Vroom!', 'Nine guns!', 'Zoom zoom!', 'Racing stripes!', 'Steady aim!', 'Pandas!', 'Bear hug!', 'Bamboo!',
-      'Rocket science!', 'Beep beep!', 'Mind the bear!', 'Supercar!', 'Cold paws!', 'Fox two!', 'Flares!', 'Lock on!', 'Bandit, six o\'clock!', 'Wheels up!', 'Turret online!', 'Afterburner!', 'Hot stuff!', 'Eat up!', 'Hold the line!', 'Thrust vectoring!', 'Supercruise!', 'Tracers!', 'Command blocks!', 'Clean shot!', 'Incoming!', 'Ignition!', 'Target locked!', 'Launch!', 'Duck and cover!', 'Undo!', 'Time stands still!'],
-    scene: BAMBOO_ROAD,
-    notes: [
-      'Warheads: when you launch from a missile silo you now choose the warhead as well as the missile. The missile decides how far it goes; the warhead decides how big the bang is.',
-      'Concussion hurts but breaks nothing, like before. Conventional, High Explosive and Thermobaric blow craters in the land, each bigger than the last. A Tactical Nuke and a Nuke flatten everything for a long way, burn the land around and leave a towering mushroom cloud.',
-      'In Survival a warhead costs TNT, from 1 for Conventional up to 64 for a Nuke. A missile shot down on its way still blows up in the air and breaks nothing.',
-      'New: Rewind World, in the Game Menu. The game keeps a rewind point every few minutes, when you come into a world, and just before any warhead or explosion goes off. Pick one to put the world back the way it was then. You keep what you are carrying and where you are. You can also save a point yourself.',
-      'Command blocks have a new command: tick freeze stops the world. Creatures, items, arrows, missiles, water, fire, smoke and the time of day all stand still, while every player can still move and build. tick step 2 lets it run for 2 seconds, and tick unfreeze lets it go again.',
-    ],
-  },
-  {
-    // a small update: it keeps the Fast & Wild picture
-    version: '1.11.10', name: 'Silos', date: '2026-11-07',
-    splashes: ['Bang!', 'Reload!', 'Vroom!', 'Nine guns!', 'Zoom zoom!', 'Racing stripes!', 'Steady aim!', 'Pandas!', 'Bear hug!', 'Bamboo!',
-      'Rocket science!', 'Beep beep!', 'Mind the bear!', 'Supercar!', 'Cold paws!', 'Fox two!', 'Flares!', 'Lock on!', 'Bandit, six o\'clock!', 'Wheels up!', 'Turret online!', 'Afterburner!', 'Hot stuff!', 'Eat up!', 'Hold the line!', 'Thrust vectoring!', 'Supercruise!', 'Tracers!', 'Command blocks!', 'Clean shot!', 'Incoming!', 'Ignition!', 'Target locked!', 'Launch!'],
-    scene: BAMBOO_ROAD,
-    notes: [
-      'New: the Missile Silo. Put it down and use it: load a missile from your inventory, choose where it lands, and press LAUNCH. The blast doors open and the missile climbs out of the pit on a column of fire, arcs over and comes down on the target.',
-      'Each launch uses one missile, so load another for the next. Short-Range Missiles reach 250 blocks, Medium-Range 600, and Long-Range 1500, each with a bigger blast.',
-      'They land in a huge explosion that hurts and throws everything near it, but breaks no blocks.',
-      'The Targeting System: hold it and click a spot (up to 600 blocks away) to mark it. A silo offers your marked spot as its target. You can also type a place, or pick where you are standing.',
-      'Turrets shoot at incoming missiles. A missile has to be hit enough before it blows up in the air: a gun turret on its own will barely scratch one, but a missile turret often can, and the two together usually do. Turrets leave alone missiles from players they are set to leave alone, and their list has a switch for all silo missiles.',
-      'Recipes: the silo is two iron blocks on top, obsidian, a block of redstone and obsidian in the middle, and three obsidian below. A Short-Range Missile is a missile over TNT over an iron block; each bigger one is made from the one before.',
-    ],
-  },
-  {
-    version: '1.11.9', name: 'Ignition', date: '2026-11-07',
-    splashes: ['Bang!', 'Reload!', 'Vroom!', 'Nine guns!', 'Zoom zoom!', 'Racing stripes!', 'Steady aim!', 'Pandas!', 'Bear hug!', 'Bamboo!',
-      'Rocket science!', 'Beep beep!', 'Mind the bear!', 'Supercar!', 'Cold paws!', 'Fox two!', 'Flares!', 'Lock on!', 'Bandit, six o\'clock!', 'Wheels up!', 'Turret online!', 'Afterburner!', 'Hot stuff!', 'Eat up!', 'Hold the line!', 'Thrust vectoring!', 'Supercruise!', 'Tracers!', 'Command blocks!', 'Clean shot!', 'Incoming!', 'Ignition!'],
-    scene: BAMBOO_ROAD,
-    notes: [
-      'Missiles are twice as big, with a red nose, four fins and a flickering flame roaring out of the back.',
-      'When a missile lights there is a bright flash, and fire and a cloud of smoke blast out behind it. It leaves a thick smoke trail as it flies.',
-    ],
-  },
-  {
-    version: '1.11.8', name: 'Two Turrets', date: '2026-11-07',
-    splashes: ['Bang!', 'Reload!', 'Vroom!', 'Nine guns!', 'Zoom zoom!', 'Racing stripes!', 'Steady aim!', 'Pandas!', 'Bear hug!', 'Bamboo!',
-      'Rocket science!', 'Beep beep!', 'Mind the bear!', 'Supercar!', 'Cold paws!', 'Fox two!', 'Flares!', 'Lock on!', 'Bandit, six o\'clock!', 'Wheels up!', 'Turret online!', 'Afterburner!', 'Hot stuff!', 'Eat up!', 'Hold the line!', 'Thrust vectoring!', 'Supercruise!', 'Tracers!', 'Command blocks!', 'Clean shot!', 'Incoming!'],
-    scene: BAMBOO_ROAD,
-    notes: [
-      'There are now two turrets. The Turret is now called the Gun Turret: it only fires its stream of tracer rounds, and now fires them at things in the air too.',
-      'New: the Missile Turret, olive green with six missile tubes and a turning radar dish. It fires a homing missile about every second and a half at anything in reach, on the ground or in the air, from further away than the gun turret.',
-      'Its missiles hurt and knock back everything near where they go off, but never break blocks. Flares can still draw them off.',
-      'Make one with an iron block, a missile and an iron block on top, a block of redstone, a diamond block and a block of redstone in the middle, and three obsidian on the bottom. It has the same list as the gun turret for what it leaves alone.',
-    ],
-  },
-  {
-    version: '1.11.7', name: 'Clean Shot', date: '2026-11-06',
-    splashes: ['Bang!', 'Reload!', 'Vroom!', 'Nine guns!', 'Zoom zoom!', 'Racing stripes!', 'Steady aim!', 'Pandas!', 'Bear hug!', 'Bamboo!',
-      'Rocket science!', 'Beep beep!', 'Mind the bear!', 'Supercar!', 'Cold paws!', 'Fox two!', 'Flares!', 'Lock on!', 'Bandit, six o\'clock!', 'Wheels up!', 'Turret online!', 'Afterburner!', 'Hot stuff!', 'Eat up!', 'Hold the line!', 'Thrust vectoring!', 'Supercruise!', 'Tracers!', 'Command blocks!', 'Clean shot!'],
-    scene: BAMBOO_ROAD,
-    notes: [
-      'Missiles fired from planes and jets no longer break blocks. They still hurt everything near where they go off, and they still bring down planes.',
-    ],
-  },
-  {
-    version: '1.11.6', name: 'Raptor', date: '2026-11-06',
-    splashes: ['Bang!', 'Reload!', 'Vroom!', 'Nine guns!', 'Zoom zoom!', 'Racing stripes!', 'Steady aim!', 'Pandas!', 'Bear hug!', 'Bamboo!',
-      'Rocket science!', 'Beep beep!', 'Mind the bear!', 'Supercar!', 'Cold paws!', 'Fox two!', 'Flares!', 'Lock on!', 'Bandit, six o\'clock!', 'Wheels up!', 'Turret online!', 'Afterburner!', 'Hot stuff!', 'Eat up!', 'Hold the line!', 'Thrust vectoring!', 'Supercruise!', 'Tracers!', 'Command blocks!'],
-    scene: BAMBOO_ROAD,
-    notes: [
-      'The Fighter Jet is now built like an F-22: a flat, pointed nose, a gold canopy, diamond wings, twin fins leaning out, and flat nozzles that tilt as you steer.',
-      'Its missiles are carried inside now. The doors under the jet open when you fire one.',
-      'It flies like one too: more than twice as fast as before (top speed about 540 km/h), it turns much tighter, still turns hard when slow, and climbs straight up hardly slowing.',
-      'If you fly faster than the land ahead can load, the jet slows down by itself instead of crashing into it. Land now loads ahead of a fast plane.',
-      'Missiles fly faster, so they can catch a jet.',
-      'Turrets fire a stream of glowing tracer rounds, twenty a second, with a bright muzzle flash. At night it lights up the sky. Each round hits a little softer, to make up for it.',
-      'New: the Command Block, for Creative. Put one down and click it: type a command (or tap one of the examples), pick when it runs (when clicked, when a pressure plate on or beside it is stepped on, when a player comes near, or over and over), and press Save.',
-      'Command blocks know say, time, weather, give, tp, effect, heal, summon, setblock, fill and spawnpoint. A command about a player is about whoever is nearest, and ~ means "from this block", so tp ~ ~10 ~ sends you ten blocks above it.',
-      'Command blocks can only be set up in Creative and can\'t be broken outside it, so a map you make stays as you made it.',
-    ],
-  },
-  {
-    version: '1.11.5', name: 'Hold the Line', date: '2026-11-06',
-    splashes: ['Bang!', 'Reload!', 'Vroom!', 'Nine guns!', 'Zoom zoom!', 'Racing stripes!', 'Steady aim!', 'Pandas!', 'Bear hug!', 'Bamboo!',
-      'Rocket science!', 'Beep beep!', 'Mind the bear!', 'Supercar!', 'Cold paws!', 'Fox two!', 'Flares!', 'Lock on!', 'Bandit, six o\'clock!', 'Wheels up!', 'Turret online!', 'Afterburner!', 'Hot stuff!', 'Eat up!', 'Hold the line!'],
-    scene: BAMBOO_ROAD,
-    notes: [
-      'A turret\'s missiles no longer break blocks. Missiles fired from planes still blow craters.',
-    ],
-  },
-  {
-    // a small update: it keeps the Fast & Wild picture
-    version: '1.11.4', name: 'Eat Up', date: '2026-11-06',
-    splashes: ['Bang!', 'Reload!', 'Vroom!', 'Nine guns!', 'Zoom zoom!', 'Racing stripes!', 'Steady aim!', 'Pandas!', 'Bear hug!', 'Bamboo!',
-      'Rocket science!', 'Beep beep!', 'Mind the bear!', 'Supercar!', 'Cold paws!', 'Fox two!', 'Flares!', 'Lock on!', 'Bandit, six o\'clock!', 'Wheels up!', 'Turret online!', 'Afterburner!', 'Hot stuff!', 'Eat up!'],
-    scene: BAMBOO_ROAD,
-    notes: [
-      'Getting hit no longer stops you eating, so you can eat while a turret or a mob is hitting you.',
-    ],
-  },
-  {
-    // a small update: it keeps the Fast & Wild picture
-    version: '1.11.3', name: 'Hot Stuff', date: '2026-11-06',
-    splashes: ['Bang!', 'Reload!', 'Vroom!', 'Nine guns!', 'Zoom zoom!', 'Racing stripes!', 'Steady aim!', 'Pandas!', 'Bear hug!', 'Bamboo!',
-      'Rocket science!', 'Beep beep!', 'Mind the bear!', 'Supercar!', 'Cold paws!', 'Fox two!', 'Flares!', 'Lock on!', 'Bandit, six o\'clock!', 'Wheels up!', 'Turret online!', 'Afterburner!', 'Hot stuff!'],
-    scene: BAMBOO_ROAD,
-    notes: [
-      'Dropped items burn up in lava and fire, as in the original game. Things made of netherite still float up out of lava.',
-    ],
-  },
-  {
-    // a small update: it keeps the Fast & Wild picture
-    version: '1.11.2', name: 'Afterburner', date: '2026-11-06',
-    splashes: ['Bang!', 'Reload!', 'Vroom!', 'Nine guns!', 'Zoom zoom!', 'Racing stripes!', 'Steady aim!', 'Pandas!', 'Bear hug!', 'Bamboo!',
-      'Rocket science!', 'Beep beep!', 'Mind the bear!', 'Supercar!', 'Cold paws!', 'Fox two!', 'Flares!', 'Lock on!', 'Bandit, six o\'clock!', 'Wheels up!', 'Turret online!', 'Afterburner!'],
-    scene: BAMBOO_ROAD,
-    notes: [
-      'The Fighter Jet looks like one now: a long pointed nose, a bubble canopy, swept wings with missiles on the tips and under them, twin tails and two glowing nozzles, painted in greys.',
-      'Each weapon has its own key: guns on click or Space, missiles on right-click or R, flares on X or F. The keys are shown at the top of the screen while you fly, and on a touch screen the Guns, Missile and Flares buttons are bigger and coloured.',
-      'Missiles blow craters in the ground where they hit.',
-      'A turret\'s list now has every player who has ever been in the world, and switches for all players, all monsters, or all animals and villagers at once.',
-    ],
-  },
-  {
-    // a small update: it keeps the Fast & Wild picture
-    version: '1.11.1', name: 'Dogfight', date: '2026-11-06',
-    splashes: ['Bang!', 'Reload!', 'Vroom!', 'Nine guns!', 'Zoom zoom!', 'Racing stripes!', 'Steady aim!', 'Pandas!', 'Bear hug!', 'Bamboo!',
-      'Rocket science!', 'Beep beep!', 'Mind the bear!', 'Supercar!', 'Cold paws!', 'Fox two!', 'Flares!', 'Lock on!', 'Bandit, six o\'clock!', 'Wheels up!', 'Turret online!'],
-    scene: BAMBOO_ROAD,
-    notes: [
-      'Planes! A propeller Plane (glass and four blocks of iron) and a Fighter Jet (diamonds, glass, three blocks of iron and two blocks of redstone), much faster and quicker to turn. Set one on the ground and get in. W opens the throttle and S closes it; look where you want to go and the plane turns after you. It leaves the ground once it is fast enough, and stalls if it gets too slow. Fly into something, or come down too hard, and it crashes. Planes need no fuel.',
-      'Planes fight: the attack button fires the guns, the use button fires a missile, and X drops flares (on a touch screen they have buttons of their own). Press E in a plane to load it: bullets of any kind, Missiles (an iron ingot, TNT and redstone) and Flares (gunpowder and paper).',
-      'Locking on: keep a monster, a flying creature or another player\'s plane in the middle of your view and a box appears round it; hold it there and the box turns red. A missile fired then chases it. When a missile is chasing you, MISSILE flashes: drop flares and it will probably go after them instead.',
-      'The Turret, three blocks across (blocks of iron, a diamond, blocks of redstone, TNT and obsidian), shoots everything in reach: bullets at what is on the ground, missiles at what flies. Use it to see its list of every player and creature, and untick what it should leave alone. It leaves whoever set it down alone to start with.',
-      'Cars need no gas any more.',
-      'Boats slide across ice much faster and further.',
+      'Guns! Nine of them: the Pistol, Revolver, Submachine Gun, Assault Rifle, Rifle, Sniper Rifle, Minigun, Shotgun and Rocket Launcher. Each kicks when it fires and shows a muzzle flash. Hold the button down to keep firing; point at one in your inventory to see how hard it hits and how fast it fires.',
+      'Bullets: Copper, Iron, Diamond (goes through one thing), Netherite (goes through two), Fire and Explosive, each a metal above gunpowder. A gun fires whichever bullets come first in your inventory. The Shotgun fires shells and the Rocket Launcher rockets. The Sniper Rifle has a scope: hold it and sneak to look through it.',
+      'Planes! A propeller Plane and a Fighter Jet built like an F-22, with a gold canopy, twin fins and nozzles that tilt as you steer. Set one down and get in: W opens the throttle, S closes it, and the plane turns where you look. The jet tops 540 km/h, turns tight and climbs straight up. Land loads ahead of you, and the jet slows by itself rather than fly into land that isn\'t there yet.',
+      'Planes fight: guns on click or Space, missiles on right-click or R, flares on X or F. Keep a target in the middle of your view to lock on, and a missile chases it. Missiles have a red nose, fins, a roaring flame and a flash and backblast as they light. When one chases you, drop flares. Load a plane with E.',
+      'Two turrets guard your base. The Gun Turret fires twenty glowing tracer rounds a second at anything on the ground or in the air. The Missile Turret, olive green with a turning radar dish, fires homing missiles from further off. Use one to choose who and what it leaves alone. Missiles from planes and turrets hurt but never break blocks.',
+      'Missile Silos: load a Short-Range (250 blocks), Medium-Range (600) or Long-Range (1500) missile, choose where it lands, and press LAUNCH. The doors open, it climbs out on a column of fire, arcs over and comes down on the target. Each launch uses one missile. Mark a target far away with the Targeting System.',
+      'Warheads: choose how big the bang is. Concussion hurts but breaks nothing; Conventional, High Explosive and Thermobaric blow bigger and bigger craters; a Tactical Nuke and a Nuke flatten everything for a long way and leave a mushroom cloud. In Survival a warhead costs TNT, up to 64 for a Nuke. Turrets near where a missile comes down shoot at it, even one you sent (they only let yours go as it climbs away from your silo), and one shot down breaks nothing.',
+      'Command Blocks, for Creative: put one down, click it, type a command or pick an example, and choose when it runs: when clicked, when a pressure plate by it is stepped on, when a player comes near, or over and over. They know say, time, weather, give, tp, effect, heal, summon, setblock, fill, spawnpoint, gamerule keepInventory and tick (tick freeze stops everything but the players).',
+      'Rewind World, in the Game Menu: the game keeps a rewind point every few minutes, when you come into a world, and just before any warhead or explosion. Pick one and the world goes back to that moment, and so do you: your items, health and where you stood. You always come back alive.',
+      'Keep Inventory: turn it on when you make a world, or any time in the Game Menu, and you keep everything you carry when you die.',
+      'Saving is safer: worlds take up about a tenth of the room they did (a nuke crater used to add a megabyte), and if this browser\'s save space ever fills up, your world is saved in its backup storage instead, so a reload never takes you back to an old save.',
+      'Also: cars need no gas, boats slide fast across ice, dropped items burn up in lava and fire, and getting hit no longer stops you eating.',
     ],
   },
   {
     // a big update, with a picture of its own: a road through a bamboo jungle
     version: '1.11', name: 'Fast & Wild', date: '2026-11-05',
-    splashes: ['Bang!', 'Reload!', 'Vroom!', 'Fill her up!', 'Nine guns!', 'Zoom zoom!', 'Slide!', 'Racing stripes!', 'Steady aim!', 'Pandas!',
-      'Bear hug!', 'Bamboo!', 'Six kinds of bullet!', 'Rocket science!', 'Beep beep!', 'Mind the bear!', 'Sniper ready!', 'Supercar!', 'Out of gas!', 'Cold paws!'],
+    splashes: ['Vroom!', 'Fill her up!', 'Zoom zoom!', 'Slide!', 'Racing stripes!', 'Pandas!',
+      'Bear hug!', 'Bamboo!', 'Beep beep!', 'Mind the bear!', 'Supercar!', 'Out of gas!', 'Cold paws!'],
     scene: BAMBOO_ROAD,
     notes: [
-      'Guns! Nine of them: the Pistol, Revolver, Submachine Gun, Assault Rifle, Rifle, Sniper Rifle, Minigun, Shotgun and Rocket Launcher. Each is held as a solid gun pointing ahead, kicks when it fires and shows a muzzle flash. Hold the button down to keep firing; point at one in your inventory to see how hard it hits and how fast it fires.',
-      'Bullets: Copper, Iron, Diamond (goes through one thing), Netherite (goes through two), Fire and Explosive, each a metal above gunpowder (fire and explosive ones are made from iron bullets). A gun fires whichever bullets come first in your inventory. The Shotgun fires shells and the Rocket Launcher rockets. Rockets and explosive bullets hurt what is near but break no blocks, and your own shots never hurt the car you sit in.',
-      'The Sniper Rifle has a scope: hold it and sneak to look through it. It zooms in five times and slows your aim to match.',
       'Cars! The Car, the Sports Car and the Supercar, each faster and going further on a tank than the last (800, 1400 and 2000 blocks). Set one on the ground and get in; in a car you see it from behind. They run on gas: a gas can (an iron ingot and two coal) fills a quarter of the tank.',
       'Pandas live in bamboo jungles, and now and then in jungles. Polar bears live where it snows; they leave you alone unless you hit them, and then they fight back. Both have spawn eggs.',
       'Bamboo is solid now: you can\'t walk through it.',

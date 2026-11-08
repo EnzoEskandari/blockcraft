@@ -1727,7 +1727,10 @@ class Arrow {
     for (const m of G.entities.mobs) {
       if (this.owner === 'fx' || this.spent) break;
       if (m.dead || m === this.shooter || m === (this.shooter && this.shooter.mount) || (this.owner === 'player' && m === p.riding) || (this.allow && !this.allow(m)) || (this.hits && this.hits.has(m))) continue;
-      const t = rayBox(this.pos.x, this.pos.y, this.pos.z, dx, dy, dz, m.pos.x - m.hw, m.pos.y, m.pos.z - m.hw, m.pos.x + m.hw, m.pos.y + m.h, m.pos.z + m.hw);
+      // (a silo missile is hit by rounds that pass close to it: as a proximity fuse would, since it is too fast and
+      // small for a round to meet it exactly)
+      const g = m.def.icbm ? 1.6 : 0;
+      const t = rayBox(this.pos.x, this.pos.y, this.pos.z, dx, dy, dz, m.pos.x - m.hw - g, m.pos.y - g, m.pos.z - m.hw - g, m.pos.x + m.hw + g, m.pos.y + m.h + g, m.pos.z + m.hw + g);
       if (t >= 0 && t <= len) {
         const mine = this.owner === 'player';
         const far = Math.hypot(m.pos.x - this.from.x, m.pos.z - this.from.z);

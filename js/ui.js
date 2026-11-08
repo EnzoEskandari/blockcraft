@@ -209,7 +209,11 @@ export class UI {
         ? 'Unlimited blocks, free flying, no damage'
         : 'Gather resources, craft, stay alive';
     });
+    // Keep Inventory: when you die you keep everything you were carrying
+    on('b-keepinv', () => { const b = $('b-keepinv'); b.dataset.on = b.dataset.on === '1' ? '0' : '1'; b.textContent = 'Keep Inventory: ' + (b.dataset.on === '1' ? 'On' : 'Off'); });
+    on('b-pause-keepinv', () => { if (G.game.setKeepInv(!G.keepInv)) this.syncPause(); });
     on('b-create', () => {
+      G.game.newKeepInv = $('b-keepinv').dataset.on === '1';
       if (this.createOnline) { this.createOnlineWorld(); return; }
       const name = $('world-name').value.trim() || 'New World';
       G.game.createWorld(name, $('world-seed').value.trim(), $('b-mode').dataset.mode);
@@ -279,6 +283,7 @@ export class UI {
     if (name === 'create') {
       $('world-name').value = this.createOnline ? 'Online World' : 'New World';
       $('world-seed').value = '';
+      $('b-keepinv').dataset.on = '0'; $('b-keepinv').textContent = 'Keep Inventory: Off';
       document.querySelector('#s-create h2').textContent = this.createOnline ? 'Create Online World' : 'Create New World';
       $('b-create').textContent = this.createOnline ? 'Create Online World' : 'Create New World';
     }
@@ -297,7 +302,7 @@ export class UI {
     box.hidden = true;
     if (text[0] !== '/') return;
     const admin = !!(G.account && G.account.admin);
-    const CMDS = admin ? [['time', 'set the time of day', ['day', 'noon', 'sunset', 'night', 'midnight', 'sunrise']], ['weather', 'change the weather', ['clear', 'cloudy', 'rain', 'thunder']], ['clearitems', 'remove every dropped item'], ['tick', 'freeze the world, or let it go', ['freeze', 'unfreeze', 'step']],
+    const CMDS = admin ? [['time', 'set the time of day', ['day', 'noon', 'sunset', 'night', 'midnight', 'sunrise']], ['weather', 'change the weather', ['clear', 'cloudy', 'rain', 'thunder']], ['clearitems', 'remove every dropped item'], ['tick', 'freeze the world, or let it go', ['freeze', 'unfreeze', 'step']], ['gamerule', 'keepInventory true or false', ['keepInventory']],
       ['where', 'where a player is', 1], ['tp', 'go to a player, or to x y z', 1], ['bring', 'fetch a player to you', 1], ['creative', 'creative mode'], ['survival', 'survival mode'],
       ['kill', 'kill a player', 1], ['kick', 'send a player out', 1], ['ban', 'ban a player', 1], ['unban', 'let a player back', 1], ['op', 'make a player an admin', 1], ['deop', 'take admin away', 1],
       ['reload', 'update the game for everyone'], ['players', 'everyone online'], ['accounts', 'every account'], ['list', 'who is here'], ['help', 'all the commands']]
@@ -1003,6 +1008,9 @@ export class UI {
     $('mp-box').hidden = !online;
     $('b-quit').textContent = online ? 'Leave World' : 'Save and Quit to Title';
     $('b-pause-rewind').hidden = !!(meta && meta.remote);   // (the rewind points are kept by whoever runs the world)
+    // (Keep Inventory is set by whoever runs the world; anyone else sees whether it is on)
+    $('b-pause-keepinv').textContent = 'Keep Inventory: ' + (G.keepInv ? 'On' : 'Off') + (meta && meta.remote ? ' (set by the host)' : '');
+    $('b-pause-keepinv').disabled = !!(meta && meta.remote);
     // admins can change mode in any world
     const admin = !!(G.account && G.account.admin);
     $('b-pause-mode').hidden = !admin;

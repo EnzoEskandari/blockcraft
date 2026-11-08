@@ -405,7 +405,7 @@ async function flushRecord(world, account) {
 const rooms = new Map();   // world id -> { host, peers: Map(id -> ws), next }
 const send = (ws, msg) => { if (ws && ws.readyState === 1) ws.send(typeof msg === 'string' ? msg : JSON.stringify(msg)); };
 
-const MIN_PAGE = 12;   // the oldest page that may join (see `caps`): an older one would not know a rewind gives back their things (12), warheads' craters, /tick or rewinding (11), missile silos (10), missile turrets (9), planes (8), pandas (7), sports cars (6) or cars (5) or would empty any bundle it handled (4)
+const MIN_PAGE = 14;   // the oldest page that may join (see `caps`): an older one would not read changed blocks saved as runs (14), Keep Inventory (13), a rewind gives back their things (12), warheads' craters, /tick or rewinding (11), missile silos (10), missile turrets (9), planes (8), pandas (7), sports cars (6) or cars (5) or would empty any bundle it handled (4)
 // Someone opening an online world: they run it if nobody is in that dimension yet, otherwise they join whoever does
 async function enterWorld(ws, m) {
   if (!store || stopping) { send(ws, { t: 'error', msg: stopping ? 'Blockcraft is updating. Reconnecting…' : notReady(), retry: true }); return; }
@@ -621,6 +621,17 @@ async function command(ws, text) {
     send(room.host, { t: 'admin', a: 'weather', v: k, secs: Math.round(mins * 60) });
     return `The weather is now ${k === 'thunder' ? 'a thunderstorm' : k}${mins ? ` for ${mins} minute${mins === 1 ? '' : 's'}` : ''}.`;
   }
+  // /gamerule keepInventory true|false: set by whoever runs the world
+  if (c === 'gamerule') {
+    const room = ws.room && rooms.get(ws.room);
+    if (!room) return 'Join a world first.';
+    if (!/^keepinventory$/i.test(name || '')) return 'Say /gamerule keepInventory true or false.';
+    const v = String(rest[0] || '').toLowerCase();
+    if (!['true', 'false', 'on', 'off'].includes(v)) return 'Say /gamerule keepInventory true or false.';
+    if (!(room.host.caps >= 13)) return `${room.host.name || 'Whoever is running this world'} has an old page open and needs to reload before this works.`;
+    send(room.host, { t: 'admin', a: 'gamerule', v: v === 'true' || v === 'on' ? 1 : 0 });
+    return v === 'true' || v === 'on' ? 'Keep Inventory is on: nobody loses their things when they die.' : 'Keep Inventory is off.';
+  }
   // /tick freeze, unfreeze or step: whoever runs the world does it, and it reaches everyone from there
   if (c === 'tick') {
     const room = ws.room && rooms.get(ws.room);
@@ -661,7 +672,7 @@ async function command(ws, text) {
   }
   // everyone in every online world saves, loads the newest version of the game and comes straight back in
   if (c === 'reload') return reloadEveryone();
-  if (c === 'help') return 'Admin commands: /time day|noon|night|15, /weather clear|cloudy|rain|thunder, /tick freeze|unfreeze|step, /tp x y z, /clearitems (every dropped item), /reload (everyone gets the newest version), /where name, /tp name, /bring name, /creative, /survival, /kill name, /kick name, /ban name [reason], /unban name, /op name, /deop name, /players (everyone online), /accounts (every account), /list';
+  if (c === 'help') return 'Admin commands: /time day|noon|night|15, /weather clear|cloudy|rain|thunder, /tick freeze|unfreeze|step, /gamerule keepInventory true|false, /tp x y z, /clearitems (every dropped item), /reload (everyone gets the newest version), /where name, /tp name, /bring name, /creative, /survival, /kill name, /kick name, /ban name [reason], /unban name, /op name, /deop name, /players (everyone online), /accounts (every account), /list';
   if (c === 'players') {
     const on = playerList().filter((x) => x.online.length);
     return on.length ? 'Online: ' + on.map((x) => `${x.name} in ${x.online.join(', ')}`).join('; ') : 'Nobody is in an online world.';

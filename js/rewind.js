@@ -43,14 +43,14 @@ async function unpack(rec) {
 
 // w: which world and dimension ("id" or "id~nether"); label: why it was kept; payload: { what, data, ... } with
 // data a string (the save)
-export async function savePoint(w, label, payload) {
+export async function savePoint(w, label, payload, keep = KEEP) {
   const { z, b } = await pack(payload.data);
   const d = await db();
   const tx = d.transaction(STORE, 'readwrite'), st = tx.objectStore(STORE);
   st.add({ w, t: Date.now(), label: String(label || '').slice(0, 60), ...payload, data: undefined, z, b, size: payload.data.length });
   // the oldest go
   const keys = await done(st.index('w').getAllKeys(w));
-  for (const k of keys.slice(0, Math.max(0, keys.length - KEEP))) st.delete(k);
+  for (const k of keys.slice(0, Math.max(0, keys.length - keep))) st.delete(k);
   return new Promise((resolve, reject) => { tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); });
 }
 // Newest first, without the saves themselves
@@ -58,6 +58,11 @@ export async function listPoints(w) {
   const d = await db();
   const all = await done(d.transaction(STORE).objectStore(STORE).index('w').getAll(w));
   return all.map(({ b, ...rest }) => rest).sort((a, b) => b.t - a.t);
+}
+// The newest point kept for w, with its save, or null
+export async function latestPoint(w) {
+  const pts = await listPoints(w);
+  return pts.length ? readPoint(pts[0].id) : null;
 }
 export async function readPoint(id) {
   const d = await db();

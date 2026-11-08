@@ -1483,7 +1483,8 @@ export class Player {
     this.health = 0;
     this.mining = null;
     this.eating = null;
-    if (!this.creative) {
+    // (with Keep Inventory on, nothing is dropped: you come back with all of it, and your experience)
+    if (!this.creative && !G.keepInv) {
       const all = [...this.inv.slots, ...this.armor, ...this.off];
       for (const s of all) {
         // (anything with the Curse of Vanishing is gone for good)

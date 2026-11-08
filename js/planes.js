@@ -361,12 +361,18 @@ class Missile {
       this.tried.add(f.id);
       if (hash(this.id, f.id) < 0.75) { this.target = { flare: f }; break; }
     }
-    const at = this.age > 0.25 ? this.aim() : null;
+    let at = this.age > 0.25 ? this.aim() : null;
+    // (a silo missile is chased where it is going, not where it is: it is too fast to catch from behind)
+    const big = this.target && this.target.mob && this.target.mob.def && this.target.mob.def.icbm ? this.target.mob : null;
+    if (at && big) {
+      const lead = Math.min(2, Math.hypot(at.x - this.pos.x, at.y - this.pos.y, at.z - this.pos.z) / Math.max(60, this.speed));
+      at = { x: at.x + (big.vel.x || 0) * lead, y: at.y + (big.vel.y || 0) * lead, z: at.z + (big.vel.z || 0) * lead };
+    }
     if (at) {
       let tx = at.x - this.pos.x, ty = at.y - this.pos.y, tz = at.z - this.pos.z;
       const l = Math.hypot(tx, ty, tz) || 1; tx /= l; ty /= l; tz /= l;
       // turn towards it as fast as it can
-      const k = Math.min(1, dt * 3.2);
+      const k = Math.min(1, dt * (big ? 6 : 3.2));
       this.dir.x += (tx - this.dir.x) * k; this.dir.y += (ty - this.dir.y) * k; this.dir.z += (tz - this.dir.z) * k;
       const n = Math.hypot(this.dir.x, this.dir.y, this.dir.z) || 1; this.dir.x /= n; this.dir.y /= n; this.dir.z /= n;
       if (l < 2.6 && !this.target.flare) { this.blast(); return; }
@@ -374,6 +380,12 @@ class Missile {
     }
     this.speed = Math.min(this.top, this.speed + (this.top > 95 ? 140 : 60) * dt);
     const len = this.speed * dt, d = this.dir;
+    // a proximity fuse for a silo missile: it goes off as it passes close by, anywhere along this step
+    if (big && !big.dead && this.owner !== 'fx') {
+      const cx = big.pos.x - this.pos.x, cy = big.pos.y + big.h * 0.5 - this.pos.y, cz = big.pos.z - this.pos.z;
+      const along = Math.max(0, Math.min(len, cx * d.x + cy * d.y + cz * d.z));
+      if (Math.hypot(cx - d.x * along, cy - d.y * along, cz - d.z * along) < 5) { this.pos.x += d.x * along; this.pos.y += d.y * along; this.pos.z += d.z * along; this.blast(big); return; }
+    }
     // what it flies into
     if (this.owner !== 'fx') {
       for (const m of G.entities.mobs) {
