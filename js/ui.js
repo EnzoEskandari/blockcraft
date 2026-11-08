@@ -858,10 +858,10 @@ export class UI {
   }
 
   // Opened from a world link (…?world=ID)
-  openOnline(id) {
+  openOnline(id, how = null) {
     this.selectedOnline = id;
     this.openScreen('mp');
-    if (G.account) this.playOnline(id);
+    if (G.account) this.playOnline(id, how === 'play' || how === 'spectate' ? how : null);
     else { this.pendingWorld = id; this.mpStatus('Sign in or create an account to join this world.'); }
   }
 

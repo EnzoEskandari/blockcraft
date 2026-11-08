@@ -103,6 +103,18 @@ const BAMBOO_ROAD = {
 export const UPDATES = [
   {
     // a small update: it keeps the Fast & Wild picture
+    version: '1.11.12', name: 'Second Chance', date: '2026-11-07',
+    splashes: ['Bang!', 'Reload!', 'Vroom!', 'Nine guns!', 'Zoom zoom!', 'Racing stripes!', 'Steady aim!', 'Pandas!', 'Bear hug!', 'Bamboo!',
+      'Rocket science!', 'Beep beep!', 'Mind the bear!', 'Supercar!', 'Cold paws!', 'Fox two!', 'Flares!', 'Lock on!', 'Bandit, six o\'clock!', 'Wheels up!', 'Turret online!', 'Afterburner!', 'Hot stuff!', 'Eat up!', 'Hold the line!', 'Thrust vectoring!', 'Supercruise!', 'Tracers!', 'Command blocks!', 'Clean shot!', 'Incoming!', 'Ignition!', 'Target locked!', 'Launch!', 'Duck and cover!', 'Undo!', 'Time stands still!', 'Second chance!'],
+    scene: BAMBOO_ROAD,
+    notes: [
+      'Rewind World now puts you back too: your items, health and where you stood at that moment. Rewinding after you die brings you back alive with everything you had, instead of leaving you dead with nothing.',
+      'In an online world everyone who is there goes back to how they were at that moment as well, and comes straight back in.',
+      'Rewind points kept before this update don\'t have your items in them: rewinding to one of those keeps what you have now, but always brings you back alive.',
+    ],
+  },
+  {
+    // a small update: it keeps the Fast & Wild picture
     version: '1.11.11', name: 'Fallout', date: '2026-11-07',
     splashes: ['Bang!', 'Reload!', 'Vroom!', 'Nine guns!', 'Zoom zoom!', 'Racing stripes!', 'Steady aim!', 'Pandas!', 'Bear hug!', 'Bamboo!',
       'Rocket science!', 'Beep beep!', 'Mind the bear!', 'Supercar!', 'Cold paws!', 'Fox two!', 'Flares!', 'Lock on!', 'Bandit, six o\'clock!', 'Wheels up!', 'Turret online!', 'Afterburner!', 'Hot stuff!', 'Eat up!', 'Hold the line!', 'Thrust vectoring!', 'Supercruise!', 'Tracers!', 'Command blocks!', 'Clean shot!', 'Incoming!', 'Ignition!', 'Target locked!', 'Launch!', 'Duck and cover!', 'Undo!', 'Time stands still!'],

@@ -1376,13 +1376,17 @@ export const Game = {
   async rewindPoint(label, force) {
     const m = G.worldMeta;
     if (!m || !G.world || !G.player || m.remote || S.noSave) return false;
+    if (G.player.dead || !(G.player.health > 0)) return false;   // (never a point to come back to dead)
     if (!force && Date.now() - (S.rwLast || 0) < 60000) return false;
     S.rwLast = Date.now();
     try {
       const { data, globals } = buildSave();
-      const key = this.rewindKey();
-      if (m.online) await savePoint(key, label, { what: 'online', data: JSON.stringify({ ...data, time: globals.time, day: globals.day, nightsNoSleep: globals.nightsNoSleep, worldSpawn: globals.worldSpawn }) });
-      else { const { player, ...g } = globals; await savePoint(key, label, { what: 'world', data: JSON.stringify(data), g }); }
+      const key = this.rewindKey(), t = Date.now();
+      // (everyone else in an online world keeps how they are right now, for a rewind to this point)
+      if (m.online && G.net) G.net.send({ k: 'rwp', t });
+      // (1.11.12: with the player too, so a rewind gives back what you had then, alive)
+      if (m.online) await savePoint(key, label, { t, what: 'online', data: JSON.stringify({ ...data, time: globals.time, day: globals.day, nightsNoSleep: globals.nightsNoSleep, worldSpawn: globals.worldSpawn }), me: globals.player });
+      else await savePoint(key, label, { t, what: 'world', data: JSON.stringify(data), g: globals });
       return true;
     } catch { return false; }
   },
@@ -1394,9 +1398,11 @@ export const Game = {
     let data;
     try { data = JSON.parse(point.data); } catch { return 'That rewind point is damaged.'; }
     const when = new Date(point.t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    const me = playerData(G.player);
+    // you go back to how you were then: your items, health and where you stood (points kept before 1.11.12
+    // don't have that, so you keep what you have now), and never dead
+    const me = alive((m.online ? point.me : point.g && point.g.player) || playerData(G.player));
     if (m.online) {
-      // the old world goes to the server (everyone keeps their own things), and everyone comes back in to it
+      // the old world goes to the server, and everyone here comes back in to it as they were then
       if (!G.net) return 'You are not connected to the server.';
       data.guests = G.world.guests || {};
       S.saveVersion = (S.saveVersion || 0) + 1;
@@ -1404,12 +1410,12 @@ export const Game = {
       G.net.uploadSave(text, S.saveVersion);
       G.net.sendMe(me);
       store('online.' + dimKey(m.online, G.dim), { v: S.saveVersion, meta: { id: m.online, name: m.name, seed: m.seed, mode: m.mode, created: m.created }, data });
-      G.net.send({ k: 'rw', n: G.net.name, at: when });
+      G.net.send({ k: 'rw', n: G.net.name, at: when, t: point.t });
       S.noSave = true;
-      store('rewound', { msg: `The world was rewound to ${when}.` });
+      store('rewound', { msg: `The world was rewound to ${when}.`, how: G.spectate ? 'spectate' : 'play' });
       const code = G.net.code;
       G.ui.back(); G.ui.toast('Rewinding the world…', 5);
-      setTimeout(() => { location.href = location.pathname + (code ? '?world=' + code : ''); }, 1500);
+      setTimeout(() => { if (G.net) G.net.shutdown(); location.href = location.pathname + (code ? '?world=' + code : ''); }, 700);
       return '';
     }
     // singleplayer: the old save goes back in place of this one, and the world is loaded again
@@ -1430,9 +1436,26 @@ export const Game = {
     if (!G.net || !isGuest()) return;
     const code = G.net.code;
     S.noSave = true;
-    store('rewound', { msg: `${String(d.n || 'The host').slice(0, 16)} rewound the world to ${String(d.at || 'earlier').slice(0, 12)}.` });
+    // (how this player was then, kept here when the point was, goes to the server before coming back in; then
+    // nothing more is sent from here)
+    const list = load('rwme.' + dimKey(code, G.dim), []);
+    const then = Array.isArray(list) ? list.filter((x) => x && x.t <= (+d.t || 0) + 1000 && x.rec && x.rec.pos).pop() : null;
+    if (then) G.net.sendMe(alive(then.rec));
+    else if (G.player && (G.player.dead || !(G.player.health > 0))) G.net.sendMe(alive(playerData(G.player)));
+    const net = G.net;
+    setTimeout(() => net.shutdown(), 300);
+    store('rewound', { msg: `${String(d.n || 'The host').slice(0, 16)} rewound the world to ${String(d.at || 'earlier').slice(0, 12)}.`, how: G.spectate ? 'spectate' : 'play' });
     G.ui.toast(`${String(d.n || 'The host').slice(0, 16)} is rewinding the world. Coming back in…`, 6);
-    setTimeout(() => { location.href = location.pathname + (code ? '?world=' + code : ''); }, 3500);
+    setTimeout(() => { location.href = location.pathname + (code ? '?world=' + code : ''); }, 2500);
+  },
+  // (the host kept a rewind point: this guest keeps how they are now with it, the last 30)
+  keepMyPoint(t) {
+    if (!G.net || !isGuest() || !G.player || G.player.dead || !(G.player.health > 0) || !Number.isFinite(+t)) return;
+    const k = 'rwme.' + dimKey(G.net.code, G.dim);
+    const list = load(k, []);
+    const out = (Array.isArray(list) ? list : []).filter((x) => x && x.t < +t).slice(-29);
+    out.push({ t: +t, rec: playerData(G.player) });
+    store(k, out);
   },
   // (a warhead's crater: its signs go)
   afterCrater() { S.signsDirty = true; S.rwDirty = true; },
@@ -1612,6 +1635,12 @@ function playerData(p) {
     // experience (level, points toward the next), what the enchanting table offers, and achievements
     xl: p.xpLevel, xp: p.xp, es: p.enchSeed, adv: [...p.adv], advp: p.advData,
   };
+}
+
+// A player's record, never dead (a rewind brings you back alive)
+function alive(rec) {
+  if (!rec || typeof rec !== 'object') return rec;
+  return rec.health > 0 ? rec : { ...rec, health: 20, food: Math.max(rec.food || 0, 20), saturation: Math.max(rec.saturation || 0, 5) };
 }
 
 function applyPlayerData(p, d) {
@@ -2030,7 +2059,9 @@ function boot(hotData) {
   if (serverURL()) fetch('/api/build', { cache: 'no-store' }).then((r) => r.json()).then((b) => noteBuild(b.build)).catch(() => {});
   // a world link (…?world=ID) goes straight into that online world
   const link = new URLSearchParams(location.search).get('world');
-  if (link && !(hotData && hotData.worldId)) G.ui.openOnline(link.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6));
+  // (coming back after a rewind: straight in, the way you were, without being asked how)
+  const back = load('rewound');
+  if (link && !(hotData && hotData.worldId)) G.ui.openOnline(link.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6), back && back.how);
   requestAnimationFrame(loop);
 }
 

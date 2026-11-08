@@ -3,7 +3,7 @@
 // Every few minutes of play (when something has changed), when you come into a world, just before a warhead that
 // breaks blocks is launched and before the first explosion in a while, the game keeps a rewind point: a copy of
 // this dimension's save (its blocks, chests, creatures, the time). Rewind in the Game Menu lists them; picking one
-// puts the world back the way it was then. You keep what you are carrying and where you are standing.
+// puts the world back the way it was then, and you back the way you were (1.11.12: before that you kept what you had).
 //
 // The points are kept in this browser (IndexedDB, which has far more room than the saves' own storage), squeezed
 // small where the browser can, and the oldest go once a world has more than KEEP of them. In an online world
@@ -101,7 +101,7 @@ export async function openRewind(note = '') {
   const box = el('div', 'width:min(720px,100%);margin:6px auto;padding:10px 16px;box-sizing:border-box;background:rgba(0,0,0,0.45);font:16px/1.4 monospace;max-height:70vh;overflow:auto;touch-action:pan-y;text-align:left;color:#eee');
   section.appendChild(box);
   const why = G.game.rewindBlocked ? G.game.rewindBlocked() : '';
-  box.appendChild(el('div', 'color:#ccc;margin-bottom:8px', 'Puts this world back the way it was at one of these moments: blocks, chests, creatures and the time. You keep what you are carrying and where you are.' + (G.net ? ' Everyone in the world comes back in to it.' : '')));
+  box.appendChild(el('div', 'color:#ccc;margin-bottom:8px', 'Puts this world back the way it was at one of these moments: blocks, chests, creatures and the time, and you go back to how you were then: your items, health and where you stood.' + (G.net ? ' Everyone here comes back in to it, as they were then.' : '')));
   if (note) box.appendChild(el('div', 'color:#ffd866;margin-bottom:8px', note));
   if (why) box.appendChild(el('div', 'color:#ff7b6b;margin-bottom:8px', why));
   const list = el('div', 'display:flex;flex-direction:column;gap:6px');
