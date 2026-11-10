@@ -127,6 +127,20 @@ const AIRBASE = {
 export const UPDATES = [
   {
     // a small update: it keeps the Arsenal picture
+    version: '1.12.4', name: 'Golden Hour', date: '2026-11-09',
+    splashes: ['Bang!', 'Reload!', 'Nine guns!', 'Steady aim!', 'Fox two!', 'Lock on!', 'Turret online!', 'Tracers!', 'Incoming!', 'Launch!', 'Duck and cover!', 'Keep your stuff!', 'Eyes front!', 'Still here!', 'Left click!', 'Hit!', 'Golden hour!', 'Lens flare!'],
+    scene: AIRBASE,
+    notes: [
+      'New on laptops and desktops: Realistic graphics. In Options, press Lighting until it says Realistic.',
+      'Every surface has depth: the seams between bricks and planks sink in, slide behind the raised parts as you move past, and the raised parts cast small shadows into them. No two blocks are quite the same shade.',
+      'Shadows have soft edges, creases and corners are shaded, and everything gives back a little of the sun, polished blocks most of all.',
+      'Water rolls in waves, mirrors the sky more the flatter you look across it, and glitters under the sun. Rain leaves the ground wet and shining for a while.',
+      'Bright things glow (the sun, lava, lamps, fire, explosions), a low sun sends shafts of light across the view, and the whole picture has a film\'s contrast and colour.',
+      'It asks a lot of a computer. If the game cannot keep up, it sets Lighting back to Max by itself and tells you. The textures themselves are unchanged, and with Realistic off the game looks exactly as before.',
+    ],
+  },
+  {
+    // a small update: it keeps the Arsenal picture
     version: '1.12.3', name: 'Trigger Finger', date: '2026-11-09',
     splashes: ['Bang!', 'Reload!', 'Nine guns!', 'Steady aim!', 'Fox two!', 'Lock on!', 'Turret online!', 'Tracers!', 'Incoming!', 'Launch!', 'Duck and cover!', 'Keep your stuff!', 'Eyes front!', 'Still here!', 'Left click!', 'Hit!'],
     scene: AIRBASE,

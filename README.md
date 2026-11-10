@@ -67,6 +67,14 @@ How it works:
 - **Inventory doll** (`js/doll.js`): the player model drawn into a render target by the game's renderer, read back into a canvas in the panel, only while the inventory is open.
 - **Depth on flat tiles** (`DEPTH` / `addDepth` in `js/textures.js`): after a tile is painted, some are made lighter or darker in places from a random stream of their own, never recoloured. Only obsidian keeps the `GLOSS` glints. The dragon egg is a model (`boxes`) with a `pick` box, and the block outline uses `pickBox`.
 
+## 1.12.4: Realistic graphics
+
+`G.settings.lighting === 'real'` (offered in Options only when `!isTouchDevice`) sets `R.gfx.real`: lighting as 'max', shadows at least 'high', the `REAL` define in the chunk shader, pixel ratio capped at 1.5, and the finishing pass in `js/post.js`.
+
+In `CHUNK_FS` under `REAL`: relief from `uAtlasSoft`, a linear-filtered copy of the atlas whose alpha is a height made by `reliefData` (luminance stretched per tile; flipped where whole rows or columns are pale, i.e. mortar). A per-pixel tangent frame comes from screen derivatives; within 18 blocks opaque faces are parallax-occlusion mapped (14 steps, `DEPTH` 0.07) with a 5-step self-shadow towards the sun, further out it is a bumped normal only. Also: soft shadows (9 rotated taps, no snapping to texture dots), per-block shade and close-up grain, a specular term (stronger for gloss blocks and wet ground, `uWet` from rain, drying over 90 s), and water with five summed waves, Fresnel sky reflection (`uSkyTop`, `uSkyHor`) and sun glitter.
+
+`post.js`: the world and hand are drawn into a colour + depth target; a half-size pass makes bloom (rgb) and depth-only ambient occlusion (a), blurred at half and quarter size; the final pass does FXAA, AO, bloom, sun shafts (the far bloom gathered towards the sun's screen position; `R.shafts`), a contrast/saturation grade and a vignette. If the target cannot be made `R.realBroken` falls back to Max; the frame-rate watch in main.js sets Lighting back to Max when it stays under 18 fps. Not measured on a real GPU (headless Chrome is software-rendered).
+
 ## 1.12.3: gun controls, deferred craters, save cache
 
 Guns: `input.fire` (left mouse button, or the touch `#t-fire` button) fires the held gun in `Player.interact`, which then drops the click's punch and mining; with the sniper rifle the right button (`useHeld`), sneaking or the touch `#t-scope` latch (`input.scope`) scope it (`updateCamera` reads `lastInput`). `fireGun(p, gun, centre)` fires along the crosshair for the Fire button. `#ammo` (from `ammoLeft`) and `#hitmark` (`UI.hitMark`, called where a player's bullet hits a mob) are in the HUD.

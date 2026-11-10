@@ -2110,7 +2110,9 @@ function frame(dt) {
   tickWeather(paused || frozen ? 0 : dt, host);
   // Shadows are the dearest thing drawn. Where the game cannot keep up with them (an old tablet), they
   // are turned down a step at a time, unless the player has set them by hand.
-  if (!paused && G.clock > 15 && R.gfx.shadows !== 'off' && !G.settings.shadowsPicked && R.shared.uShadowOn.value && document.visibilityState === 'visible') {
+  // (Realistic graphics on a machine that cannot keep up with them go back to Max, and say so)
+  const tooMuch = R.gfx.real;
+  if (!paused && G.clock > 15 && document.visibilityState === 'visible' && (tooMuch || (R.gfx.shadows !== 'off' && !G.settings.shadowsPicked && R.shared.uShadowOn.value))) {
     // (by the clock on the wall: the game's own steps never count for less than a twentieth of a second)
     const now = performance.now();
     if (!S.perfAt || now - S.perfLast > 1000) { S.perfAt = now; S.perfN = 0; }
@@ -2118,7 +2120,14 @@ function frame(dt) {
     if (now - S.perfAt >= 8000) {
       S.slow = S.perfN / ((now - S.perfAt) / 1000) < 18 ? (S.slow || 0) + 1 : 0;
       S.perfAt = 0;
-      if (S.slow >= 2) {
+      if (S.slow >= 2 && tooMuch) {
+        S.slow = 0;
+        G.settings.lighting = 'max';
+        applyGraphics();
+        saveSettings();
+        G.ui.syncOptions();
+        G.ui.toast('Realistic graphics were too much for this computer, so Lighting was set back to Max. You can change it in Options.', 9);
+      } else if (S.slow >= 2) {
         const steps = ['off', 'low', 'medium', 'high', 'max'];
         G.settings.shadowQ = steps[Math.max(0, steps.indexOf(R.gfx.shadows) - 1)];
         S.slow = 0;

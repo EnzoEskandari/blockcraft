@@ -6,6 +6,7 @@ import { BLOCKS, ITEMS, B, ID, RENDER } from './blocks.js';
 import { smoothstep, mulberry32 } from './noise.js';
 import { itemModel, armGeometry } from './itemmodels.js';
 import { gunModel, hasGunModel } from './gunmodels.js';
+import { postTarget, postFinish, postDispose } from './post.js';
 
 export { itemModel };
 
@@ -110,6 +111,12 @@ uniform vec3 uSunLight;
 uniform vec3 uSunDir;
 uniform vec3 uSkyGlow;
 uniform float uTime;
+#ifdef REAL
+uniform sampler2DArray uAtlasSoft;
+uniform float uWet;
+uniform vec3 uSkyTop;
+uniform vec3 uSkyHor;
+#endif
 varying vec3 vUv;
 varying vec3 vCol;
 varying vec4 vL;
@@ -121,6 +128,15 @@ varying vec3 vCell;
 varying vec4 vN;
 varying float vGloss;
 float curve(float l) { return mix(l / (4.0 - 3.0 * l), l, uGamma); }
+#ifdef REAL
+// (Realistic lighting: see the REAL parts of main)
+float hash3(vec3 p) { p = fract(p * 0.1031); p += dot(p, p.yzx + 33.33); return fract((p.x + p.y) * p.z); }
+// how far each spot of a texture stands out (0 deepest to 1), read at a set sharpness so that it can be read
+// step by step along a line
+float heightAt(vec3 uvw, float lod) { return textureLod(uAtlasSoft, uvw, lod).a; }
+// the colour of the sky in a direction (for what mirrors it)
+vec3 skyCol(vec3 d) { return mix(uSkyHor, uSkyTop, smoothstep(-0.02, 0.5, d.y)); }
+#endif
 #ifdef SHADOWS
 // How much of the sun reaches this point. Each reading of the shadow map is itself a blend of the four
 // dots round it (the graphics card does that), and four of them a little apart give an edge that is soft
@@ -128,7 +144,17 @@ float curve(float l) { return mix(l / (4.0 - 3.0 * l), l, uGamma); }
 // instead of jumping.
 float sunAt(vec3 sc) {
   float z = sc.z - 0.00006, t = uShadowTexel;
-#if TAPS == 1
+#ifdef REAL
+  // (Realistic: nine readings scattered over a wider patch, turned a different way at every dot of the screen,
+  // so a shadow has a soft edge instead of a stepped one)
+  float turn = 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+  float s = 0.0;
+  for (int i = 0; i < 9; i++) {
+    float f = sqrt((float(i) + 0.5) / 9.0), b = turn + float(i) * 2.399963;
+    s += texture(uShadowMap, vec3(sc.xy + t * 2.3 * f * vec2(cos(b), sin(b)), z - 0.00005));
+  }
+  return s / 9.0;
+#elif TAPS == 1
   return texture(uShadowMap, vec3(sc.xy, z));
 #elif TAPS == 2
   return 0.5 * (texture(uShadowMap, vec3(sc.xy + t * vec2(-0.5, -0.5), z)) + texture(uShadowMap, vec3(sc.xy + t * vec2(0.5, 0.5), z)));
@@ -158,14 +184,82 @@ void main() {
   float sky = vL.x, blk = vL.y;
   bool water = vL.w > 0.5 && vL.w < 1.5, lava = vL.w > 1.5;
   bool surface = water && vN.y > 0.5;
-  if (lava) c = texture(uAtlas, vec3(vUv.x, vUv.y - uTime * 0.08, vUv.z));   // lava creeps
-  else if (surface) c = texture(uAtlas, vec3(vUv.x + uTime * 0.012, vUv.y - uTime * 0.03, vUv.z));   // still water drifts
-  else if (water) c = texture(uAtlas, vec3(vUv.x, vUv.y - uTime * 0.35, vUv.z));   // and falls
-  else c = texture(uAtlas, vUv);
+  vec3 uvw = vUv;
+  if (lava) uvw.y -= uTime * 0.08;   // lava creeps
+  else if (surface) { uvw.x += uTime * 0.012; uvw.y -= uTime * 0.03; }   // still water drifts
+  else if (water) uvw.y -= uTime * 0.35;   // and falls
+  c = texture(uAtlas, uvw);
   if (c.a < uAlphaTest) {
     // (leaves drawn solid, for speed: the gaps are filled with the leaf's own colour, darker)
     if (uSolidLeaves > 0.5 && abs(vS.w - 0.25) < 0.1) c = vec4(textureLod(uAtlas, vUv, 4.0).rgb * 0.62, 1.0); else discard;
   }
+  float sunK = vS.x, skyK = vS.y;
+#ifdef REAL
+  // Realistic: every surface has relief. The brighter dots of its texture stand proud of the darker ones (read
+  // from a smoothed copy of the texture, so the relief is rounded and not stepped), and the sun lights the side
+  // of each bump that is turned to it. No two blocks are quite the same shade, and close up there is a fine grain.
+  vec3 N = vN.xyz;
+  if (vN.w < 0.5 && !lava && !water) {
+    float near = 1.0 - smoothstep(20.0, 56.0, vL.z);
+    if (near > 0.0) {
+      // (which way the texture runs across this side, from how it changes over the screen)
+      vec3 dpx = dFdx(vView), dpy = dFdy(vView);
+      vec2 dux = dFdx(vUv.xy), duy = dFdy(vUv.xy);
+      vec3 pa = cross(dpy, N), pb = cross(N, dpx);
+      vec3 T = pa * dux.x + pb * duy.x, B = pa * dux.y + pb * duy.y;
+      float inv = inversesqrt(max(max(dot(T, T), dot(B, B)), 1e-12));
+      T *= inv; B *= inv;
+      float lod = max(0.0, 0.5 * log2(max(dot(dux, dux), dot(duy, duy)) * 256.0));
+      float e = 0.5 / 16.0;
+      // Close to, the relief has real depth: the low parts of a texture lie below its surface, so they slide
+      // behind the high parts as you look across it (found by stepping down into the surface along the line of
+      // sight), and the high parts keep the sun off the low ones beside them
+      // (not glass or water, which are seen through, nor leaves, which are full of holes)
+      float deep = uAlphaTest > 0.3 && abs(vS.w - 0.25) > 0.1 ? 1.0 - smoothstep(10.0, 18.0, vL.z) : 0.0;
+      float h0 = heightAt(uvw, lod);
+      float selfShade = 0.0;
+      if (deep > 0.0) {
+        const float DEPTH = 0.07;   // (a little over one dot of the texture)
+        vec3 V = normalize(-vView);
+        vec2 slide = vec2(dot(V, T), dot(V, B)) / max(dot(V, vN.xyz), 0.3) * (DEPTH * deep);
+        float level = 1.0;
+        vec2 o = vec2(0.0);
+        for (int i = 0; i < 14; i++) {
+          if (h0 >= level) break;
+          level -= 1.0 / 14.0;
+          o -= slide / 14.0;
+          h0 = heightAt(uvw + vec3(o, 0.0), lod);
+        }
+        // (between the last two steps, where the line of sight meets the surface)
+        float before = heightAt(uvw + vec3(o + slide / 14.0, 0.0), lod) - (level + 1.0 / 14.0), after = h0 - level;
+        o += slide / 14.0 * clamp(after / max(after - before, 1e-4), 0.0, 1.0) * step(level, 0.999);
+        uvw.xy += o;
+        c = textureGrad(uAtlas, uvw, dux, duy);
+        if (c.a < uAlphaTest) discard;   // (it slid on to a hole: a ladder, a door's window)
+        h0 = heightAt(uvw, lod);
+        // towards the sun from there: is anything higher in the way?
+        float lz = dot(uSunDir, vN.xyz);
+        if (lz > 0.04 && vS.x > 0.001) {
+          vec2 toSun = vec2(dot(uSunDir, T), dot(uSunDir, B)) / max(lz, 0.25) * (DEPTH * deep);
+          for (int i = 1; i <= 5; i++) {
+            float f = float(i) / 5.0;
+            float over = heightAt(uvw + vec3(toSun * f * (1.0 - h0), 0.0), lod) - (h0 + (1.0 - h0) * f);
+            selfShade = max(selfShade, clamp(over * 6.0, 0.0, 1.0));
+          }
+        }
+      }
+      float hu = heightAt(uvw + vec3(e, 0.0, 0.0), lod), hv = heightAt(uvw + vec3(0.0, e, 0.0), lod);
+      N = normalize(N - (T * (hu - h0) + B * (hv - h0)) * (5.0 * near));
+      // (and the hollows are a little darker)
+      c.rgb *= mix(1.0, 0.8 + 0.3 * h0, 0.7 * near);
+      sunK = (vS.x > 0.001 ? max(dot(N, uSunDir), 0.0) * 1.12 : 0.0) * (1.0 - 0.75 * selfShade);
+    } else sunK = vS.x;
+    c.rgb *= 0.955 + 0.09 * hash3(floor(vCell - vN.xyz * 0.5 + 0.001));
+    float close = 1.0 - smoothstep(5.0, 11.0, vL.z);
+    if (close > 0.0) c.rgb *= 1.0 + (hash3(floor((vCell + vN.xyz * 0.02) * 64.0)) - 0.5) * 0.07 * close;
+    skyK = vS.y * clamp(1.0 + 0.45 * (N.y - vN.y), 0.72, 1.2);
+  }
+#endif
   // the sun (or the moon): read from the shadow map around you, and guessed from the open sky further off
   float open = smoothstep(0.7, 0.97, sky);
   float lit = open;
@@ -175,7 +269,11 @@ void main() {
   // point (its middle, a hair off the surface), so a shadow's edge runs along the dots and never
   // wavers across them. A plant is looked up a little towards the light, so as not to shade itself.
   vec3 n = vN.xyz;
+#ifdef REAL
+  vec3 snap = vec3(0.0);   // (Realistic: shadows fall where they fall, not dot by dot)
+#else
   vec3 snap = (floor((vCell + n * 0.02) * 16.0) + 0.5) / 16.0 - vCell;
+#endif
   // (nothing to look up for a side turned from the sun, or somewhere the sky does not reach)
   if (uShadowOn > 0.5 && vS.x > 0.001 && sky > 0.1) {
     vec3 shift = snap + uSunDir * (0.8 * vN.w);
@@ -211,18 +309,58 @@ void main() {
       // (a side turned away from the lamp is in its own shadow)
       float facing = vN.w > 0.5 ? 1.0 : clamp(dot(n, -normalize(v)) * 8.0 + 0.6, 0.0, 1.0);
       lamp = mix(1.0, mix(0.25, 1.0, lampSees(v, mix(0.07, 0.9, vN.w)) * facing), w);
+#ifdef REAL
+      // (Realistic: the lamp picks out the relief too)
+      lamp *= mix(1.0, clamp(1.0 + 1.8 * dot(N - vN.xyz, -normalize(v)), 0.55, 1.4), w);
+#endif
     }
   }
 #endif
   // light from the whole sky, plus the sun where it shines; lamps and fire are warm, and add to it
-  vec3 skyPart = curve(sky * uDaylight) * (uSkyLight * vS.y + uSunLight * vS.x * lit);
+  vec3 skyPart = curve(sky * uDaylight) * (uSkyLight * skyK + uSunLight * sunK * lit);
   vec3 blkPart = curve(blk) * lamp * vS.z * vec3(1.1, 0.96, 0.8);
   vec3 lc = 1.0 - (1.0 - min(skyPart, 1.0)) * (1.0 - min(blkPart, 1.0));
   lc = uAmbient + (1.0 - uAmbient) * lc;
   if (lava) lc = vec3(0.96 + 0.06 * sin(uTime * 1.1 + (vUv.x + vUv.y) * 6.2832));   // lava glows by itself
   else if (vS.w > 0.5) lc = max(lc, vec3(0.97));   // and so does anything that shines
   vec3 col = c.rgb * vCol * lc;
-#ifdef WATERFX
+#ifdef REAL
+  if (surface) {
+    // Water: rolling waves of several sizes (not a dot at a time), a mirror of the sky that strengthens as you
+    // look along it, the sun's glitter across it, and darker, greener water where you look straight down
+    vec3 eye = normalize(-vView);
+    vec2 p = vCell.xz;
+    float t = uTime;
+    const float K = 0.02454369;   // (waves that meet where the numbering of the blocks wraps round)
+    vec2 g = vec2(0.0);
+    g += 0.045 * K * vec2(41.0, 17.0) * cos(K * (41.0 * p.x + 17.0 * p.y) + t * 1.1);
+    g += 0.035 * K * vec2(-23.0, 47.0) * cos(K * (-23.0 * p.x + 47.0 * p.y) + t * 1.4);
+    g += 0.012 * K * vec2(97.0, -61.0) * cos(K * (97.0 * p.x - 61.0 * p.y) + t * 2.3);
+    g += 0.008 * K * vec2(-131.0, -89.0) * cos(K * (-131.0 * p.x - 89.0 * p.y) + t * 2.9);
+    g += 0.004 * K * vec2(211.0, 173.0) * cos(K * (211.0 * p.x + 173.0 * p.y) + t * 3.7);
+    vec3 wn = normalize(vec3(-g.x, 1.0, -g.y));
+    float fres = 0.03 + 0.97 * pow(1.0 - max(dot(eye, wn), 0.0), 5.0);
+    vec3 rd = reflect(-eye, wn);
+    rd.y = abs(rd.y);
+    float sunny = max(dot(rd, uSunDir), 0.0);
+    col = mix(col * vec3(0.8, 0.92, 0.97), skyCol(rd) * (0.25 + 0.75 * curve(sky * uDaylight)), fres);
+    col += uSunLight * (pow(sunny, 900.0) * 7.0 + pow(sunny, 70.0) * 0.4) * lit * curve(sky);
+    c.a = mix(0.74, 0.98, fres);
+  } else if (!lava && vN.w < 0.5) {
+    // Everything else gives a little of the sun back where it mirrors it: more from the pale dots, far more from
+    // polished things, and most of all from ground that is wet with rain, which mirrors the sky as well
+    vec3 eye = normalize(-vView);
+    float wet = uWet * open;
+    float smooth_ = max(wet, vGloss > 0.5 ? 0.75 : 0.0);
+    float amount = mix(0.05 + 0.12 * dot(c.rgb, vec3(0.299, 0.587, 0.114)), 0.6, smooth_);
+    float sp = pow(max(dot(N, normalize(uSunDir + eye)), 0.0), mix(14.0, 120.0, smooth_)) * amount;
+    col += uSunLight * sp * 1.7 * lit * step(0.001, vS.x) * curve(sky * uDaylight);
+    if (wet > 0.01) {
+      float fres = pow(1.0 - max(dot(eye, N), 0.0), 4.0);
+      col = mix(col * (1.0 - 0.2 * wet), skyCol(reflect(-eye, N)) * curve(sky * uDaylight), fres * 0.5 * wet * step(0.5, vN.y));
+    }
+  }
+#elif defined(WATERFX)
   if (surface) {
     // water mirrors the sky more the flatter you look across it, and the sun glitters on its ripples
     // (one glint to a dot of the texture, so it stays blocky)
@@ -303,7 +441,8 @@ void main() {
 }`;
 
 export function pixelRatio() {
-  return Math.min(window.devicePixelRatio || 1, isTouchDevice ? 1.5 : 2);
+  // (Realistic graphics do a great deal of work for every dot, and smooth the edges themselves: no more than 1.5)
+  return Math.min(window.devicePixelRatio || 1, isTouchDevice || (R.gfx && R.gfx.real) ? 1.5 : 2);
 }
 
 // How bright the sky's light looks: nights are dark but you can still find your way (the game itself,
@@ -321,6 +460,7 @@ export function brightness(sky, blk) {
   return amb + (1 - amb) * l;
 }
 R.look = { daylight: 1, sky: 1, sun: 0 };
+R.shaftTint = new THREE.Color(1, 0.9, 0.7);
 
 export function initRenderer(container) {
   const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
@@ -345,6 +485,7 @@ export function initRenderer(container) {
   atlas.generateMipmaps = true;
   atlas.needsUpdate = true;
   R.atlas = atlas;
+  R.atlasRaw = { data, layers };
 
   const shared = {
     uAtlas: { value: atlas },
@@ -362,6 +503,11 @@ export function initRenderer(container) {
     uSkyLight: { value: new THREE.Color(1, 1, 1) },
     uSunLight: { value: new THREE.Color(0, 0, 0) },
     uSkyGlow: { value: new THREE.Color(0.7, 0.8, 1) },
+    // (Realistic lighting: a smoothed copy of the textures to read relief from, how wet the ground is, the sky's colours)
+    uAtlasSoft: { value: atlas },
+    uWet: { value: 0 },
+    uSkyTop: { value: new THREE.Color(0.38, 0.6, 1) },
+    uSkyHor: { value: new THREE.Color(0.72, 0.84, 1) },
     uShadowMap: { value: null },
     uShadowEnts: { value: null },
     uEntsFromView: { value: new THREE.Matrix4() },
@@ -418,17 +564,36 @@ function onResize() {
 // filtering; fancy; max: far-off textures kept sharp). This puts them into effect.
 export function applyGraphics() {
   const st = G.settings, r = R.renderer;
-  const lighting = ['simple', 'fancy', 'max'].includes(st.lighting) ? st.lighting : 'max';
+  // Realistic (Lighting set to 'real'; not on touch devices, whose graphics chips it would be too much for) is
+  // Max and more: relief on every surface, soft shadows, shine, rolling water, and the finishing pass in post.js
+  const real = st.lighting === 'real' && !isTouchDevice && !R.realBroken;
+  const lighting = real ? 'max' : ['simple', 'fancy', 'max'].includes(st.lighting) ? st.lighting : 'max';
   const textures = ['fast', 'fancy', 'max'].includes(st.textures) ? st.textures : 'fancy';
   let q = SHADOW_Q[st.shadowQ] ? st.shadowQ : st.shadowQ === 'off' ? 'off' : 'high';
+  if (real && (q === 'off' || q === 'low' || q === 'medium')) q = 'high';   // (it is nothing without good shadows)
   // (simple lighting has no sun to cast a shadow; and a card that refused the shadow shader gets none)
   if (lighting === 'simple' || R.shadowBroken) q = 'off';
-  R.gfx = { lighting, textures, shadows: q };
+  const was = R.gfx && R.gfx.real;
+  R.gfx = { lighting, textures, shadows: q, real };
+  if (!!was !== real && R.handCamera) onResize();   // (the picture's size changes with it)
+  if (real && !R.atlasSoft) {
+    // the smoothed copy of the textures: the same dots, blended into one another, with how far each stands out
+    const t = new THREE.DataArrayTexture(reliefData(R.atlasRaw.data, R.atlasRaw.layers), 16, 16, R.atlasRaw.layers);
+    t.format = THREE.RGBAFormat; t.type = THREE.UnsignedByteType;
+    t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter;
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.generateMipmaps = true; t.needsUpdate = true;
+    R.atlasSoft = t;
+    R.shared.uAtlasSoft.value = t;
+    for (const m of [R.opaqueMat, R.transMat]) if (m) m.uniforms.uAtlasSoft.value = t;
+  }
+  if (!real) postDispose();
   if (q !== 'off') sizeShadows(q);
   const defines = { TAPS: q === 'off' ? 4 : R.shadow.taps };
   if (q !== 'off') defines.SHADOWS = '';
   if (lighting === 'max') defines.WATERFX = '';
   if (lighting !== 'simple') defines.GLOSS = '';
+  if (real) defines.REAL = '';
   const key = JSON.stringify(defines);
   if (key !== R.defineKey) {
     R.defineKey = key;
@@ -439,6 +604,48 @@ export function applyGraphics() {
   const a = R.atlas, min = textures === 'fast' ? THREE.NearestMipmapNearestFilter : textures === 'max' ? THREE.LinearMipmapLinearFilter : THREE.NearestMipmapLinearFilter;
   const aniso = textures === 'max' ? Math.min(8, r.capabilities.getMaxAnisotropy()) : 1;
   if (a.minFilter !== min || a.anisotropy !== aniso) { a.minFilter = min; a.anisotropy = aniso; a.needsUpdate = true; }
+}
+
+// How far each dot of every texture stands out, for Realistic lighting, put in place of the copy's transparency.
+// Brighter dots stand prouder, measured against that texture's own darkest and brightest (so a pale texture has
+// as much relief as a dark one, and a plain one very little). Where the pale dots are the lines between
+// things (the mortar of a brick wall) it is the other way round: the lines lie deep.
+function reliefData(src, layers) {
+  const out = new Uint8Array(src);
+  const lum = new Float32Array(256);
+  for (let l = 0; l < layers; l++) {
+    const o = l * 1024;
+    let lo = 1, hi = 0, mean = 0;
+    for (let i = 0; i < 256; i++) {
+      const v = (0.299 * src[o + i * 4] + 0.587 * src[o + i * 4 + 1] + 0.114 * src[o + i * 4 + 2]) / 255;
+      lum[i] = v; mean += v / 256;
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
+    }
+    let sd = 0;
+    for (let i = 0; i < 256; i++) sd += (lum[i] - mean) * (lum[i] - mean) / 256;
+    sd = Math.sqrt(sd);
+    // whole rows or columns of pale dots, and none of dark ones: pale lines between darker things
+    let pale = 0, dark = 0;
+    for (let a = 0; a < 16; a++) {
+      let rp = 0, rd = 0, cp = 0, cd = 0;
+      for (let b = 0; b < 16; b++) {
+        const r = lum[a * 16 + b], c = lum[b * 16 + a];
+        if (r > mean + sd * 0.6) rp++; else if (r < mean - sd * 0.6) rd++;
+        if (c > mean + sd * 0.6) cp++; else if (c < mean - sd * 0.6) cd++;
+      }
+      if (rp >= 13 || cp >= 13) pale++;
+      if (rd >= 13 || cd >= 13) dark++;
+    }
+    const flip = pale >= 1 && dark === 0 && sd > 0.04;
+    const range = Math.max(hi - lo, 0.3);
+    for (let i = 0; i < 256; i++) {
+      let h = 0.5 + (lum[i] - (lo + hi) / 2) / range;
+      if (flip) h = 1 - h;
+      out[o + i * 4 + 3] = Math.round(Math.max(0, Math.min(1, h)) * 255);
+    }
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------- shadows
@@ -1354,6 +1561,7 @@ export function updateSky(time, dt, underwater, inLava) {
     sh.uFogColor.value.copy(fogCol); sh.uFogNear.value = near; sh.uFogFar.value = far;
     sh.uDaylight.value = skyLook(G.daylight); sh.uGamma.value = G.settings.gamma;
     sh.uDirK.value = 0; sh.uSunLight.value.setRGB(0, 0, 0); sh.uSkyLight.value.setRGB(1, 1, 1);
+    sh.uWet.value = 0; R.wet = 0; R.shafts = 0; sh.uSkyTop.value.copy(skyCol); sh.uSkyHor.value.copy(look.fog);
     R.look.daylight = sh.uDaylight.value; R.look.sky = 1; R.look.sun = 0;
     sh.uTime.value = (sh.uTime.value + dt) % 1000;
     R.frameDt = dt;
@@ -1430,6 +1638,13 @@ export function updateSky(time, dt, underwater, inLava) {
   sh.uSunLight.value.multiplyScalar(frac);
   sh.uSkyLight.value.setRGB(1, 1, 1).lerp(SHADE_SKY, dirK * (1 - night)).lerp(NIGHT_SKY, night).multiplyScalar(1 - frac);
   sh.uSkyGlow.value.copy(su.uHorizon.value).lerp(su.uTop.value, 0.35).lerp(SUNSET, sunset * 0.3);
+  // (for Realistic: the sky's colours for what mirrors it, how wet the rain has made the ground, and how much
+  // of the low sun's shafts to show)
+  sh.uSkyTop.value.copy(su.uTop.value); sh.uSkyHor.value.copy(su.uHorizon.value).lerp(SUNSET, sunset * 0.35);
+  R.wet = Math.max(wx.rain, (R.wet || 0) - dt / 90);   // (it dries off over a minute and a half)
+  sh.uWet.value = R.wet;
+  R.shafts = underwater || inLava ? 0 : (moon ? 0.25 : 1) * dirK * (0.45 + 0.9 * sunset);
+  R.shaftTint.copy(sh.uSunLight.value).multiplyScalar(1 / Math.max(frac, 0.05));
   sh.uDaylight.value = dl;
   sh.uGamma.value = G.settings.gamma;
   sh.uTime.value = (sh.uTime.value + dt) % 1000;
@@ -1460,6 +1675,10 @@ export function render() {
   updateLamp(R.frameDt || 0, R.gfx.shadows !== 'off' && R.lamp.tile > 0 && G.state === 'playing');
   sh.uShadowFromView.value.copy(lightVP).multiply(R.camera.matrixWorld);
   sh.uEntsFromView.value.copy(entsVP).multiply(R.camera.matrixWorld);
+  // (Realistic: into a picture of its own, which post.js finishes and puts on the screen)
+  const into = R.gfx.real ? postTarget(r) : null;
+  if (R.gfx.real && !into) { R.realBroken = true; applyGraphics(); }
+  r.setRenderTarget(into);
   r.clear();
   r.render(scene, R.camera);
   scene.matrixWorldAutoUpdate = true;
@@ -1467,4 +1686,5 @@ export function render() {
     r.clearDepth();
     r.render(R.handScene, R.handCamera);
   }
+  if (into) postFinish(r, R.camera, sh.uSunDir.value, R.shafts || 0, R.shaftTint);
 }

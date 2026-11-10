@@ -1,6 +1,6 @@
 // HUD, menus and inventory screens (plain DOM).
 import { UPDATES, LATEST } from './updates.js';
-import { G, saveSettings } from './game.js';
+import { G, saveSettings, isTouchDevice } from './game.js';
 import { BLOCKS, ITEMS, ID, B, maxStack, itemName, matchRecipe, fuelValue, SMELTING, creativeList, RECIPES, inTag, smith, NETHERITE_OF } from './blocks.js';
 import { iconURL, ICONS, drawAscii, TILES, TEX, armorSilhouette, shieldSilhouette } from './textures.js';
 import { PROFESSIONS, LEVEL_NAMES, levelProgress } from './villagers.js';
@@ -1152,7 +1152,8 @@ export class UI {
       { key: 'renderDist', label: 'Render Distance', min: 2, max: 12, step: 1, fmt: (v) => v + ' chunks' },
       { key: 'fov', label: 'FOV', min: 50, max: 110, step: 1, fmt: (v) => (v === 70 ? 'Normal' : v) },
       { key: 'gamma', label: 'Brightness', min: 0, max: 1, step: 0.05, fmt: (v) => (v === 0 ? 'Moody' : v === 1 ? 'Bright' : Math.round(v * 100) + '%') },
-      { key: 'lighting', label: 'Lighting', cycle: ['simple', 'fancy', 'max'], names: { simple: 'Simple', fancy: 'Fancy', max: 'Max' } },
+      // (Realistic is for laptops and desktops: it is not offered on a touch device)
+      { key: 'lighting', label: 'Lighting', cycle: isTouchDevice ? ['simple', 'fancy', 'max'] : ['simple', 'fancy', 'max', 'real'], names: { simple: 'Simple', fancy: 'Fancy', max: 'Max', real: isTouchDevice ? 'Max' : 'Realistic' } },
       { key: 'shadowQ', label: 'Shadows', cycle: ['off', 'low', 'medium', 'high', 'max'], names: { off: 'Off', low: 'Low', medium: 'Medium', high: 'High', max: 'Max' } },
       { key: 'textures', label: 'Textures', cycle: ['fast', 'fancy', 'max'], names: { fast: 'Fast', fancy: 'Fancy', max: 'Max' } },
       { key: 'fpsLimit', label: 'Frame Rate', cycle: ['screen', 'unlimited'], names: { screen: 'Matches Screen', unlimited: 'Unlimited' } },
@@ -1190,6 +1191,7 @@ export class UI {
             // shadows need a sun to cast them
             if (G.settings.shadowQ !== 'off' && G.settings.lighting === 'simple') { G.settings.lighting = 'fancy'; this.toast('Lighting set to Fancy, so that shadows show'); this.syncOptions(); }
           }
+          if (o.key === 'lighting' && G.settings.lighting === 'real') this.toast('Realistic graphics: relief, soft shadows, reflections and glow. If the game slows down, set Lighting back to Max.', 7);
           this.applySetting(o.key);
           sync();
         });
