@@ -127,6 +127,19 @@ const AIRBASE = {
 export const UPDATES = [
   {
     // a small update: it keeps the Arsenal picture
+    version: '1.12.5', name: 'Clear Water', date: '2026-11-09',
+    splashes: ['Bang!', 'Reload!', 'Nine guns!', 'Steady aim!', 'Fox two!', 'Lock on!', 'Turret online!', 'Tracers!', 'Incoming!', 'Launch!', 'Duck and cover!', 'Keep your stuff!', 'Eyes front!', 'Still here!', 'Left click!', 'Hit!', 'Golden hour!', 'Lens flare!', 'Crystal clear!', 'Surf\'s up!'],
+    scene: AIRBASE,
+    notes: [
+      'Water in Realistic graphics is water now, not blue glass. It is clear: you see the sand and rock under it, bent by the waves, and it darkens from pale turquoise in the shallows to deep blue-green far from shore.',
+      'It mirrors the land as well as the sky: hills and trees show in it, more the flatter you look across it. The sun glitters on the waves and throws a moving net of light on the bottom.',
+      'Foam drifts over the shallowest water and edges whatever the water touches. Waves come in many sizes and never in straight rows.',
+      'From underneath, the surface is a bright, rippling sheet. Waterfalls are clear with white threads running down them.',
+      'Grass, sand and other speckled blocks no longer look smeared up close in Realistic graphics.',
+    ],
+  },
+  {
+    // a small update: it keeps the Arsenal picture
     version: '1.12.4', name: 'Golden Hour', date: '2026-11-09',
     splashes: ['Bang!', 'Reload!', 'Nine guns!', 'Steady aim!', 'Fox two!', 'Lock on!', 'Turret online!', 'Tracers!', 'Incoming!', 'Launch!', 'Duck and cover!', 'Keep your stuff!', 'Eyes front!', 'Still here!', 'Left click!', 'Hit!', 'Golden hour!', 'Lens flare!'],
     scene: AIRBASE,

@@ -53,6 +53,17 @@ void main() {
   gl_FragColor = vec4(glow, ao);
 }`;
 
+// The picture so far, copied into a second one with its distances (water is then drawn into the copy, looking
+// at the first for what lies behind it and what it mirrors: see the water in render.js)
+const COPY_FS = `
+uniform sampler2D tColor;
+uniform sampler2D tDepth;
+varying vec2 vUv;
+void main() {
+  gl_FragColor = texture2D(tColor, vUv);
+  gl_FragDepth = texture2D(tDepth, vUv).r;
+}`;
+
 // A blur along one direction (run across, then down)
 const BLUR_FS = `
 uniform sampler2D tMap;
@@ -134,6 +145,7 @@ function target(w, h, depth) {
 function build() {
   const mat = (fs, uniforms) => new THREE.ShaderMaterial({ vertexShader: VS, fragmentShader: fs, uniforms, depthTest: false, depthWrite: false });
   P.pre = mat(PRE_FS, { tColor: { value: null }, tDepth: { value: null }, uProjInv: { value: new THREE.Matrix4() }, uPx: { value: new THREE.Vector2() } });
+  P.copy = new THREE.ShaderMaterial({ vertexShader: VS, fragmentShader: COPY_FS, uniforms: { tColor: { value: null }, tDepth: { value: null } }, depthTest: true, depthFunc: THREE.AlwaysDepth, depthWrite: true });
   P.blur = mat(BLUR_FS, { tMap: { value: null }, uStep: { value: new THREE.Vector2() } });
   P.final = mat(FINAL_FS, { tColor: { value: null }, tNear: { value: null }, tFar: { value: null }, uPx: { value: new THREE.Vector2() },
     uSun: { value: new THREE.Vector3() }, uSunTint: { value: new THREE.Color(1, 0.9, 0.7) } });
@@ -145,10 +157,12 @@ function build() {
 }
 function size(w, h) {
   if (P.w === w && P.h === h) return;
-  for (const t of [P.main, P.a, P.b, P.c, P.d]) if (t) t.dispose();
+  for (const t of [P.main, P.back, P.a, P.b, P.c, P.d]) if (t) t.dispose();
   P.w = w; P.h = h;
   const hw = Math.max(2, w >> 1), hh = Math.max(2, h >> 1), qw = Math.max(2, w >> 2), qh = Math.max(2, h >> 2);
   P.main = target(w, h, true);
+  P.back = target(w, h, true);
+  P.main.texture.minFilter = P.main.texture.magFilter = THREE.LinearFilter;
   P.a = target(hw, hh); P.b = target(hw, hh);
   P.c = target(qw, qh); P.d = target(qw, qh);
 }
@@ -174,12 +188,21 @@ export function postTarget(r) {
   }
 }
 
+// Everything but the water has been drawn: copy it, and hand back the copy to draw the water (and the hand) into,
+// with the first picture and its distances for the water to look at
+export function postWater(r) {
+  P.copy.uniforms.tColor.value = P.main.texture;
+  P.copy.uniforms.tDepth.value = P.main.depthTexture;
+  pass(r, P.copy, P.back);
+  return { target: P.back, scene: P.main.texture, depth: P.main.depthTexture, w: P.w, h: P.h };
+}
+
 // The world has been drawn into the picture: finish it and put it on the screen.
 // sunDir: towards the sun (or the moon); shafts: how strongly its shafts show (0 for none); tint: their colour
 export function postFinish(r, camera, sunDir, shafts, tint) {
   P.final.uniforms.uPx.value.set(1 / P.w, 1 / P.h);
-  P.pre.uniforms.tColor.value = P.main.texture;
-  P.pre.uniforms.tDepth.value = P.main.depthTexture;
+  P.pre.uniforms.tColor.value = P.back.texture;
+  P.pre.uniforms.tDepth.value = P.main.depthTexture;   // (the world's distances, from before the hand was drawn over them)
   P.pre.uniforms.uProjInv.value.copy(camera.projectionMatrixInverse);
   P.pre.uniforms.uPx.value.set(1 / P.w, 1 / P.h);
   pass(r, P.pre, P.a);
@@ -196,14 +219,14 @@ export function postFinish(r, camera, sunDir, shafts, tint) {
   const front = sunAt.z < 1 ? 1 : 0;
   P.final.uniforms.uSun.value.set(sunAt.x * 0.5 + 0.5, sunAt.y * 0.5 + 0.5, shafts * front);
   P.final.uniforms.uSunTint.value.copy(tint);
-  P.final.uniforms.tColor.value = P.main.texture;
+  P.final.uniforms.tColor.value = P.back.texture;
   P.final.uniforms.tNear.value = P.a.texture;
   P.final.uniforms.tFar.value = P.d.texture;
   pass(r, P.final, null);
 }
 
 export function postDispose() {
-  for (const t of [P.main, P.a, P.b, P.c, P.d]) if (t) t.dispose();
-  P.main = P.a = P.b = P.c = P.d = null;
+  for (const t of [P.main, P.back, P.a, P.b, P.c, P.d]) if (t) t.dispose();
+  P.main = P.back = P.a = P.b = P.c = P.d = null;
   P.w = P.h = 0;
 }

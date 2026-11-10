@@ -6,7 +6,7 @@ import { BLOCKS, ITEMS, B, ID, RENDER } from './blocks.js';
 import { smoothstep, mulberry32 } from './noise.js';
 import { itemModel, armGeometry } from './itemmodels.js';
 import { gunModel, hasGunModel } from './gunmodels.js';
-import { postTarget, postFinish, postDispose } from './post.js';
+import { postTarget, postWater, postFinish, postDispose } from './post.js';
 
 export { itemModel };
 
@@ -82,6 +82,7 @@ void main() {
 const LAMP_NEAR = 0.08, LAMP_FAR = 18;
 const CHUNK_FS = `
 precision highp sampler2DShadow;
+precision highp sampler2D;
 uniform sampler2DArray uAtlas;
 #ifdef SHADOWS
 uniform sampler2DShadow uShadowMap;
@@ -117,6 +118,14 @@ uniform float uWet;
 uniform vec3 uSkyTop;
 uniform vec3 uSkyHor;
 #endif
+#ifdef REALWATER
+// (Realistic water: the world behind it, already drawn, and how far away each dot of that is)
+uniform sampler2D uScene;
+uniform sampler2D uSceneDepth;
+uniform vec2 uPx;
+uniform vec2 uNearFar;
+uniform mat4 projectionMatrix;
+#endif
 varying vec3 vUv;
 varying vec3 vCol;
 varying vec4 vL;
@@ -136,6 +145,33 @@ float hash3(vec3 p) { p = fract(p * 0.1031); p += dot(p, p.yzx + 33.33); return 
 float heightAt(vec3 uvw, float lod) { return textureLod(uAtlasSoft, uvw, lod).a; }
 // the colour of the sky in a direction (for what mirrors it)
 vec3 skyCol(vec3 d) { return mix(uSkyHor, uSkyTop, smoothstep(-0.02, 0.5, d.y)); }
+#endif
+#ifdef REALWATER
+float linZ(float d) { return 2.0 * uNearFar.x * uNearFar.y / (uNearFar.y + uNearFar.x - (d * 2.0 - 1.0) * (uNearFar.y - uNearFar.x)); }
+// The slope of the water's surface at a place: swells, waves and ripples of many sizes crossing one another
+// (the fine ones fade with distance, where they would only glitter). K: so they meet where the blocks' numbering wraps.
+vec2 waveSlope(vec2 p, float t, float fine) {
+  const float K = 0.02454369;
+  // (the water is pushed about a little first, so the waves are never in straight rows)
+  p += 0.55 * vec2(sin(K * (31.0 * p.y + 7.0 * p.x) + t * 0.31), sin(K * (27.0 * p.x - 11.0 * p.y) - t * 0.27));
+  p += 0.12 * vec2(sin(K * (113.0 * p.y - 67.0 * p.x) + t * 0.9), sin(K * (101.0 * p.x + 59.0 * p.y) - t * 0.8));
+  vec2 g = vec2(0.0);
+  g += 0.060 * K * vec2(29.0, 13.0) * cos(K * (29.0 * p.x + 13.0 * p.y) + t * 0.9);
+  g += 0.045 * K * vec2(-19.0, 37.0) * cos(K * (-19.0 * p.x + 37.0 * p.y) + t * 1.2);
+  g += 0.022 * K * vec2(71.0, -43.0) * cos(K * (71.0 * p.x - 43.0 * p.y) + t * 1.9);
+  g += 0.016 * K * vec2(-97.0, -59.0) * cos(K * (-97.0 * p.x - 59.0 * p.y) + t * 2.3);
+  g += fine * 0.0075 * K * vec2(173.0, 127.0) * cos(K * (173.0 * p.x + 127.0 * p.y) + t * 3.1);
+  g += fine * 0.0060 * K * vec2(-211.0, 157.0) * cos(K * (-211.0 * p.x + 157.0 * p.y) + t * 3.7);
+  g += fine * 0.0034 * K * vec2(337.0, -263.0) * cos(K * (337.0 * p.x - 263.0 * p.y) + t * 4.6);
+  g += fine * 0.0026 * K * vec2(-419.0, -389.0) * cos(K * (-419.0 * p.x - 389.0 * p.y) + t * 5.3);
+  return g;
+}
+// the net of light the sun throws on the bottom through the waves
+float caustic(vec2 p, float t) {
+  float a = sin(p.x * 1.7 + t * 0.9) + sin(p.y * 1.9 - t * 1.1) + sin((p.x + p.y) * 1.3 + t * 0.7) + sin((p.x - p.y) * 2.3 - t * 1.3);
+  float b = sin(p.x * 3.1 - t * 1.3) + sin(p.y * 2.7 + t * 0.8) + sin((p.x - p.y) * 1.9 + t * 1.6);
+  return pow(clamp(1.0 - abs(a) * 0.36, 0.0, 1.0), 5.0) + 0.6 * pow(clamp(1.0 - abs(b) * 0.45, 0.0, 1.0), 5.0);
+}
 #endif
 #ifdef SHADOWS
 // How much of the sun reaches this point. Each reading of the shadow map is itself a blend of the four
@@ -325,28 +361,87 @@ void main() {
   else if (vS.w > 0.5) lc = max(lc, vec3(0.97));   // and so does anything that shines
   vec3 col = c.rgb * vCol * lc;
 #ifdef REAL
-  if (surface) {
-    // Water: rolling waves of several sizes (not a dot at a time), a mirror of the sky that strengthens as you
-    // look along it, the sun's glitter across it, and darker, greener water where you look straight down
+#ifdef REALWATER
+  if (water) {
+    // Water as it is: clear. What lies under it shows through, bent by the waves, and fades with the depth of
+    // water the light has to cross (red first, so shallows are pale turquoise and deep water dark blue-green).
+    // The surface mirrors the sky and the land beyond (found by following the mirrored line of sight across the
+    // picture already drawn), more the flatter you look along it; the sun glitters on it and throws a net of
+    // light on the bottom; and there is foam where it meets the shore.
+    vec2 suv = gl_FragCoord.xy * uPx;
+    float zw = linZ(gl_FragCoord.z), t = uTime;
     vec3 eye = normalize(-vView);
-    vec2 p = vCell.xz;
-    float t = uTime;
-    const float K = 0.02454369;   // (waves that meet where the numbering of the blocks wraps round)
-    vec2 g = vec2(0.0);
-    g += 0.045 * K * vec2(41.0, 17.0) * cos(K * (41.0 * p.x + 17.0 * p.y) + t * 1.1);
-    g += 0.035 * K * vec2(-23.0, 47.0) * cos(K * (-23.0 * p.x + 47.0 * p.y) + t * 1.4);
-    g += 0.012 * K * vec2(97.0, -61.0) * cos(K * (97.0 * p.x - 61.0 * p.y) + t * 2.3);
-    g += 0.008 * K * vec2(-131.0, -89.0) * cos(K * (-131.0 * p.x - 89.0 * p.y) + t * 2.9);
-    g += 0.004 * K * vec2(211.0, 173.0) * cos(K * (211.0 * p.x + 173.0 * p.y) + t * 3.7);
-    vec3 wn = normalize(vec3(-g.x, 1.0, -g.y));
-    float fres = 0.03 + 0.97 * pow(1.0 - max(dot(eye, wn), 0.0), 5.0);
-    vec3 rd = reflect(-eye, wn);
-    rd.y = abs(rd.y);
-    float sunny = max(dot(rd, uSunDir), 0.0);
-    col = mix(col * vec3(0.8, 0.92, 0.97), skyCol(rd) * (0.25 + 0.75 * curve(sky * uDaylight)), fres);
-    col += uSunLight * (pow(sunny, 900.0) * 7.0 + pow(sunny, 70.0) * 0.4) * lit * curve(sky);
-    c.a = mix(0.74, 0.98, fres);
-  } else if (!lava && vN.w < 0.5) {
+    bool under = surface && eye.y < 0.0;   // (looking up at the surface from below)
+    float fine = 1.0 - smoothstep(18.0, 70.0, vL.z);
+    vec3 wn = vN.xyz;
+    if (surface) { vec2 g = waveSlope(vCell.xz, t, fine); wn = normalize(vec3(-g.x, 1.0, -g.y)); if (under) wn = -wn; }
+    float light = max(curve(sky * uDaylight), curve(blk) * 0.8);
+    // what is behind it, seen a little aside (more through deeper water)
+    float zs0 = linZ(texture(uSceneDepth, suv).r), thick0 = max(zs0 - zw, 0.0);
+    vec2 ruv = clamp(suv + wn.xz * (min(thick0, 3.0) * 0.11 / (zw + 2.0)) * vec2(uPx.x / uPx.y, 1.0) * 1.4, 0.001, 0.999);
+    float zs = linZ(texture(uSceneDepth, ruv).r);
+    if (zs < zw) { ruv = suv; zs = zs0; }   // (never something in front of the water)
+    vec3 bottom = texture(uScene, ruv).rgb;
+    float thick = max(zs - zw, 0.0) * (vL.z / zw);   // (how much water the line of sight crosses)
+    if (!surface) thick = min(thick, 0.9);   // (a fall of water, or the side of a pool: there is not much of it to look through)
+    vec3 deepCol = vec3(0.02, 0.15, 0.19) * (0.2 + 1.0 * light);
+    vec3 col2;
+    if (under) {
+      // from below: the world above, and the water's own dark where you look along the surface
+      // (under water the sky is not drawn: the daylight stands in for it)
+      vec3 above = max(bottom, uSkyHor * (0.35 + 0.65 * light) * (0.85 + 2.5 * wn.x + 2.5 * wn.z));
+      col2 = mix(above, deepCol * 1.4, pow(1.0 - abs(dot(eye, wn)), 3.0));
+    } else {
+      // where the bottom is, and how deep the water over it
+      vec3 at = cameraPosition + vView * (zs / zw);
+      float depth = surface ? max(cameraPosition.y + vView.y - at.y, 0.0) : thick;
+      if (surface && uSunDir.y > 0.05) bottom *= 1.0 + caustic(at.xz * 0.9 + wn.xz * 2.0, t) * 0.55 * lit * exp(-depth * 0.22) * smoothstep(0.0, 0.5, depth);
+      vec3 through = exp(-thick * vec3(0.36, 0.08, 0.048));
+      vec3 body = bottom * through + deepCol * (1.0 - through);
+      // the mirror
+      float fres = 0.02 + 0.98 * pow(1.0 - max(dot(eye, wn), 0.0), 5.0);
+      vec3 rd = reflect(-eye, wn);
+      if (surface) rd.y = max(abs(rd.y), 0.015);
+      vec3 mirror = skyCol(rd) * (0.2 + 0.8 * light);
+      if (surface && vL.z < 110.0) {
+        vec3 pv = mat3(viewMatrix) * vView, rv = mat3(viewMatrix) * rd;
+        float jitter = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+        float s = 0.5 * (1.0 + 0.3 * jitter);
+        for (int i = 0; i < 20; i++) {
+          vec3 q = pv + rv * s;
+          if (q.z > -0.1) break;
+          vec4 cl = projectionMatrix * vec4(q, 1.0);
+          vec2 u = cl.xy / cl.w * 0.5 + 0.5;
+          if (u.x < 0.0 || u.x > 1.0 || u.y < 0.0 || u.y > 1.0) break;
+          float behind = -q.z - linZ(texture(uSceneDepth, u).r);
+          if (behind > 0.0 && behind < 1.2 + s * 0.3) {
+            vec2 edge = smoothstep(0.0, 0.1, u) * smoothstep(0.0, 0.1, 1.0 - u);
+            mirror = mix(mirror, texture(uScene, u).rgb, edge.x * edge.y);
+            break;
+          }
+          s *= 1.3;
+        }
+      }
+      col2 = mix(body, mirror, surface ? fres : fres * 0.5);
+      if (surface) {
+        float sunny = max(dot(rd, uSunDir), 0.0);
+        col2 += uSunLight * (pow(sunny, 1400.0) * 16.0 + pow(sunny, 110.0) * 0.55 + pow(sunny, 14.0) * 0.06) * lit * curve(sky);
+        // foam: in lines that drift over the shallowest water, and a thin edge wherever it meets something
+        float lines = sin(vCell.x * 2.3 + sin(vCell.z * 1.7 + t * 0.6) * 1.4 + t * 0.9) * sin(vCell.z * 2.9 - sin(vCell.x * 1.3 - t * 0.5) * 1.2);
+        float foam = smoothstep(1.25, 0.8, depth) * smoothstep(0.25, 0.8, lines) * 0.75 + smoothstep(0.3, 0.02, thick0) * 0.8;
+        col2 = mix(col2, vec3(0.9, 0.95, 0.97) * (0.25 + 0.75 * light), clamp(foam, 0.0, 0.9) * fine);
+        col2 = mix(bottom, col2, smoothstep(0.0, 0.05, thick0));
+      } else {
+        // falling water and the sides of it: white threads running down
+        float thread = sin((vCell.x + vCell.z) * 9.0 + sin(vCell.y * 2.2 + t * 6.0) * 1.3) * 0.5 + 0.5;
+        col2 = mix(col2, vec3(0.85, 0.93, 0.97) * (0.25 + 0.75 * light), 0.1 + smoothstep(0.6, 1.0, thread) * 0.4);
+      }
+    }
+    col = col2;
+    c.a = 1.0;
+  } else
+#endif
+  if (!lava && !water && vN.w < 0.5) {
     // Everything else gives a little of the sun back where it mirrors it: more from the pale dots, far more from
     // polished things, and most of all from ground that is wet with rain, which mirrors the sky as well
     vec3 eye = normalize(-vView);
@@ -473,6 +568,7 @@ export function initRenderer(container) {
   R.scene = new THREE.Scene();
   R.camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 1200);
   R.camera.rotation.order = 'YXZ';
+  R.camera.layers.enable(5);
   R.scene.fog = new THREE.Fog(0xc0d8ff, 40, 100);
 
   const { data, layers } = atlasData();
@@ -505,6 +601,7 @@ export function initRenderer(container) {
     uSkyGlow: { value: new THREE.Color(0.7, 0.8, 1) },
     // (Realistic lighting: a smoothed copy of the textures to read relief from, how wet the ground is, the sky's colours)
     uAtlasSoft: { value: atlas },
+    uScene: { value: null }, uSceneDepth: { value: null }, uPx: { value: new THREE.Vector2(1, 1) }, uNearFar: { value: new THREE.Vector2(0.05, 1200) },
     uWet: { value: 0 },
     uSkyTop: { value: new THREE.Color(0.38, 0.6, 1) },
     uSkyHor: { value: new THREE.Color(0.72, 0.84, 1) },
@@ -598,6 +695,8 @@ export function applyGraphics() {
   if (key !== R.defineKey) {
     R.defineKey = key;
     for (const m of [R.opaqueMat, R.transMat]) { m.defines = { ...defines }; m.needsUpdate = true; }
+    // (only the see-through things' shader looks at the picture already drawn: it is drawn after the rest)
+    if (real) R.transMat.defines.REALWATER = '';
     R.frames = 0;
   }
   R.shared.uSolidLeaves.value = textures === 'fast' ? 1 : 0;
@@ -639,8 +738,14 @@ function reliefData(src, layers) {
     }
     const flip = pale >= 1 && dark === 0 && sd > 0.04;
     const range = Math.max(hi - lo, 0.3);
+    // (a texture that is only speckle, like grass or sand, has no shapes to stand out: each dot differs from the
+    // next as much as from any other. It gets a fraction of the relief, or it would only swim about.)
+    let step = 0;
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) step += (Math.abs(lum[y * 16 + x] - lum[y * 16 + ((x + 1) & 15)]) + Math.abs(lum[y * 16 + x] - lum[((y + 1) & 15) * 16 + x])) / 512;
+    const speckle = sd > 1e-4 ? step / sd : 0;
+    const much = Math.max(0.22, Math.min(1, (1.05 - speckle) / 0.45));
     for (let i = 0; i < 256; i++) {
-      let h = 0.5 + (lum[i] - (lo + hi) / 2) / range;
+      let h = 0.5 + (lum[i] - (lo + hi) / 2) / range * much;
       if (flip) h = 1 - h;
       out[o + i * 4 + 3] = Math.round(Math.max(0, Math.min(1, h)) * 255);
     }
@@ -1493,6 +1598,7 @@ function placeMesh(geo, mat, chunk) {
   const m = new THREE.Mesh(geo, mat);
   // (solid blocks cast shadows: layer 1 is all of them, 10 to 13 a quarter each)
   if (mat === R.opaqueMat) { m.layers.enable(1); m.layers.enable(10 + (chunk.cx & 1) + (chunk.cz & 1) * 2); }
+  else m.layers.set(5);   // (water, glass and ice are on a layer of their own: Realistic draws them after everything else)
   m.position.set(chunk.cx * 16, 0, chunk.cz * 16);
   m.scale.setScalar(1 / 16);
   m.matrixAutoUpdate = false;
@@ -1680,7 +1786,18 @@ export function render() {
   if (R.gfx.real && !into) { R.realBroken = true; applyGraphics(); }
   r.setRenderTarget(into);
   r.clear();
-  r.render(scene, R.camera);
+  if (into) {
+    // everything but the water, glass and ice; then those, looking at what has been drawn so far
+    R.camera.layers.disable(5);
+    r.render(scene, R.camera);
+    const W = postWater(r);
+    sh.uScene.value = W.scene; sh.uSceneDepth.value = W.depth;
+    sh.uPx.value.set(1 / W.w, 1 / W.h); sh.uNearFar.value.set(R.camera.near, R.camera.far);
+    R.camera.layers.set(5);
+    r.setRenderTarget(W.target);
+    r.render(scene, R.camera);
+    R.camera.layers.enable(0);
+  } else r.render(scene, R.camera);
   scene.matrixWorldAutoUpdate = true;
   if (R.handHolder.visible) {
     r.clearDepth();
