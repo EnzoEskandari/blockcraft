@@ -289,7 +289,7 @@ export class Net {
       let timer = setTimeout(() => fail('The multiplayer server did not answer. Check your connection and try again.', true), 25000);
       ws.onopen = () => {
         onStatus('Joining…');
-        ws.send(JSON.stringify({ t: 'world', id: worldId, dim, token: account.token, haves, mine, spec: spec || undefined, caps: 14 }));   // (caps: 14 reads blocks saved as runs, 13 knows Keep Inventory, 12 keeps its own rewind points, 11 knows warheads, /tick and rewinding, 10 knows missile silos, 9 knows missile turrets, 8 knows planes and turrets, 7 knows pandas and polar bears, 6 knows sports cars and supercars, 5 knows cars, 4 keeps what is in bundles, 1 hides spectators, 2 reloads when an admin says so, 3 has weather and sets it and the time when told)
+        ws.send(JSON.stringify({ t: 'world', id: worldId, dim, token: account.token, haves, mine, spec: spec || undefined, caps: 15 }));   // (caps: 15 leaves craters in unloaded land for later, 14 reads blocks saved as runs, 13 knows Keep Inventory, 12 keeps its own rewind points, 11 knows warheads, /tick and rewinding, 10 knows missile silos, 9 knows missile turrets, 8 knows planes and turrets, 7 knows pandas and polar bears, 6 knows sports cars and supercars, 5 knows cars, 4 keeps what is in bundles, 1 hides spectators, 2 reloads when an admin says so, 3 has weather and sets it and the time when told)
       };
       ws.onerror = () => {};
       ws.onclose = () => {

@@ -1739,6 +1739,7 @@ class Arrow {
         m.hurt((mine ? dmg : Math.min(dmg, 5)) + (imp && (m.inWater || m.def.aquatic) ? 2.5 * imp : 0), this.pos.x, this.pos.z, mine, 1 + 0.75 * this.punch, this.shooter,
           mine ? { fire: this.flame ? 5 : 0, arrow: this.bullet ? 0 : far, bolt: this.bolt ? 1 : 0, shot: this.shot } : null);
         sfx('arrowhit', m.pos);
+        if (mine && this.bullet && G.ui.hitMark) G.ui.hitMark(m.dead);   // (the tick on the crosshair)
         if (mine && G.adv && !this.bullet) G.adv.shot(m, far, this);
         if (this.trident) { this.tridentHit(m); return; }
         if (this.boom) { this.blast(); return; }

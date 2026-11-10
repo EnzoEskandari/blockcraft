@@ -20,7 +20,7 @@ import { sfx } from './audio.js';
 import { raycast } from './physics.js';
 import { MOB_TYPES, MODELS, rect } from './entities.js';
 import { launchFlash } from './planes.js';
-import { WARHEADS, warheadOf, detonate, prepareCrater } from './warheads.js';
+import { WARHEADS, warheadOf, detonate } from './warheads.js';
 
 const rand = Math.random;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -124,7 +124,6 @@ function missileAI(m, dt) {
   }
   const P = m.gear.path;
   m.gear.t += dt;
-  if (!isGuest() && warheadOf(m.gear.wh).r) prepareCrater(P.tx, P.tz, warheadOf(m.gear.wh).r);
   const u = Math.min(1, m.gear.t / P.T);
   const at = along(P, u), ahead = along(P, Math.min(1, u + 0.01));
   const dx = at.x - m.pos.x, dy = at.y - m.pos.y, dz = at.z - m.pos.z;

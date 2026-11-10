@@ -22,7 +22,8 @@ import { rollLoot, treasureFor } from './structures.js';
 import { hash3 } from './noise.js';
 import { Net, serverURL } from './net.js';
 import './dimmobs.js';
-import { tickWarheads, clearWarheads } from './warheads.js';
+import { itemShape } from './itemmodels.js';
+import { tickWarheads, clearWarheads, carveWaiting } from './warheads.js';
 import { savePoint, latestPoint, listPoints, forgetWorld } from './rewind.js';
 import { startPanorama, stopPanorama, panoramaFrame } from './panorama.js';
 import { tickWeather, resetWeather, weatherState, weatherKind, setWeather } from './weather.js';
@@ -193,6 +194,7 @@ function simulateAroundGuests(budget) {
   }
 }
 
+const URGENT_MAX = 3;
 function updateChunks(budget) {
   const w = G.world, p = G.player;
   const t0 = performance.now();
@@ -204,11 +206,24 @@ function updateChunks(budget) {
   const lead = fast ? Math.min(1.5, Math.hypot(fast.x, fast.z) / 40) / Math.hypot(fast.x, fast.z) : 0;
   const acx = fast ? Math.floor(p.pos.x / 16 + fast.x * lead) : pcx, acz = fast ? Math.floor(p.pos.z / 16 + fast.z * lead) : pcz;
 
-  for (const k of S.urgent) {
-    const c = w.chunks.get(k);
-    if (c && neighborsReady(c)) meshChunk(c);
+  // Chunks where a block has just changed are drawn again at once, the nearest first, a few a frame: when
+  // a great many change together (fires spreading round a crater, a big explosion) the rest follow over the next
+  // frames instead of stopping the game for all of them at once
+  if (S.urgent.size) {
+    let list = [...S.urgent];
+    if (list.length > URGENT_MAX) {
+      const far = (k) => { const c = w.chunks.get(k); return c ? Math.hypot(c.cx - pcx, c.cz - pcz) : 0; };
+      list = list.map((k) => [k, far(k)]).sort((a, b) => a[1] - b[1]).map((x) => x[0]);
+    }
+    let n = 0;
+    for (const k of list) {
+      const c = w.chunks.get(k);
+      if (c && n >= URGENT_MAX) break;
+      S.urgent.delete(k);
+      if (!c) continue;
+      if (neighborsReady(c)) { meshChunk(c); n++; } else c.dirty = true;
+    }
   }
-  S.urgent.clear();
 
   S.unloadT = (S.unloadT || 0) + 1;
   if (pcx !== S.lastCX || pcz !== S.lastCZ || (G.net && S.unloadT > 120)) {
@@ -1331,7 +1346,7 @@ export const Game = {
       k: 'world', host: G.net.spec ? '' : G.net.name, name: G.worldMeta.name, seed: w.seed, mode: G.worldMeta.mode,
       time: G.time, day: G.day || 0, nns: G.nightsNoSleep || 0, weather: weatherState(),
       spawn: w.worldSpawn || p.spawn, edits: packEdits(w), guest: playerRecord(w.guests, account, name),
-      legacy: w.legacy ? [...w.legacy] : null, gens: packGens(w), signs: Object.fromEntries(w.signs), cmds: allCmds(), frozen: G.frozen ? 1 : 0, keepInv: G.keepInv ? 1 : 0,
+      legacy: w.legacy ? [...w.legacy] : null, gens: packGens(w), signs: Object.fromEntries(w.signs), cmds: allCmds(), frozen: G.frozen ? 1 : 0, keepInv: G.keepInv ? 1 : 0, craters: w.flags.craters || [],
     };
   },
 
@@ -1694,10 +1709,14 @@ function unpackChunkEdits(text, m) {
 }
 function packEdits(w) {
   const edits = {};
+  // (a chunk that has not changed since it was last packed, or since it was loaded, is not packed again: saving
+  // costs what has changed, not the whole world, every time)
   for (const [k, m] of w.edits) {
     if (!m.size) continue;
     const cx = Math.floor(k / 65536) - 32768, cz = (k % 65536) - 32768;
-    edits[cx + ',' + cz] = packChunkEdits(m);
+    let text = w.packed.get(k);
+    if (text === undefined) { text = packChunkEdits(m); w.packed.set(k, text); }
+    edits[cx + ',' + cz] = text;
   }
   return edits;
 }
@@ -1707,7 +1726,7 @@ function unpackEdits(w, edits) {
     const [cx, cz] = k.split(',').map(Number);
     if (!Number.isFinite(cx + cz)) continue;
     const m = new Map();
-    if (typeof arr === 'string') unpackChunkEdits(arr, m);
+    if (typeof arr === 'string') { unpackChunkEdits(arr, m); w.packed.set(ckey(cx, cz), arr); }
     else if (Array.isArray(arr)) for (let i = 0; i < arr.length; i += 2) m.set(arr[i], arr[i + 1]);
     w.edits.set(ckey(cx, cz), m);
   }
@@ -1761,7 +1780,9 @@ function startRemoteWorld(snap, onlineId, dim = 'overworld', me = null) {
   takeAllCmds(w, snap.cmds);
   G.frozen = !!snap.frozen;
   G.keepInv = !!snap.keepInv;
+  if (Array.isArray(snap.craters)) w.flags.craters = snap.craters.slice(0, 200).map((K) => ({ ...K, left: Array.isArray(K.left) ? [...K.left] : [] }));   // (craters still to be carved in land nobody has been to since)
   w.onChange = onBlockChange;
+  w.onGenerate = carveWaiting;
   w.villagerTrades = new Map();
   w.deadMobs = new Set();
   w.guests = {};
@@ -1831,6 +1852,7 @@ function startWorld(meta, data, opts = {}) {
   G.dim = dim;
   const w = new World(meta.seed, dim);
   w.onChange = onBlockChange;
+  w.onGenerate = carveWaiting;
   w.villagerTrades = new Map(Object.entries((data && data.villagers) || {}));
   w.deadMobs = new Set((data && data.deadMobs) || []);
   // (village golems due back: key -> seconds of play still to wait)
@@ -1864,7 +1886,7 @@ function startWorld(meta, data, opts = {}) {
   if (data) {
     unpackEdits(w, data.edits);
     // (frosted ice that never got to melt, because the game was closed, is water again)
-    for (const m of w.edits.values()) for (const [i, v] of m) if ((v & 255) === B.frosted_ice) m.set(i, B.water);
+    for (const [k, m] of w.edits) for (const [i, v] of m) if ((v & 255) === B.frosted_ice) { m.set(i, B.water); w.packed.delete(k); }
     for (const c of data.containers || []) {
       const [x, y, z] = c.k.split(',').map(Number);
       const n = c.type === 'chest' ? 27 : 3;
@@ -2133,6 +2155,7 @@ function boot(hotData) {
   setSolidLeaves(S.solidLeaves);
   buildTextures();
   buildIcons();
+  try { itemShape(ID.stick); } catch { /* no canvas read here */ }   // (reading a picture back for the first time can take a moment: now, not when the first item drops)
   initMesher();
   initRenderer(document.getElementById('app'));
   G.canvas = R.renderer.domElement;

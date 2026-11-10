@@ -67,6 +67,14 @@ How it works:
 - **Inventory doll** (`js/doll.js`): the player model drawn into a render target by the game's renderer, read back into a canvas in the panel, only while the inventory is open.
 - **Depth on flat tiles** (`DEPTH` / `addDepth` in `js/textures.js`): after a tile is painted, some are made lighter or darker in places from a random stream of their own, never recoloured. Only obsidian keeps the `GLOSS` glints. The dragon egg is a model (`boxes`) with a `pick` box, and the block outline uses `pickBox`.
 
+## 1.12.3: gun controls, deferred craters, save cache
+
+Guns: `input.fire` (left mouse button, or the touch `#t-fire` button) fires the held gun in `Player.interact`, which then drops the click's punch and mining; with the sniper rifle the right button (`useHeld`), sneaking or the touch `#t-scope` latch (`input.scope`) scope it (`updateCamera` reads `lastInput`). `fireGun(p, gun, centre)` fires along the crosshair for the Fire button. `#ammo` (from `ammoLeft`) and `#hitmark` (`UI.hitMark`, called where a player's bullet hits a mob) are in the HUD.
+
+Craters: `crater` carves loaded chunks at once (`carveChunk`) and keeps the rest in `world.flags.craters` as `{ x, y, z, r, s, f, left: [ckeys] }`; `World.finishChunk` calls `world.onGenerate` (`carveWaiting`) after the saved edits are applied, which carves that chunk's part, never over an existing edit (those are newer than the crater, or were set to air when it landed). Nothing is generated at impact. The join snapshot carries `craters`. Host and guest were compared block for block over a real connection. `caps` and `MIN_PAGE` are 15.
+
+Saving: `world.packed` caches each chunk's packed edits until that chunk changes (`setBlock`, `setBlockAnywhere`, `carveChunk`), so `packEdits` costs what changed. `updateChunks` re-meshes at most `URGENT_MAX` (3) just-changed chunks a frame, nearest first.
+
 ## 1.12 Arsenal, and Keep Inventory
 
 1.12 is the major update that gathers the guns (first shipped in 1.11) and everything from 1.11.1 to 1.11.12 (planes, turrets, silos, warheads, command blocks, rewinding); the 1.11.x entries were folded into its notes in `js/updates.js`, and its title scene is `AIRBASE`.

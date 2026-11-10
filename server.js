@@ -405,7 +405,7 @@ async function flushRecord(world, account) {
 const rooms = new Map();   // world id -> { host, peers: Map(id -> ws), next }
 const send = (ws, msg) => { if (ws && ws.readyState === 1) ws.send(typeof msg === 'string' ? msg : JSON.stringify(msg)); };
 
-const MIN_PAGE = 14;   // the oldest page that may join (see `caps`): an older one would not read changed blocks saved as runs (14), Keep Inventory (13), a rewind gives back their things (12), warheads' craters, /tick or rewinding (11), missile silos (10), missile turrets (9), planes (8), pandas (7), sports cars (6) or cars (5) or would empty any bundle it handled (4)
+const MIN_PAGE = 15;   // the oldest page that may join (see `caps`): an older one would carve craters in land it has not loaded differently (15), would not read changed blocks saved as runs (14), Keep Inventory (13), a rewind gives back their things (12), warheads' craters, /tick or rewinding (11), missile silos (10), missile turrets (9), planes (8), pandas (7), sports cars (6) or cars (5) or would empty any bundle it handled (4)
 // Someone opening an online world: they run it if nobody is in that dimension yet, otherwise they join whoever does
 async function enterWorld(ws, m) {
   if (!store || stopping) { send(ws, { t: 'error', msg: stopping ? 'Blockcraft is updating. Reconnecting…' : notReady(), retry: true }); return; }

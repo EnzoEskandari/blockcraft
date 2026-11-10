@@ -12,10 +12,10 @@ import { skinDoll } from './entities.js';
 import { InventoryDoll } from './doll.js';
 import { POWERS, RANGE, PAYMENT, decode, encode, pyramidLevel, powersOf } from './beacons.js';
 import { paintHand, applyGraphics } from './render.js';
-import { gunLines } from './guns.js';
+import { gunLines, gunOf, ammoLeft, ammoName } from './guns.js';
 import { sameItem, stack, craftableTimes, takeIngredients, isBundle, bundleItems, bundleFill, bundleAdd, bundleTake, BUNDLE_SIZE } from './inventory.js';
 import { isEnchanted, enchList, enchLine, ENCH, xpForLevel, enchantability, tableLevels, tableOffer, enchanted, anvil, grind, repairItem, countShelves } from './enchant.js';
-import { requestLock, exitLock, setTouchMode, resetTouch } from './input.js';
+import { requestLock, exitLock, setTouchMode, resetTouch, resetScope } from './input.js';
 import { sfx, setVolume, initAudio } from './audio.js';
 import { BIOME_NAMES } from './world.js';
 import { DIM_BIOME_NAMES } from './dims.js';
@@ -697,6 +697,13 @@ export class UI {
     el.style.opacity = a.toFixed(2);
   }
 
+  // A shot of this player's hit something
+  hitMark(kill) {
+    this.hitT = kill ? 0.45 : 0.25;
+    $('hitmark').classList.toggle('kill', !!kill);
+    sfx('click', null, { pitch: kill ? 0.7 : 2.2, vol: kill ? 0.9 : 0.5 });
+  }
+
   updateTouchVisibility() {
     const show = G.touchMode && G.state === 'playing' && !G.screen;
     $('touch-ui').hidden = !show;
@@ -1300,7 +1307,18 @@ export class UI {
       // the shield button, on touch screens, while a shield is in a hand
       const held = inv.held;
       $('t-shield').hidden = !((held && held.id === ID.shield) || (off && off.id === ID.shield));
+      // with a gun: the Fire button (and Scope with the sniper rifle) on touch screens, and how many shots are left
+      const gun = gunOf(held);
+      c.gun = gun;
+      $('t-fire').hidden = !gun;
+      const sniper = !!held && held.id === ID.sniper_rifle;
+      if ($('t-scope').hidden !== !sniper) { $('t-scope').hidden = !sniper; if (!sniper) resetScope(); }
+      const left = gun ? ammoLeft(p, gun) : null;
+      $('ammo').hidden = !gun || left == null;
+      if (gun && left != null) { $('ammo').textContent = left ? `${left} ${ammoName(gun)}` : `No ${ammoName(gun)}`; $('ammo').classList.toggle('low', left <= 5); }
     }
+    // (the tick over the crosshair when a shot of yours hits: red when it kills)
+    if (this.hitT > 0) { this.hitT -= dt; $('hitmark').style.opacity = Math.max(0, Math.min(1, this.hitT * 6)); }
     // the Trade button, on touch screens, while a villager is in reach
     const trade = !!p.tradeMob && !p.dead;
     if (c.trade !== trade) { c.trade = trade; $('t-trade').hidden = !trade; }
@@ -1379,7 +1397,7 @@ export class UI {
     if (c.shaky !== shaky) { c.shaky = shaky; $('food').classList.toggle('shaky', shaky); }
 
     // Crosshair (hidden when touch aims at the finger) and the attack cooldown indicator
-    const cross = !(G.touchMode && G.settings.touchAim === 'finger') && !p.outside;
+    const cross = (!(G.touchMode && G.settings.touchAim === 'finger') || !!c.gun) && !p.outside;   // (the Fire button fires along it)
     if (c.cross !== cross) { c.cross = cross; $('crosshair').hidden = !cross; }
     const str = p.attackStrength();
     const showInd = cross && str < 1 && !p.dead;

@@ -230,6 +230,20 @@
   #t-chat { right: calc(192px + env(safe-area-inset-right, 0px)); top: calc(12px + env(safe-area-inset-top, 0px)); width: 50px; height: 50px; font-size: 20px; }
   #t-shield { right: calc(26px + env(safe-area-inset-right, 0px)); bottom: calc(var(--slot-size) + 166px + env(safe-area-inset-bottom, 0px)); width: 80px; height: 80px; background-size: 62% 62%; background-position: center; background-repeat: no-repeat; image-rendering: pixelated; }
   #t-shield[hidden] { display: none; }
+  /* with a gun in hand: Fire (hold to keep firing), and Scope with the sniper rifle */
+  #t-fire { right: calc(206px + env(safe-area-inset-right, 0px)); bottom: calc(var(--slot-size) + 62px + env(safe-area-inset-bottom, 0px)); width: 92px; height: 92px; border-radius: 50%; font-size: 20px; background: rgba(170, 40, 30, 0.6); }
+  #t-fire.down { background: rgba(255, 110, 80, 0.8); }
+  #t-scope { right: calc(218px + env(safe-area-inset-right, 0px)); bottom: calc(var(--slot-size) + 168px + env(safe-area-inset-bottom, 0px)); width: 68px; height: 68px; border-radius: 50%; font-size: 15px; }
+  #t-fire[hidden], #t-scope[hidden] { display: none; }
+  /* how many shots are left, by the hotbar; and the tick that shows a shot hit */
+  #ammo { position: absolute; right: calc(16px + env(safe-area-inset-right, 0px)); bottom: calc(var(--slot-size) + 18px + env(safe-area-inset-bottom, 0px)); font-size: 22px; color: #fff; text-shadow: 2px 2px 0 var(--shadow); background: rgba(0, 0, 0, 0.4); padding: 2px 10px; pointer-events: none; }
+  body.touch #ammo { right: auto; left: 50%; transform: translateX(-50%); bottom: calc(var(--slot-size) + 64px + env(safe-area-inset-bottom, 0px)); }
+  #ammo.low { color: #ff8a70; }
+  #ammo[hidden] { display: none; }
+  #hitmark { position: absolute; left: 50%; top: 50%; width: 30px; height: 30px; margin: -15px 0 0 -15px; opacity: 0; pointer-events: none;
+    background: linear-gradient(45deg, transparent 46%, #fff 46%, #fff 54%, transparent 54%), linear-gradient(-45deg, transparent 46%, #fff 46%, #fff 54%, transparent 54%);
+    -webkit-mask: radial-gradient(circle, transparent 5px, #000 6px); mask: radial-gradient(circle, transparent 5px, #000 6px); }
+  #hitmark.kill { background: linear-gradient(45deg, transparent 44%, #ff4a3a 44%, #ff4a3a 56%, transparent 56%), linear-gradient(-45deg, transparent 44%, #ff4a3a 44%, #ff4a3a 56%, transparent 56%); }
   #t-view { right: calc(132px + env(safe-area-inset-right, 0px)); top: calc(12px + env(safe-area-inset-top, 0px)); width: 50px; height: 50px; font-size: 22px; }
   /* by a villager: trade with it (a tap on the villager itself is a hit) */
   #t-trade { left: 50%; bottom: calc(var(--slot-size) + 96px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); width: auto; height: 54px; padding: 0 22px; font-size: 20px; background: rgba(40, 120, 60, 0.62); }
@@ -576,6 +590,8 @@
   <button class="tbtn" id="t-pause" type="button" aria-label="Pause">II</button>
   <button class="tbtn" id="t-drop" type="button" aria-label="Drop item">Q</button>
   <button class="tbtn" id="t-shield" type="button" aria-label="Hold to raise your shield" hidden></button>
+  <button class="tbtn" id="t-fire" type="button" aria-label="Fire" hidden>FIRE</button>
+  <button class="tbtn" id="t-scope" type="button" aria-label="Look through the scope" hidden>Scope</button>
   <button class="tbtn" id="t-chat" type="button" aria-label="Chat" hidden>T</button>
   <button class="tbtn" id="t-view" type="button" aria-label="Change view">&#128065;</button>
   <button class="tbtn" id="t-trade" type="button" aria-label="Trade with this villager" hidden>Trade</button>
@@ -585,6 +601,8 @@
   <div id="water-overlay" hidden></div>
   <div id="vignette"></div>
   <div id="crosshair"></div>
+  <div id="hitmark"></div>
+  <div id="ammo" hidden></div>
   <div id="attack-ind" hidden><i id="attack-fill"></i></div>
   <div id="debug" hidden></div>
   <div id="toast"></div>

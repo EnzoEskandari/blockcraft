@@ -269,6 +269,8 @@ function initTouch() {
   hold('t-pause', () => { if (playing()) G.ui.openScreen('pause'); });
   hold('t-drop', () => { if (playing()) input.drop = true; });
   hold('t-shield', () => { touch.block = true; }, () => { touch.block = false; });
+  hold('t-fire', () => { touch.fire = true; }, () => { touch.fire = false; });
+  hold('t-scope', () => { touch.scope = !touch.scope; $('t-scope').classList.toggle('latched', touch.scope); });
   hold('t-trade', () => { if (playing()) G.player.trade(); });
   hold('t-view', () => { if (playing()) G.game.nextView(); });
 
@@ -295,6 +297,12 @@ export function pollInput(dt) {
   input.sprint = k('ControlLeft') || k('ControlRight') || touch.sprintLatch
     || (touch.joyId !== null && touch.joyDY < -0.92 && Math.abs(touch.joyDX) < 0.45);
   input.mine = mouseL || touch.holding;
+  // with a gun in hand: the left button (or the Fire button on a touch screen) fires it, and the right button
+  // (or the Scope button) looks through a sniper's scope (see Player.interact)
+  input.fire = mouseL || touch.fire;
+  input.fireMouse = mouseL;
+  input.fireBtn = touch.fire;
+  input.scope = touch.scope;
   input.touchHold = touch.holding;
   input.useHeld = mouseR;
 
@@ -322,11 +330,15 @@ export function endFrame() {
   input.drop = input.dropAll = input.pick = input.swapHands = input.flare = input.missile = false;
 }
 
+// (the sniper rifle was put away: its Scope button lets go)
+export function resetScope() { touch.scope = false; const s = $('t-scope'); if (s) s.classList.remove('latched'); }
+
 export function resetTouch() {
   touch.sneakLatch = false;
   touch.sneakHold = false;
+  touch.fire = false; touch.scope = false;
   touch.jump = false;
   touch.sprintLatch = false;
   touch.block = false;
-  for (const id of ['t-sneak', 't-sprint']) { const s = $(id); if (s) s.classList.remove('latched'); }
+  for (const id of ['t-sneak', 't-sprint', 't-scope']) { const s = $(id); if (s) s.classList.remove('latched'); }
 }

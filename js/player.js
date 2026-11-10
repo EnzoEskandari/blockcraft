@@ -648,6 +648,18 @@ export class Player {
     const off = this.off[0];
     setOffItem(off ? off.id : 0);
 
+    // A gun in hand (1.12.3): the left button fires it (held down, it keeps firing), as the Fire button does on a
+    // touch screen; so the left button neither punches nor mines with a gun. The right button still fires too,
+    // except with the sniper rifle, where holding it looks through the scope (as sneaking does, and the Scope
+    // button on a touch screen). Sneaking with the right button still fires, as it always did.
+    const gun = it && !this.frozen && !this.dead ? GUNS[it.key] : null;
+    if (gun) {
+      const rightScopes = held.id === ID.sniper_rifle && !this.sneaking;
+      if (input.fire && !this.eating && this.gunCd <= 0) fireGun(this, gun, !!input.fireBtn && !input.fireMouse);
+      input = { ...input, attackPressed: false, mine: input.mine && !input.fireMouse,
+        usePressed: rightScopes ? false : input.usePressed, useHeld: rightScopes ? false : input.useHeld };
+    }
+
     // Shield: hold use (or the shield button on a touch screen) with one in either hand; it takes a moment
     // to come up. In the off hand it waits its turn behind a main-hand item with a use of its own.
     const shieldMain = !!held && held.id === ID.shield, shieldOff = !!off && off.id === ID.shield;
@@ -752,6 +764,7 @@ export class Player {
       const fb = (!target || !target.mob) && G.entities.pickFireball && G.entities.pickFireball(r.ox, r.oy, r.oz, r.dx, r.dy, r.dz, 5.5);
       if (fb) { fb.reflect({ x: r.dx, y: r.dy, z: r.dz }); this.swing(); }
       else if (this.eating && this.eating.auto) this.eating = null;
+      else if (gun) fireGun(this, gun);   // (a tap with a gun is a shot, at a creature in reach too)
       else if (target && target.mob) this.attack(target.mob);
       else if (isFood) {
         if (!this.use(target, true)) {
@@ -1554,8 +1567,9 @@ export class Player {
   updateCamera(dt) {
     const cam = R.camera;
     const car = this.riding && (this.riding.def.car || this.riding.def.plane) && !this.dead, plane = car && !!this.riding.def.plane;
-    // The sniper rifle's scope: sneak while holding it
-    const held = this.inv.held, scoped = !!held && held.id === ID.sniper_rifle && this.sneaking && !this.dead && !G.screen;
+    // The sniper rifle's scope: sneak while holding it, or hold the right button, or the Scope button (touch)
+    const li = this.lastInput || {};
+    const held = this.inv.held, scoped = !!held && held.id === ID.sniper_rifle && (this.sneaking || li.scope || li.useHeld) && !this.dead && !G.screen && !this.riding && !this.frozen;
     this.scope = Math.max(0, Math.min(1, this.scope + (scoped ? dt : -dt) * 8));
     this.scoped = this.scope > 0.5;
     showScope(this.scope);

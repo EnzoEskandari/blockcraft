@@ -951,6 +951,20 @@ function buildSky() {
   R.stars.renderOrder = -8;
   R.stars.frustumCulled = false;
   R.scene.add(R.stars);
+  // (and a few bright ones among them, which twinkle: they turn, show and fade with the rest)
+  const big = [];
+  for (let i = 0; i < 110; i++) {
+    const u = r() * 2 - 1, th = r() * Math.PI * 2, q = Math.sqrt(1 - u * u);
+    big.push(q * Math.cos(th) * 420, u * 420, q * Math.sin(th) * 420);
+  }
+  const bigGeo = new THREE.BufferGeometry();
+  bigGeo.setAttribute('position', new THREE.Float32BufferAttribute(big, 3));
+  R.brightStars = new THREE.Points(bigGeo, new THREE.PointsMaterial({
+    color: 0xeaf2ff, size: 2.8, sizeAttenuation: false, transparent: true, opacity: 0, depthWrite: false, fog: false,
+  }));
+  R.brightStars.renderOrder = -8;
+  R.brightStars.frustumCulled = false;
+  R.stars.add(R.brightStars);
 }
 
 function buildClouds() {
@@ -1329,6 +1343,7 @@ export function updateSky(time, dt, underwater, inLava) {
     R.stars.visible = G.dim === 'end';
     R.stars.position.copy(cam);
     R.stars.material.opacity = 0.5;
+    R.brightStars.material.opacity = 0.6;
     const rd = G.settings.renderDist;
     let near = rd * 16 * look.near, far = rd * 16 * look.far;
     fogCol.copy(look.fog);
@@ -1374,14 +1389,17 @@ export function updateSky(time, dt, underwater, inLava) {
   R.stars.position.copy(cam);
   R.stars.rotation.z = a;
   R.stars.material.opacity = Math.max(0, 1 - day * 1.6) * (1 - wx.over);
+  R.brightStars.material.opacity = R.stars.material.opacity * (0.8 + 0.2 * Math.sin(performance.now() / 700));
 
   const cu = R.cloudUniforms;
   R.clouds.position.set(cam.x, 132.5, cam.z);   // (above the highest peaks)
   cu.uOffset.value.set(G.cloudDrift || 0, 0);
   G.cloudDrift = ((G.cloudDrift || 0) + dt * (1.2 + wx.rain * 1.6)) % 768;
   const cb = (0.25 + 0.75 * day) * (1 - 0.3 * wx.over - 0.3 * wx.dark) + wx.flash * 0.5;
-  cu.uColor.value.setRGB(cb, cb, cb * 1.02);
-  cu.uShade.value.setRGB(cb * (0.84 - 0.2 * wx.over), cb * (0.87 - 0.2 * wx.over), cb * (0.93 - 0.2 * wx.over));
+  // (at sunrise and sunset the clouds catch the colour of the low sun: gold on top, rose underneath)
+  const warm = sunset * 0.75;
+  cu.uColor.value.setRGB(cb * (1 + 0.12 * warm), cb * (1 - 0.14 * warm), cb * (1.02 - 0.34 * warm));
+  cu.uShade.value.setRGB(cb * (0.84 - 0.2 * wx.over + 0.1 * warm), cb * (0.87 - 0.2 * wx.over - 0.22 * warm), cb * (0.93 - 0.2 * wx.over - 0.3 * warm));
   cu.uCover.value = wx.cover;
   cu.uAlpha.value = 0.8 + 0.14 * wx.over;
 

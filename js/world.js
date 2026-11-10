@@ -100,6 +100,7 @@ export class World {
     this._near = new Map();
     this.chunks = new Map();
     this.edits = new Map();       // ckey -> Map(idx -> id | meta << 8)
+    this.packed = new Map();      // ckey -> those changes as they are saved, kept until that chunk changes again (see packEdits in main.js)
     this.containers = new Map();  // "x,y,z" -> chest / furnace state
     this.onChange = null;         // (x, y, z, oldId, newId) => void
     this.structureCache = new Map();  // structure plans by region
@@ -231,6 +232,7 @@ export class World {
     let e = this.edits.get(k);
     if (!e) { e = new Map(); this.edits.set(k, e); }
     e.set(i, id | (meta << 8));
+    this.packed.delete(k);
     if (this.onChange) this.onChange(x, y, z, old, id);
     return true;
   }
@@ -243,6 +245,7 @@ export class World {
     let e = this.edits.get(k);
     if (!e) { e = new Map(); this.edits.set(k, e); }
     e.set((y << 8) | ((z & 15) << 4) | (x & 15), id | (meta << 8));
+    this.packed.delete(k);
     return false;
   }
 
@@ -632,6 +635,9 @@ export class World {
         if (v >> 8 && (id === B.water || id === B.lava)) this.liquidLoaded.push([x0 + (i & 15), i >> 8, z0 + ((i >> 4) & 15)]);
       }
     }
+
+    // (a warhead's crater that was waiting for this land to be made: warheads.js)
+    if (this.onGenerate) this.onGenerate(this, chunk);
 
     let maxY = 0, emitters = 0;
     for (let i = 0; i < blocks.length; i++) {

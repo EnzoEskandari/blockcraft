@@ -43,12 +43,13 @@ function ammoSlot(inv, kind) {
 }
 
 // The player fires the gun in their hand. True when the click was the gun's (fired, or still between shots).
-export function fireGun(p, gun) {
+// (centre: along the crosshair, whatever a finger is doing: the Fire button on a touch screen)
+export function fireGun(p, gun, centre = false) {
   if (p.gunCd > 0) { p.nextUse = Math.max(0.01, p.gunCd); return true; }
   const i = ammoSlot(p.inv, gun.ammo);
-  if (i < 0 && !p.creative) { p.hint(`You need ${NEED[gun.ammo]}`); return false; }
+  if (i < 0 && !p.creative) { p.hint(`You need ${NEED[gun.ammo]}`); sfx('click', null, { pitch: 1.8, vol: 0.5 }); p.gunCd = 0.35; return false; }   // (an empty click)
   const ammo = i >= 0 ? ammoOf(p.inv.slots[i]) : AMMO[PLAIN[gun.ammo]];
-  const r = p.pickRay(p.scoped ? {} : p.lastInput || {});   // (through a scope: its middle, wherever a finger tapped)
+  const r = p.pickRay(p.scoped || centre ? {} : p.lastInput || {});   // (through a scope: its middle, wherever a finger tapped)
   const mx = p.pos.x + r.dx * 0.6, my = p.eyeY - 0.1 + r.dy * 0.6, mz = p.pos.z + r.dz * 0.6;
   const opts = { bullet: gun.ammo, damage: Math.round(gun.dmg * ammo.mul * 10) / 10, keep: true, pierce: (gun.pierce || 0) + (ammo.pierce || 0),
     flame: !!ammo.fire, boom: gun.boom || ammo.boom || 0 };
@@ -75,6 +76,15 @@ export function fireGun(p, gun) {
   p.gunCd = p.nextUse = gun.cd;
   return true;
 }
+
+// How many shots the player has for this gun (null in Creative, where it never runs out)
+export function ammoLeft(p, gun) {
+  if (p.creative) return null;
+  let n = 0;
+  for (const s of p.inv.slots) if (s && ammoOf(s) && ammoOf(s).kind === gun.ammo) n += s.count;
+  return n;
+}
+export const ammoName = (gun) => NEED[gun.ammo];
 
 // Lines for a gun's or a bullet's tooltip
 export function gunLines(st) {

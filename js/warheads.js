@@ -1,4 +1,4 @@
-// Warheads (1.11.11). A silo's missile sets how far it reaches and how much shooting it takes to bring down;
+// Warheads (1.11.11; craters in land nobody has loaded wait until it is, since 1.12.3). A silo's missile sets how far it reaches and how much shooting it takes to bring down;
 // its warhead sets how big the bang is. Concussion is the old one (hurts, breaks nothing); every other warhead
 // blows a crater in the land, up to a nuke, which leaves a hole you could lose a village in and a mushroom cloud.
 //
@@ -35,85 +35,115 @@ export const WARHEADS = [
 export const warheadOf = (i) => WARHEADS[clamp(i | 0, 0, WARHEADS.length - 1)];
 
 // ---------------------------------------------------------------- the crater
+// A crater is a bowl (it digs a little less deep than it reaches across) with a ragged edge that comes from its
+// seed, so it is the same wherever it is carved. K is { x, y, z, r, s (seed), f (fire) }, x y z whole numbers.
 const KEEP = (id) => !id || id === B.water || id === B.bedrock || id === B.obsidian || BLOCKS[id].blastProof || BLOCKS[id].hardness < 0;
-export function crater(x, y, z, r, seed, fire) {
-  const w = G.world;
-  if (!w || !(r > 0)) return 0;
-  r = Math.min(r, 40);
-  const bx = Math.floor(x), by = Math.floor(y), bz = Math.floor(z), R2 = Math.ceil(r * 1.6) + 1;
-  // the land there, made if nobody has it loaded (a silo's missile has it made on its way: see prepareCrater)
-  const RC = Math.ceil(r * 1.15) + 1;
-  for (let cx = (bx - RC) >> 4; cx <= (bx + RC) >> 4; cx++) for (let cz = (bz - RC) >> 4; cz <= (bz + RC) >> 4; cz++) if (!w.getChunk(cx, cz)) w.generate(cx, cz);
-  const touched = new Set();
-  const editsOf = (c) => { const k = ckey(c.cx, c.cz); let e = w.edits.get(k); if (!e) { e = new Map(); w.edits.set(k, e); } return e; };
-  const clear = (c, X, Y, Z, to = 0) => {
-    const i = (Y << 8) | ((Z & 15) << 4) | (X & 15), id = c.blocks[i];
+const reachOf = (K) => (K.f ? Math.ceil(K.r * 1.6) + 1 : Math.ceil(K.r * 1.15) + 1);   // (how far out it changes anything)
+function inBowl(K, X, Y, Z) {
+  const dx = X - K.x, dy = Y - K.y, dz = Z - K.z, r = K.r;
+  const d = Math.hypot(dx, dy < 0 ? dy / 0.8 : dy, dz);
+  return d <= r * 1.15 && d <= r * (0.82 + 0.33 * hash3(K.s, X, Y, Z));
+}
+const editsOf = (w, c) => { const k = ckey(c.cx, c.cz); let e = w.edits.get(k); if (!e) { e = new Map(); w.edits.set(k, e); } return e; };
+
+// The part of a crater that lies in one chunk. `late`: the chunk is only now being made (the crater was there
+// first), so whatever has been built or dug there since stays as it is, and nothing is lit or counted yet.
+// Returns the places where fires start (when it is not late).
+function carveChunk(w, c, K, late) {
+  const edits = editsOf(w, c), x0 = c.cx * 16, z0 = c.cz * 16, r = K.r, R = Math.ceil(r * 1.15);
+  const fires = [];
+  let changed = false;
+  const clear = (X, Y, Z, i, id, to = 0) => {
     c.blocks[i] = to;
     if (c.meta) c.meta[i] = 0;
+    edits.set(i, to);
+    if (!changed) { changed = true; w.packed.delete(ckey(c.cx, c.cz)); }
+    if (late) return;
     if (BLOCKS[id].light) c.emitters--;
-    editsOf(c).set(i, to);
     const key = `${X},${Y},${Z}`;
     if (BLOCKS[id].sign) w.signs.delete(key);
     w.containers.delete(key);
     w.fires.delete(key); w.crops.delete(key); w.spawners.delete(key); w.beacons.delete(key);
     if (id === B.command_block) forgetCmd(X, Y, Z);
-    touched.add(c);
   };
-  const R = Math.ceil(r * 1.15);
-  let n = 0;
-  for (let dy = -R; dy <= R; dy++) {
-    const Y = by + dy;
-    if (Y < 1 || Y >= CH - 1) continue;
-    // (a bowl: it digs a little less deep than it reaches across)
-    const sy = dy < 0 ? dy / 0.8 : dy;
-    for (let dx = -R; dx <= R; dx++) for (let dz = -R; dz <= R; dz++) {
-      const d = Math.hypot(dx, sy, dz);
-      if (d > r * 1.15) continue;
-      const X = bx + dx, Z = bz + dz;
-      if (d > r * (0.82 + 0.33 * hash3(seed, X, Y, Z))) continue;
-      const c = w.chunks.get(ckey(X >> 4, Z >> 4));
-      if (!c || KEEP(c.blocks[(Y << 8) | ((Z & 15) << 4) | (X & 15)])) continue;
-      clear(c, X, Y, Z);
-      n++;
-    }
+  const xa = Math.max(x0, K.x - R), xb = Math.min(x0 + 15, K.x + R), za = Math.max(z0, K.z - R), zb = Math.min(z0 + 15, K.z + R);
+  for (let Y = Math.max(1, K.y - R); Y <= Math.min(CH - 2, K.y + R); Y++) for (let Z = za; Z <= zb; Z++) for (let X = xa; X <= xb; X++) {
+    const i = (Y << 8) | ((Z & 15) << 4) | (X & 15), id = c.blocks[i];
+    if (KEEP(id) || (late && edits.has(i)) || !inBowl(K, X, Y, Z)) continue;
+    clear(X, Y, Z, i, id);
   }
-  // scorched land round it: the grass burnt off, the trees stripped, and (on whoever runs the world) fires
-  if (fire) {
-    const out = r * 1.6;
-    const fires = [];
-    for (let dx = -R2; dx <= R2; dx++) for (let dz = -R2; dz <= R2; dz++) {
-      const d = Math.hypot(dx, dz);
+  // scorched land round it: the grass burnt off, the trees stripped, and (where the world runs) fires
+  if (K.f) {
+    const R2 = reachOf(K), out = r * 1.6;
+    for (let Z = Math.max(z0, K.z - R2); Z <= Math.min(z0 + 15, K.z + R2); Z++) for (let X = Math.max(x0, K.x - R2); X <= Math.min(x0 + 15, K.x + R2); X++) {
+      const d = Math.hypot(X - K.x, Z - K.z);
       if (d > out || d < r * 0.7) continue;
-      const X = bx + dx, Z = bz + dz;
-      const c = w.chunks.get(ckey(X >> 4, Z >> 4));
-      if (!c) continue;
-      for (let Y = Math.min(CH - 3, by + R2); Y > Math.max(1, by - R2); Y--) {
+      for (let Y = Math.min(CH - 3, K.y + R2); Y > Math.max(1, K.y - R2); Y--) {
         const i = (Y << 8) | ((Z & 15) << 4) | (X & 15), id = c.blocks[i];
         if (!id) continue;
+        if (late && edits.has(i)) break;
         const def = BLOCKS[id];
-        if (/leaves/.test(def.key) || (!def.solid && def.hardness === 0 && id !== B.water && id !== B.lava)) { if (d < r * 1.3 || hash3(seed ^ 7, X, Y, Z) < 0.6) clear(c, X, Y, Z); continue; }
-        if (id === B.grass || id === B.snowy_grass) clear(c, X, Y, Z, B.dirt);
-        if (def.solid && hash3(seed ^ 3, X, Y, Z) < 0.07) fires.push([X, Y + 1, Z]);
+        if (/leaves/.test(def.key) || (!def.solid && def.hardness === 0 && id !== B.water && id !== B.lava)) { if (d < r * 1.3 || hash3(K.s ^ 7, X, Y, Z) < 0.6) clear(X, Y, Z, i, id); continue; }
+        if (id === B.grass || id === B.snowy_grass) clear(X, Y, Z, i, id, B.dirt);
+        if (def.solid && hash3(K.s ^ 3, X, Y, Z) < 0.07) fires.push([X, Y + 1, Z]);
         break;
       }
     }
-    if (!isGuest()) for (const [X, Y, Z] of fires) if (w.getBlock(X, Y, Z) === 0) G.game.ignite(X, Y, Z);
   }
-  // the chunks it went through (and their neighbours) are drawn and lit again
-  for (const c of touched) for (let ox = -1; ox <= 1; ox++) for (let oz = -1; oz <= 1; oz++) {
+  if (changed && !late) for (let ox = -1; ox <= 1; ox++) for (let oz = -1; oz <= 1; oz++) {
     const q = w.getChunk(c.cx + ox, c.cz + oz);
-    if (q) { q.dirty = true; q.simDirty = true; }
+    if (q) { q.dirty = true; q.simDirty = true; }   // (drawn and lit again, with its neighbours)
   }
-  if (G.game.afterCrater) G.game.afterCrater(bx, by, bz, R2);
-  return n;
+  return fires;
 }
 
-// While a missile is on its way, the land where it will land is made a chunk at a time (so it is not all made at
-// once when it gets there)
-export function prepareCrater(x, z, r) {
-  const w = G.world, RC = Math.ceil(r * 1.15) + 1, bx = Math.floor(x), bz = Math.floor(z);
+// Carves a crater. The land that is loaded is carved now. Land nobody has loaded is not made for it (a nuke
+// reaches some sixty chunks: making them all at once stopped the game for seconds): the crater is kept with the
+// world (flags.craters, with the chunks it still has to be carved in) and each of those is carved as it is made,
+// whenever someone first goes there. What had been built there before goes now; what is built after stays.
+const MAX_WAITING = 200;
+export function crater(x, y, z, r, seed, fire) {
+  const w = G.world;
   if (!w || !(r > 0)) return;
-  for (let cx = (bx - RC) >> 4; cx <= (bx + RC) >> 4; cx++) for (let cz = (bz - RC) >> 4; cz <= (bz + RC) >> 4; cz++) if (!w.getChunk(cx, cz)) { w.generate(cx, cz); return; }
+  const K = { x: Math.floor(x), y: Math.floor(y), z: Math.floor(z), r: Math.min(r, 40), s: seed >>> 0, f: fire ? 1 : 0 };
+  const R2 = reachOf(K), left = [], fires = [];
+  for (let cx = (K.x - R2) >> 4; cx <= (K.x + R2) >> 4; cx++) for (let cz = (K.z - R2) >> 4; cz <= (K.z + R2) >> 4; cz++) {
+    const k = ckey(cx, cz), c = w.chunks.get(k);
+    if (c) { fires.push(...carveChunk(w, c, K, false)); continue; }
+    left.push(k);
+    // (what people built or dug there before, known from the save without the land: gone where the bowl is)
+    const e = w.edits.get(k);
+    if (e) for (const [i, v] of e) {
+      const X = cx * 16 + (i & 15), Y = i >> 8, Z = cz * 16 + ((i >> 4) & 15);
+      if (KEEP(v & 255) || !inBowl(K, X, Y, Z)) continue;
+      e.set(i, 0);
+      w.packed.delete(k);
+      const key = `${X},${Y},${Z}`;
+      w.signs.delete(key); w.containers.delete(key);
+      if ((v & 255) === B.command_block) forgetCmd(X, Y, Z);
+    }
+  }
+  if (left.length) {
+    const list = Array.isArray(w.flags.craters) ? w.flags.craters : (w.flags.craters = []);
+    list.push({ ...K, left });
+    if (list.length > MAX_WAITING) list.splice(0, list.length - MAX_WAITING);
+  }
+  if (!isGuest()) for (const [X, Y, Z] of fires) if (w.getBlock(X, Y, Z) === 0) G.game.ignite(X, Y, Z);
+  if (G.game.afterCrater) G.game.afterCrater();
+}
+// A chunk has just been made (World.finishChunk, after the saved changes are put in): any crater waiting for it
+// is carved in it now
+export function carveWaiting(w, c) {
+  const list = w.flags && w.flags.craters;
+  if (!Array.isArray(list) || !list.length) return;
+  const k = ckey(c.cx, c.cz);
+  for (let n = 0; n < list.length; n++) {
+    const K = list[n], at = Array.isArray(K.left) ? K.left.indexOf(k) : -1;
+    if (at < 0) continue;
+    K.left.splice(at, 1);
+    if ([K.x, K.y, K.z, K.r].every(Number.isFinite) && K.r > 0 && K.r <= 40) carveChunk(w, c, K, true);
+    if (!K.left.length) list.splice(n--, 1);
+  }
 }
 
 // ---------------------------------------------------------------- going off
@@ -125,8 +155,10 @@ export function detonate(x, y, z, wh, blast, self = null) {
   if (G.net) G.net.explosion(x, y, z, Math.min(hurt, 12));
   if (W.r) {
     const seed = (Math.random() * 4294967296) >>> 0;
-    crater(x, y, z, W.r, seed, !!W.fire);
-    if (G.net && G.net.role === 'host') G.net.send({ k: 'crater', x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, z: Math.round(z * 10) / 10, r: W.r, s: seed, f: W.fire ? 1 : 0 });
+    // (whole numbers, so it is carved at the very same blocks for everyone)
+    const cx = Math.floor(x), cy = Math.floor(y), cz = Math.floor(z);
+    crater(cx, cy, cz, W.r, seed, !!W.fire);
+    if (G.net && G.net.role === 'host') G.net.send({ k: 'crater', x: cx, y: cy, z: cz, r: W.r, s: seed, f: W.fire ? 1 : 0 });
   }
   explosionDamage(x, y, z, hurt, null, true, self);
   boomFx(x, y, z, W.nuke ? W.r : hurt, !!W.nuke);

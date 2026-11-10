@@ -127,6 +127,21 @@ const AIRBASE = {
 export const UPDATES = [
   {
     // a small update: it keeps the Arsenal picture
+    version: '1.12.3', name: 'Trigger Finger', date: '2026-11-09',
+    splashes: ['Bang!', 'Reload!', 'Nine guns!', 'Steady aim!', 'Fox two!', 'Lock on!', 'Turret online!', 'Tracers!', 'Incoming!', 'Launch!', 'Duck and cover!', 'Keep your stuff!', 'Eyes front!', 'Still here!', 'Left click!', 'Hit!'],
+    scene: AIRBASE,
+    notes: [
+      'Guns fire with the left mouse button now (the right button still works too). Hold it down to keep firing. With a gun in your hand, clicking no longer punches or digs.',
+      'The Sniper Rifle: hold the right mouse button to look through the scope and click to shoot. Sneaking still scopes as well.',
+      'On a touch screen a FIRE button appears while you hold a gun (hold it for automatic fire), and a Scope button with the Sniper Rifle, which works while flying too. A crosshair shows where the button fires, and a tap with a gun always shoots.',
+      'A counter by the hotbar shows how many shots you have left, an empty gun clicks, and a tick flashes on the crosshair when your shot hits (red when it finishes the target off).',
+      'A warhead landing far away no longer freezes the game: land nobody is near gets its crater when someone first goes there.',
+      'Big explosions and spreading fires no longer stall the game while the land is redrawn, and saving a large world is about twenty times quicker.',
+      'Clouds glow gold and rose at sunrise and sunset, and the night sky has bright stars that twinkle.',
+    ],
+  },
+  {
+    // a small update: it keeps the Arsenal picture
     version: '1.12.2', name: 'Stay Connected', date: '2026-11-07',
     splashes: ['Bang!', 'Reload!', 'Nine guns!', 'Steady aim!', 'Fox two!', 'Lock on!', 'Turret online!', 'Tracers!', 'Incoming!', 'Launch!', 'Duck and cover!', 'Keep your stuff!', 'Eyes front!', 'Still here!'],
     scene: AIRBASE,
